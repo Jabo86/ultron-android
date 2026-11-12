@@ -43,7 +43,7 @@ export async function scheduleDailyQuizReminder(arg) {
 export async function cancelDailyQuizReminder() {
   try { await api.disableQuizReminder(); } catch (_) {}
 }
-export async function registerForPush() {
+export async function registerForPush({ askPermission = true } = {}) {
   if (Platform.OS !== "android") return false;
   await notifee.createChannel({id:"messages",name:"Messaggi ULTRON",importance:AndroidImportance.HIGH});
   await notifee.createChannel({id:GHOST_CHANNEL,name:"Silenzioso",importance:AndroidImportance.MIN});
@@ -52,6 +52,6 @@ export async function registerForPush() {
   if (apiLevel < 33) return true;
   const permission = PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS || "android.permission.POST_NOTIFICATIONS";
   const granted = await PermissionsAndroid.check(permission);
-  if (granted) return true;
+  if (granted || !askPermission) return granted;
   return (await PermissionsAndroid.request(permission)) === PermissionsAndroid.RESULTS.GRANTED;
 }

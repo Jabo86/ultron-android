@@ -35,6 +35,10 @@ export async function loadServer() {
   return (await AsyncStorage.getItem(SRV_KEY)) || null;
 }
 
+const PREFERRED_SERVER_KEY = "ultron.preferred-server";
+export const savePreferredServer = (url) => AsyncStorage.setItem(PREFERRED_SERVER_KEY, url);
+export const loadPreferredServer = () => AsyncStorage.getItem(PREFERRED_SERVER_KEY);
+
 const LOCK_KEY = "lattice.pulse.applock.v1";
 const NOTIF_KEY = "lattice.pulse.notif.v1";
 export async function saveAppLock(v) { await AsyncStorage.setItem(LOCK_KEY, v ? "1" : "0"); }

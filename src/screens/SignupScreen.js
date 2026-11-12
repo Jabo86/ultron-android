@@ -18,16 +18,18 @@ import { theme } from "../theme";
 const DOMAIN = "ultron.uns";
 const normUser = (v) => (v || "").toLowerCase().replace(/[^a-z0-9._-]/g, "");
 
-export default function SignupScreen({ navigation }) {
+export default function SignupScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { signIn } = useAuth();
   const { lang } = useI18n();
   const it = lang !== "en";
+  const server = route?.params?.server || api.getServerUrl();
   const [username, setUsername] = useState("");
   const [useLock, setUseLock] = useState(false);
   const [secure, setSecure] = useState(false);
   const [avail, setAvail] = useState(null); // null | true | false
   const [checking, setChecking] = useState(false);
+  const [signupUnavailable, setSignupUnavailable] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [created, setCreated] = useState(null); // { keyfile, lns_name }
@@ -46,12 +48,14 @@ export default function SignupScreen({ navigation }) {
     if (tRef.current) clearTimeout(tRef.current);
     tRef.current = setTimeout(async () => {
       setChecking(true);
-      try { const r = await api.personalCheck(u); if (active) setAvail(r?.available === true); }
-      catch { if (active) setAvail(null); }
+      try { const r = await api.personalCheck(u, server); if (active) setAvail(r?.available === true); }
+      catch (e) {
+        if (active && e.response?.status === 404) setSignupUnavailable(true);
+      }
       finally { if (active) setChecking(false); }
     }, 450);
     return () => { active = false; clearTimeout(tRef.current); };
-  }, [username]);
+  }, [username, server]);
 
   const doSignup = async () => {
     const u = normUser(username);
@@ -63,17 +67,19 @@ export default function SignupScreen({ navigation }) {
       const kp = pending.current.keypair;
       const lns = `${u}@${DOMAIN}`;
       const signature_hex = signMessage(`ultron-personal-signup-v1:${lns}`, kp.secretKeyHex);
-      const r = await api.personalSignup({ username: u, public_key_hex: kp.publicKeyHex, signature_hex });
+      const r = await api.personalSignup({ username: u, public_key_hex: kp.publicKeyHex, signature_hex }, server);
       if (r.lns_name !== lns) throw new Error(it ? "Indirizzo inatteso dal server." : "Unexpected account address.");
       const keyfile = {
         version: 1, algorithm: "ML-DSA-65", lns_name: r.lns_name, tenant_id: r.tenant_id,
         did: r.did, public_key_hex: kp.publicKeyHex, secret_key_hex: kp.secretKeyHex,
-        server_url: api.getServerUrl(), created_at: r.created_at,
+        server_url: server, created_at: r.created_at,
       };
+      setSignupUnavailable(false);
       setCreated({ keyfile, lns_name: r.lns_name });
       pending.current = null;
     } catch (e) {
-      setErr(api.apiErr(e));
+      if (e.response?.status === 404) setSignupUnavailable(true);
+      else setErr(api.apiErr(e));
     } finally { setBusy(false); }
   };
 
@@ -146,6 +152,11 @@ export default function SignupScreen({ navigation }) {
         </TouchableOpacity>
 
         <Text style={styles.title}>{it ? "Crea il tuo account personale" : "Create your personal account"}</Text>
+        <Text style={styles.hint}>{server}</Text>
+        {signupUnavailable && <Text accessibilityLiveRegion="polite" style={styles.err}>
+          {it ? "La registrazione non è disponibile su questo server. Puoi riprovare dopo l’aggiornamento del server o tornare all’accesso e scegliere un altro indirizzo."
+            : "Registration is unavailable on this server. Try again after the server update, or go back to sign-in and choose another address."}
+        </Text>}
         <Text style={styles.sub}>
           {it ? "Scegli un nome utente: sarà il tuo indirizzo ULTRON. Le chiavi vengono generate su questo dispositivo."
               : "Pick a username: it becomes your ULTRON address. Keys are generated on this device."}

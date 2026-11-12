@@ -13,6 +13,16 @@ export function normalizeServer(url) {
   return u.replace(/\/+$/, "");
 }
 
+export function personalServerUrl(value) {
+  const input = value.trim();
+  const url = (/^[a-z][a-z0-9+.-]*:\/\//i.test(input) ? input : "https://" + input).replace(/\/+$/, "");
+  const match = /^https:\/\/(?:[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?|\[[a-f0-9:]+\])(?::(\d{1,5}))?$/i.exec(url);
+  if (!match || (match[1] && (+match[1] < 1 || +match[1] > 65535))) {
+    throw new Error("Inserisci l’indirizzo HTTPS del server senza percorso, ad esempio https://messaggi.example.org.");
+  }
+  return url.toLowerCase();
+}
+
 let _base = DEFAULT_SERVER;
 const attachChaff = (c) => {
   // Ogni richiesta (vera o di rumore) porta un riempitivo di lunghezza casuale: le stazze
@@ -24,6 +34,13 @@ const attachChaff = (c) => {
   return c;
 };
 const makeClient = (base) => attachChaff(axios.create({ baseURL: `${base}/api`, timeout: 25000 }));
+
+export async function verifyServer(value) {
+  const target = personalServerUrl(value);
+  const { data } = await makeClient(target).get("/health", { timeout: 8000 });
+  if (data?.ok !== true) throw new Error("Il server non risponde come un gateway ULTRON.");
+  return target;
+}
 
 // Richiesta finta per il Traffico di Rumore: innocua e con lo stesso padding delle vere.
 export async function coverPing() {
@@ -542,10 +559,10 @@ export const certifyStats = () =>
 export const certifyContacts = () =>
   withAuth((a) => client.get("/public/certify/contacts", a).then((r) => r.data));
 // ── Account personali (username@ultron.uns) ──
-export const personalCheck = (username) =>
-  client.get("/public/personal/check", { params: { username } }).then((r) => r.data);
-export const personalSignup = (payload) =>
-  client.post("/public/personal/signup", payload).then((r) => r.data);
+export const personalCheck = (username, server) =>
+  (server ? makeClient(server) : client).get("/public/personal/check", { params: { username } }).then((r) => r.data);
+export const personalSignup = (payload, server) =>
+  (server ? makeClient(server) : client).post("/public/personal/signup", payload).then((r) => r.data);
 export const personalDiscoverable = (enabled) =>
   withAuth((a) => client.post("/public/personal/discoverable", { enabled }, a).then((r) => r.data));
 export const directorySearch = (q) =>

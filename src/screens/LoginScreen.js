@@ -8,7 +8,7 @@ import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../lib/i18n";
 import { UI_LANGS } from "../lib/locales";
 import * as api from "../lib/api";
-import { loadServer } from "../lib/store";
+import { loadPreferredServer, loadServer } from "../lib/store";
 import { theme } from "../theme";
 
 export default function LoginScreen({ navigation }) {
@@ -20,12 +20,22 @@ export default function LoginScreen({ navigation }) {
   const [pasted, setPasted] = useState("");
   const [showServer, setShowServer] = useState(false);
   const [server, setServer] = useState(api.getServerUrl());
+  const [customServer, setCustomServer] = useState(false);
 
-  useEffect(() => { loadServer().then((s) => { if (s) setServer(s); }); }, []);
+  useEffect(() => {
+    Promise.all([loadPreferredServer(), loadServer()]).then(([preferred, previous]) => {
+      setServer(preferred || previous || api.getServerUrl());
+      setCustomServer(!!preferred);
+      setShowServer(!!preferred);
+    }).catch(() => {});
+  }, []);
 
   const doSignIn = async (obj) => {
     setBusy(true); setErr("");
-    try { await signIn(obj, { server }); }
+    try {
+      const target = customServer ? api.personalServerUrl(server) : server;
+      await signIn(obj, { server: target, overrideServer: customServer });
+    }
     catch (e) { setErr(e?.message || t("login.failed")); }
     finally { setBusy(false); }
   };
@@ -48,6 +58,11 @@ export default function LoginScreen({ navigation }) {
   const usePasted = async () => {
     try { await doSignIn(JSON.parse(pasted.trim())); }
     catch { setErr(t("login.badjson")); }
+  };
+
+  const openSignup = () => {
+    try { navigation.navigate("Signup", { server: api.personalServerUrl(server) }); }
+    catch (e) { setErr(e.message); setShowServer(true); }
   };
 
   return (
@@ -96,7 +111,7 @@ export default function LoginScreen({ navigation }) {
 
         <View style={styles.sep}><View style={styles.sepLine} /><Text style={styles.sepTxt}>{lang === "en" ? "OR" : "OPPURE"}</Text><View style={styles.sepLine} /></View>
 
-        <TouchableOpacity style={styles.secondaryBtn} onPress={() => navigation.navigate("Signup")} disabled={busy} testID="login-create-personal">
+        <TouchableOpacity style={styles.secondaryBtn} onPress={openSignup} disabled={busy} testID="login-create-personal">
           <Text style={styles.secondaryBtnText}>{lang === "en" ? "Create a personal account" : "Crea un account personale"}</Text>
         </TouchableOpacity>
         <Text style={styles.personalHint}>
@@ -117,7 +132,7 @@ export default function LoginScreen({ navigation }) {
               placeholder="https://server.tuazienda.it"
               placeholderTextColor={theme.textFaint}
               value={server}
-              onChangeText={(tx) => { setServer(tx); api.setServerUrl(tx); }}
+              onChangeText={(tx) => { setServer(tx); setCustomServer(true); }}
               autoCapitalize="none" autoCorrect={false} keyboardType="url"
               testID="login-server-input"
             />

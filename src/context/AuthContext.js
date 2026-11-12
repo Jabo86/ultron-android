@@ -56,10 +56,10 @@ export function AuthProvider({ children }) {
   }, [user, lockApp]);
 
   const signIn = useCallback(async (rawKf, opts = {}) => {
-    const { persist = true, server } = opts;
+    const { persist = true, server, overrideServer = false } = opts;
     const kf = parseKeyfile(rawKf);
     if (!kf) throw new Error("File chiave non valido o corrotto.");
-    const target = serverFromKeyfile(rawKf) || server || api.getServerUrl();
+    const target = (overrideServer && server) || serverFromKeyfile(rawKf) || server || api.getServerUrl();
     api.setServerUrl(target);
     await api.login({ lns: kf.lns, sk: kf.sk, pk: kf.pk });
     const kem = deriveKemKeypair(kf.sk);
@@ -84,7 +84,11 @@ export function AuthProvider({ children }) {
     setLocked(false); // fresh interactive login is already trusted
     // Primo accesso / cambio obbligatorio: come sul web, forza la generazione della chiave definitiva.
     try { const ctx = await api.meContext(kf.lns); setMustRotate(!!(ctx && ctx.must_rotate)); } catch { setMustRotate(false); }
-    if (persist) { await saveKeyfile(rawKf); await saveServer(api.getServerUrl()); }
+    if (persist) {
+      const savedKeyfile = overrideServer ? { ...rawKf, server: api.getServerUrl() } : rawKf;
+      await saveKeyfile(savedKeyfile);
+      await saveServer(api.getServerUrl());
+    }
     // BLOCCO A: registra questo dispositivo e mantiene il lotto di chiavi usa-e-getta.
     devices.ensureDevice().catch(() => {});
     // RUBRICA CIECA: la rubrica passa sul telefono (cifrata) e al server restano solo i

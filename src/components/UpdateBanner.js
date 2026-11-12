@@ -9,9 +9,9 @@ let pending;
 let prepared;
 let lastCheck = 0;
 
-function checkAndPrepare() {
+export function checkAndPrepare({ force = false } = {}) {
   if (pending) return pending;
-  if (Date.now() - lastCheck < 15 * 60_000) return Promise.resolve(prepared);
+  if (!force && Date.now() - lastCheck < 15 * 60_000) return Promise.resolve(prepared);
   lastCheck = Date.now();
   pending = (async () => {
     const manifest = await checkUpdate();
@@ -20,8 +20,9 @@ function checkAndPrepare() {
       prepared = { ...manifest, file: await prepareUpdate(manifest) };
     }
     return prepared;
-  })().catch(() => {
+  })().catch((error) => {
     lastCheck = Date.now() - 14 * 60_000;
+    if (force) throw error;
     return prepared;
   }).finally(() => { pending = null; });
   return pending;
@@ -40,7 +41,7 @@ export function UpdateBanner() {
     let alive = true;
     const refresh = () => {
       if (AppState.currentState === "active") {
-        checkAndPrepare().then((result) => { if (alive) setRelease(result); });
+        checkAndPrepare().then((result) => { if (alive) setRelease(result); }).catch(() => {});
       }
     };
     refresh();
