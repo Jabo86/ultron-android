@@ -10,7 +10,7 @@ export default function ThreatBanner({ result, lang = "it", style, context = "Pu
   useEffect(() => {
     if (active) {
       recordThreat({ level: result.level, reasons: result.reasons, context });
-      // Vibrazione di allerta quando lo Scudo blocca una minaccia grave.
+      // Vibrazione di allerta quando lo Scudo rileva una minaccia grave.
       if (result.level === "danger") { try { Vibration.vibrate([0, 220, 90, 220]); } catch { /* ignore */ } }
     }
   }, [active, result?.level, (result?.reasons || []).join("|"), context]);
@@ -19,7 +19,7 @@ export default function ThreatBanner({ result, lang = "it", style, context = "Pu
   const c = danger ? "#FF4D5E" : "#50C878";
   const bg = danger ? "rgba(255,77,94,0.12)" : "rgba(80,200,120,0.12)";
   const title = danger
-    ? (lang === "en" ? "Danger — threat blocked" : "Pericolo — minaccia bloccata")
+    ? (lang === "en" ? "Danger — threat detected" : "Pericolo — minaccia rilevata")
     : (lang === "en" ? "Warning — suspicious content" : "Attenzione — contenuto sospetto");
   return (
     <View style={[styles.wrap, { borderColor: c, backgroundColor: bg }, style]} testID={danger ? "threat-danger" : "threat-warn"}>

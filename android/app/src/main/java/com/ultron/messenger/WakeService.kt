@@ -205,6 +205,10 @@ class WakeService : Service() {
     }
   }
 
+  override fun onTimeout(startId: Int, fgsType: Int) {
+    stopSelf()
+  }
+
   override fun onDestroy() {
     running = false
     worker?.interrupt()

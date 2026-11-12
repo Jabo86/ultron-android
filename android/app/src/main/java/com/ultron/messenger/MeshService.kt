@@ -367,6 +367,10 @@ class MeshService : Service() {
     } catch (e: Exception) { }
   }
 
+  override fun onTimeout(startId: Int, fgsType: Int) {
+    stopSelf()
+  }
+
   override fun onDestroy() {
     running = false
     rx?.interrupt(); tx?.interrupt(); keeper?.interrupt()
