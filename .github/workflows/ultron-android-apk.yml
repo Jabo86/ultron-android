@@ -1,7 +1,7 @@
 name: ULTRON Android APK (verification)
 on:
   push:
-    branches: [ultron/android-migration]
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
