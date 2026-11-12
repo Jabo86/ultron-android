@@ -16,7 +16,7 @@ import { saveVerifiedSas, loadVerifiedSas } from "../lib/store";
 import { loadRingtone, loadRingVolume, loadVibMode } from "../lib/store";
 const VIB_PATTERNS = { standard: [0, 700, 900, 700], short: [0, 400, 300, 400], long: [0, 1200, 600, 1200] };
 const RINGTONES = { classic: require("../../assets/ringtone.wav"), chime: require("../../assets/ring_chime.wav"), beep: require("../../assets/ring_beep.wav"), digital: require("../../assets/ring_digital.wav"), marimba: require("../../assets/ring_marimba.wav"), pulse: require("../../assets/ring_pulse.wav") };
-import { iceConfig } from "../config";
+import { DEFAULT_SERVER, iceConfig } from "../config";
 import { loadAllowDirect } from "../lib/store";
 import { useTint } from "../lib/appearance";
 import { theme } from "../theme";
@@ -215,6 +215,11 @@ export default function CallScreen({ route, navigation }) {
 
   useEffect(() => {
     if (!accepted) return;
+    if (api.getServerUrl() === DEFAULT_SERVER) {
+      setErrMsg(lang === "en" ? "Calling is unavailable on this server." : "Le chiamate su questo server non sono ancora disponibili.");
+      setStatus("error");
+      return;
+    }
     let mounted = true;
     (async () => {
       try {

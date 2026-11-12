@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { withSystemActivity } from "../lib/lockGuard";
 import { ActivityIndicator, Image, Pressable, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { pickAvatarDataUrl } from "../lib/avatar";
 import { useAuth } from "../context/AuthContext";
@@ -61,7 +62,7 @@ function EditProfile({ user, it }) {
   const pick = async () => {
     setBusy(true);
     try {
-      const result = await pickAvatarDataUrl({ allowOriginal: false });
+      const result = await withSystemActivity(() => pickAvatarDataUrl({ allowOriginal: false }));
       if (result.denied || result.error || (result.dataUrl && !validAvatar(result.dataUrl))) {
         setMessage(it ? "Foto non disponibile. Controlla i permessi o scegli un’immagine più piccola." : "Photo unavailable. Check permissions or choose a smaller image.");
       } else if (result.dataUrl) change("avatar", result.dataUrl);

@@ -12,6 +12,7 @@ import { UpdateBanner } from "../components/UpdateBanner";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../lib/i18n";
 import * as api from "../lib/api";
+import { DEFAULT_SERVER } from "../config";
 import { SkeletonList } from "../components/Skeleton";
 import CanaryReminder from "../components/CanaryReminder";
 import { useTint } from "../lib/appearance";
@@ -109,7 +110,7 @@ export default function ConversationsScreen({ navigation }) {
   const ridCache = useRef({ key: "", map: {} });
   useActivePoll(async () => {
       try {
-        if (!user?.dh?.secretKey || !user?.kem?.secretKey || !user?.lns || !contacts.length) return;
+        if (api.getServerUrl() === DEFAULT_SERVER || !user?.dh?.secretKey || !user?.kem?.secretKey || !user?.lns || !contacts.length) return;
         const need = contacts.map((c) => c.lns).filter((l) => l && !dhCache.current[l]);
         if (need.length) { const m = await api.pulseDhKeys(need); Object.assign(dhCache.current, m || {}); }
         const eps = anonEpochs();

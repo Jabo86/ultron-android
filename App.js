@@ -77,6 +77,7 @@ import { useLook } from "./src/lib/appearance";
 import { alpha } from "./src/components/Surface";
 import { loadAppLock, loadConsent, saveConsent, CONSENT_VERSION } from "./src/lib/store";
 import * as api from "./src/lib/api";
+import { DEFAULT_SERVER } from "./src/config";
 import ErrorBoundary from "./src/components/ErrorBoundary";
 import { I18nProvider, useI18n } from "./src/lib/i18n";
 import { loadThreatList } from "./src/lib/threatList";
@@ -257,7 +258,7 @@ function Root() {
   const contactSet = useRef([]);
   const contactsAt = useRef(0);
   useEffect(() => {
-    if (!user?.dh?.secretKey || !user?.kem?.secretKey) return;
+    if (api.getServerUrl() === DEFAULT_SERVER || !user?.dh?.secretKey || !user?.kem?.secretKey) return;
     const myLns = user.lns;
     const refreshContacts = async () => {
       try {

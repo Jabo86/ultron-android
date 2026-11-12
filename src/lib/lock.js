@@ -279,13 +279,21 @@ export function setBlobSoon(name, value) {
   blobTimer = setTimeout(() => { blobTimer = null; flushBlobs(); }, 250);
 }
 
-export async function flushBlobs() {
-  if (blobTimer) { clearTimeout(blobTimer); blobTimer = null; }
-  const items = Array.from(blobPending.entries());
-  blobPending.clear();
-  for (const it of items) {
-    try { await writeBlob(it[0], it[1]); } catch { blobPending.set(it[0], it[1]); }
-  }
+let activeFlush = Promise.resolve();
+
+export function flushBlobs({ strict = false } = {}) {
+  const flush = activeFlush.then(async () => {
+    if (blobTimer) { clearTimeout(blobTimer); blobTimer = null; }
+    const items = Array.from(blobPending.entries());
+    blobPending.clear();
+    for (const [name, value] of items) {
+      try { await writeBlob(name, value); }
+      catch { if (!blobPending.has(name)) blobPending.set(name, value); }
+    }
+    if (strict && blobPending.size) throw new Error("Dati locali in attesa di salvataggio. Riprova l’aggiornamento.");
+  });
+  activeFlush = flush.catch(() => {});
+  return flush;
 }
 
 export async function getBlob(name) {

@@ -5,6 +5,8 @@
 import * as FileSystem from "expo-file-system/legacy";
 import * as IntentLauncher from "expo-intent-launcher";
 import { NativeModules, Platform } from "react-native";
+import { flushBlobs } from "./lock";
+import { withSystemActivity } from "./lockGuard";
 import { VENDOR_PUB } from "./vendorKey";
 import { verifyManifest, fileSha256 } from "./apkVerify";
 
@@ -72,6 +74,11 @@ export async function prepareUpdate(m, onProgress) {
 }
 
 export async function installUpdate(uri) {
+  await flushBlobs({ strict: true });
+  return withSystemActivity(() => openInstaller(uri));
+}
+
+async function openInstaller(uri) {
   const canInstall = NativeModules.LatticeDeviceInfo?.canInstallUpdates;
   if (canInstall && !(await canInstall())) {
     await IntentLauncher.startActivityAsync("android.settings.MANAGE_UNKNOWN_APP_SOURCES", {

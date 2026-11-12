@@ -7,11 +7,13 @@ import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../lib/i18n";
 import * as api from "../lib/api";
-import { suppressLock } from "../lib/lockGuard";
+import { withSystemActivity } from "../lib/lockGuard";
 import {
   generateGroupKey, wrapGroupKeyFor, unwrapGroupKey, encryptWithGroupKey, decryptWithGroupKey,
   bytesToHex, base64ToBytes, bytesToBase64, encryptFileBytes, decryptFileBytes,
 } from "../lib/crypto";
+import { shrinkPhoto } from "../lib/imageOpt";
+import { DEFAULT_SERVER } from "../config";
 import { theme } from "../theme";
 
 // Stato/Storie E2EE 24h — visibili a contatti + membri dei gruppi. Cifrate con chiave di gruppo
@@ -19,6 +21,7 @@ import { theme } from "../theme";
 export default function StatusScreen() {
   const { user } = useAuth();
   const { lang } = useI18n();
+  const hosted = api.getServerUrl() === DEFAULT_SERVER;
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -26,6 +29,7 @@ export default function StatusScreen() {
   const [text, setText] = useState("");
   const [img, setImg] = useState(null); // {uri, base64, mime}
   const [busy, setBusy] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [imgCache, setImgCache] = useState({}); // status_id -> data uri
 
   const load = useCallback(async () => {
@@ -55,7 +59,7 @@ export default function StatusScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const loadImg = useCallback(async (s) => {
-    if (imgCache[s.status_id] || !s.body?.img) return;
+    if (imgCache[s.status_id] || !s.body?.img?.id) return;
     try {
       const bytes = await api.blobDownload(s.body.img.id);
       const dec = decryptFileBytes(bytes, s.body.img.key, s.body.img.iv);
@@ -66,11 +70,16 @@ export default function StatusScreen() {
   useEffect(() => { items.forEach((s) => { if (s.body?.img) loadImg(s); }); }, [items, loadImg]);
 
   const pickImg = async () => {
-    suppressLock();
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) return;
-    const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.6, base64: true });
-    if (!r.canceled && r.assets?.[0]?.base64) setImg({ base64: r.assets[0].base64, uri: r.assets[0].uri, mime: r.assets[0].mimeType || "image/jpeg" });
+    setPicking(true);
+    try {
+      const r = await withSystemActivity(() => ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"] }));
+      if (r.canceled || !r.assets?.[0]?.uri) return;
+      const photo = await shrinkPhoto(r.assets[0].uri, 300 * 1024);
+      if (!photo?.base64 || photo.base64.length > 409600) throw new Error("invalid photo");
+      setImg({ base64: photo.base64, uri: photo.uri, mime: "image/jpeg" });
+    } catch {
+      Alert.alert("ULTRON", lang === "en" ? "Could not open or resize the photo." : "Impossibile aprire o ridurre la foto.");
+    } finally { setPicking(false); }
   };
 
   const publish = async () => {
@@ -80,7 +89,9 @@ export default function StatusScreen() {
       const audience = await api.statusAudience();
       const gk = generateGroupKey();
       const payload = { t: text.trim(), img: null };
-      if (img) {
+      if (img && hosted) {
+        payload.img = { b64: img.base64, mime: img.mime };
+      } else if (img) {
         const bytes = base64ToBytes(img.base64);
         const enc = encryptFileBytes(bytes);
         const { id } = await api.blobUpload(enc.ciphertext);
@@ -96,7 +107,13 @@ export default function StatusScreen() {
       await api.statusCreate({ ct, iv, wraps, has_image: !!payload.img });
       setText(""); setImg(null); setComposing(false);
       await load();
-    } catch (e) { Alert.alert("Stato", api.apiErr(e)); }
+    } catch (e) {
+      const unsupported = e?.response?.status === 404;
+      Alert.alert("ULTRON", unsupported
+        ? (lang === "en" ? "This server does not support publishing statuses yet. Your draft is still here."
+          : "Il server non supporta ancora la pubblicazione degli stati. La bozza è ancora qui.")
+        : api.apiErr(e));
+    }
     finally { setBusy(false); }
   };
 
@@ -130,12 +147,14 @@ export default function StatusScreen() {
             value={text} onChangeText={setText} multiline selectionColor={theme.primary} testID="status-input" />
           {img && <Image source={{ uri: img.uri }} style={styles.preview} />}
           <View style={styles.composerRow}>
-            <TouchableOpacity onPress={pickImg} style={styles.imgBtn} testID="status-pick-img"><Ionicons name="image-outline" size={20} color={theme.primary} /></TouchableOpacity>
-            <TouchableOpacity onPress={publish} disabled={busy} style={styles.pubBtn} testID="status-publish">
+            <TouchableOpacity onPress={pickImg} disabled={picking || busy} style={styles.imgBtn} testID="status-pick-img"><Ionicons name="image-outline" size={20} color={theme.primary} /></TouchableOpacity>
+            <TouchableOpacity onPress={publish} disabled={busy || picking} style={styles.pubBtn} testID="status-publish">
               {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.pubTxt}>{lang === "en" ? "Publish" : "Pubblica"}</Text>}
             </TouchableOpacity>
           </View>
-          <Text style={styles.hint}>🔒 {lang === "en" ? "E2EE · visible to contacts and group members · auto-deletes in 24h" : "Cifrato E2EE · visibile a contatti e membri dei gruppi · si elimina in 24h"}</Text>
+          <Text style={styles.hint}>🔒 {hosted
+            ? (lang === "en" ? "Encrypted · shared with mutual contacts · expires in 24h" : "Cifrato · condiviso con i contatti reciproci · scade in 24 ore")
+            : (lang === "en" ? "Encrypted · audience selected by the server" : "Cifrato · destinatari selezionati dal server")}</Text>
         </View>
       )}
 
@@ -153,7 +172,9 @@ export default function StatusScreen() {
                 {s.mine && <TouchableOpacity onPress={() => del(s)} hitSlop={8} testID="status-delete"><Ionicons name="trash-outline" size={16} color={theme.textDim} /></TouchableOpacity>}
               </View>
               {!!s.body?.t && <Text style={styles.body}>{s.body.t}</Text>}
-              {s.body?.img && (imgCache[s.status_id]
+              {s.body?.img?.b64 ? (
+                <Image source={{ uri: "data:image/jpeg;base64," + s.body.img.b64 }} style={styles.cardImg} resizeMode="cover" />
+              ) : s.body?.img?.id && (imgCache[s.status_id]
                 ? <Image source={{ uri: imgCache[s.status_id] }} style={styles.cardImg} resizeMode="cover" />
                 : <View style={[styles.cardImg, styles.imgLoad]}><ActivityIndicator color={theme.primary} /></View>)}
               <View style={styles.reactBar}>

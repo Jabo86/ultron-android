@@ -10,6 +10,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../lib/i18n";
 import * as api from "../lib/api";
+import { DEFAULT_SERVER } from "../config";
 import { theme } from "../theme";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { loadAutoTranslate, loadTranslateTarget } from "../lib/store";
@@ -458,11 +459,15 @@ export default function ChannelDetailScreen({ route, navigation }) {
   const toggleTr = (id) => setTranslations((m) => ({ ...m, [id]: { ...m[id], show: !m[id].show } }));
   const [gActive, setGActive] = useState(null);
   const startGcall = async (video) => {
+    if (api.getServerUrl() === DEFAULT_SERVER) {
+      setErr(lang === "en" ? "Group calls are unavailable on this server." : "Le chiamate di gruppo su questo server non sono ancora disponibili.");
+      return;
+    }
     try { const r = await api.gcallStart(chan_id, video); navigation.navigate("GroupCall", { room_id: r.room_id, video: r.video, chan_name: detail?.name || name }); }
     catch (e) { setErr(api.apiErr(e)); }
   };
   useEffect(() => {
-    if (!chan_id) return;
+    if (!chan_id || api.getServerUrl() === DEFAULT_SERVER) return;
     let on = true;
     const chk = async () => { try { const r = await api.gcallActive(chan_id); if (on) setGActive(r && r.room ? r.room : null); } catch {} };
     chk(); const iv = setInterval(chk, 8000); return () => { on = false; clearInterval(iv); };

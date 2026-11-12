@@ -18,7 +18,7 @@ import { useI18n } from "../lib/i18n";
 import { display as displayInfo, fpsLine } from "../lib/display";
 import { useAuth } from "../context/AuthContext";
 import { installUpdate, updatesConfigured } from "../lib/update";
-import { checkAndPrepare } from "../components/UpdateBanner";
+import { checkAndPrepare, UpdateProgress } from "../components/UpdateBanner";
 import { suppressLock } from "../lib/lockGuard";
 import * as wake from "../lib/wake";
 import * as api from "../lib/api";
@@ -62,6 +62,7 @@ export default function SettingsScreen({ navigation }) {
   const [wakeBusy, setWakeBusy] = useState(false);
   const [upBusy, setUpBusy] = useState(false);
   const [upMsg, setUpMsg] = useState("");
+  const [upProgress, setUpProgress] = useState(null);
   // Controllo manuale: se c'è una versione più nuova la scarica e apre l'installazione
   // in sovrascrittura (nessuna disinstallazione).
   const doCheckUpdate = async () => {
@@ -71,18 +72,13 @@ export default function SettingsScreen({ navigation }) {
         setUpMsg(en ? "This test build needs the official version installed first." : "Questa build di prova richiede prima l’installazione della versione ufficiale.");
         return;
       }
-      const release = await checkAndPrepare((value, phase) => {
-        const label = phase === "verify"
-          ? (en ? "Verifying APK" : "Verifica APK")
-          : (en ? "Downloading" : "Scaricamento");
-        setUpMsg(label + " · " + Math.floor(value * 100) + "%");
-      });
+      const release = await checkAndPrepare((value, phase) => setUpProgress({ value, phase }));
       if (!release) {
         setUpMsg(en ? "No update available." : "Nessun aggiornamento disponibile.");
         return;
       }
       setUpMsg(en ? "Confirm the update in Android." : "Conferma l’aggiornamento in Android.");
-      suppressLock();
+      setUpProgress({ value: 1, phase: "ready" });
       await installUpdate(release.file);
     } catch (e) {
       if (e?.message === "ULTRON_RELEASE_UNAVAILABLE") {
@@ -92,7 +88,7 @@ export default function SettingsScreen({ navigation }) {
       } else {
         setUpMsg(String(e?.message || t("sm.007")));
       }
-    } finally { setUpBusy(false); }
+    } finally { setUpBusy(false); setUpProgress(null); }
   };
   const shareCard = async () => {
     const me = (user?.lns || "").toLowerCase();
@@ -785,6 +781,7 @@ export default function SettingsScreen({ navigation }) {
         <Ionicons name="cloud-download-outline" size={16} color={tint} />
         <View style={{ flex: 1 }}>
           <Text style={styles.infoTitle}>{t("sm.101")}</Text>
+          <UpdateProgress progress={upProgress} english={en} />
           <Text style={styles.infoText} accessibilityLiveRegion="polite" testID="settings-update-info">
             {upMsg || (updatesConfigured
               ? (en ? "Checks the official release, its signature and the APK hash." : "Controlla la versione ufficiale, la firma e l’impronta dell’APK.")

@@ -35,7 +35,7 @@ import { analyzeMessage } from "../lib/threatEngine";
 import { useI18n } from "../lib/i18n";
 import { loadAutoTranslate, loadTranslateTarget } from "../lib/store";
 import { detectLang, langFlag } from "../lib/detectLang";
-import { suppressLock } from "../lib/lockGuard";
+import { suppressLock, withSystemActivity } from "../lib/lockGuard";
 import { verifyState } from "../lib/verify";
 import { archiveForConv } from "../lib/backup";
 import { usePoll } from "../lib/usePoll";
@@ -672,11 +672,10 @@ export default function ChatScreen({ route, navigation }) {
     if (!r.canceled && r.assets?.[0]) sendAsset(r.assets[0]);
   };
   const pickMedia = async () => {
-    suppressLock();
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { setErr(t("chat.attach.denied")); return; }
-    const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images", "videos"], quality: 0.6 });
-    if (!r.canceled && r.assets?.[0]) sendAsset(r.assets[0]);
+    try {
+      const r = await withSystemActivity(() => ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images", "videos"], quality: 0.6 }));
+      if (!r.canceled && r.assets?.[0]) sendAsset(r.assets[0]);
+    } catch (e) { setErr(api.apiErr(e)); }
   };
   // File generico (documenti, qualsiasi tipo) via DocumentPicker, cifrato E2EE come gli altri allegati.
   const attachFile = async () => {
