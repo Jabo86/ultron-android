@@ -691,7 +691,7 @@ export default function SettingsScreen({ navigation }) {
         <View style={styles.modeBox} testID="mesh-mode">
           <Text style={styles.modeTitle}>{t("sm.046")}</Text>
           <Text style={styles.modeHint}>
-            {t("sm.047")}
+            {en ? "Experimental mesh mode. The app can still contact the server or use a bridge." : "Modalità mesh sperimentale. L’app può ancora usare il server o un ponte."}
           </Text>
           <View style={styles.modeRow}>
             <TouchableOpacity
@@ -1009,17 +1009,19 @@ export default function SettingsScreen({ navigation }) {
       {/* GDPR */}
       <Text style={styles.section}>{t("settings.section.gdpr")}</Text>
       <View style={styles.card}>
-        <Row icon="download-outline" label={t("settings.export")} hint={t("settings.export.hint")} onPress={exporting ? null : doExport}
+        <Row icon="download-outline" label={t("settings.export")} hint={en ? "Request a copy from your server. Availability depends on the operator." : "Richiedi una copia al tuo server. La disponibilità dipende dal gestore."} onPress={exporting ? null : doExport}
           right={exporting ? <ActivityIndicator size="small" color={tint} /> : <Ionicons name="chevron-forward-outline" size={18} color={theme.textFaint} />} testID="settings-export" />
         <View style={styles.divider} />
-        <Row icon="trash-outline" label={t("settings.delete")} hint={t("settings.delete.hint")} onPress={deleting ? null : doDelete} danger
+        <Row icon="trash-outline" label={t("settings.delete")} hint={en ? "Request account deletion from your server." : "Richiedi al tuo server l’eliminazione dell’account."} onPress={deleting ? null : doDelete} danger
           right={deleting ? <ActivityIndicator size="small" color={theme.danger} /> : <Ionicons name="chevron-forward-outline" size={18} color={theme.danger} />} testID="settings-delete" />
       </View>
       <View style={styles.infoBox}>
         <Ionicons name="lock-closed-outline" size={16} color={theme.accent} />
         <View style={{ flex: 1 }}>
           <Text style={styles.infoTitle}>{t("settings.dataInfoTitle")}</Text>
-          <Text style={styles.infoText}>{t("settings.dataInfo")}</Text>
+          <Text style={styles.infoText}>{en
+            ? "Conversation envelopes and attachments can be encrypted on the device. Availability and metadata depend on the communication path. See Security and audit."
+            : "Buste delle conversazioni e allegati possono essere cifrati sul dispositivo. Disponibilità e metadati dipendono dal percorso di comunicazione. Vedi Sicurezza e audit."}</Text>
         </View>
       </View>
 
