@@ -63,7 +63,7 @@ export default function LoginScreen({ navigation }) {
 
         <View style={styles.brand}>
           <Image source={require("../../assets/ultron-logo.png")} style={styles.logo} resizeMode="contain" />
-          <Text style={styles.brandTitle}>Lattice</Text>
+          <Text style={styles.brandTitle}>ULTRON</Text>
           <Text style={styles.brandSub}>SOVEREIGN MESSAGING</Text>
         </View>
 

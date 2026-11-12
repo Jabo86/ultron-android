@@ -271,7 +271,7 @@ export default function ConversationsScreen({ navigation }) {
           <Image source={require("../../assets/icon.png")} style={styles.logo} resizeMode="contain" />
           <View>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Text style={styles.hTitle}>Lattice</Text>
+              <Text style={styles.hTitle}>ULTRON</Text>
               {totalUnread > 0 && (
                 <View style={styles.totalBadge} testID="conv-total-unread"><Text style={styles.totalBadgeTxt}>{totalUnread}</Text></View>
               )}
