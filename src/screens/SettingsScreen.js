@@ -1,7 +1,7 @@
 import { isOwner as canaryIsOwner } from "../lib/canary";
 import React, { useState, useEffect, useMemo } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Vibration, ActivityIndicator, Alert, Linking, Platform, Modal, TextInput, Share,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, ActivityIndicator, Alert, Linking, Platform, Modal, TextInput, Share,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as appearance from "../lib/appearance";
@@ -34,11 +34,7 @@ import * as meshRuntime from "../lib/mesh/runtime";
 import * as meshRadio from "../lib/mesh/radio";
 import * as meshChat from "../lib/meshchat";
 import * as decdiag from "../lib/decdiag";
-import { saveAllowDirect, loadAllowDirect, saveAppLock, loadAppLock, loadPreferredServer, savePreferredServer, loadKeyfile, saveAutoTranslate, loadAutoTranslate, saveTranslateTarget, loadTranslateTarget, saveRingtone, loadRingtone, saveRingVolume, loadRingVolume, saveVibMode, loadVibMode } from "../lib/store";
-import { createAudioPlayer } from "expo-audio";
-const RINGTONES = { classic: require("../../assets/ringtone.wav"), chime: require("../../assets/ring_chime.wav"), beep: require("../../assets/ring_beep.wav"), digital: require("../../assets/ring_digital.wav"), marimba: require("../../assets/ring_marimba.wav"), pulse: require("../../assets/ring_pulse.wav") };
-const RINGTONE_OPTS = [["classic", "Classica"], ["chime", "Chime"], ["beep", "Beep"], ["digital", "Digitale"], ["marimba", "Marimba"], ["pulse", "Pulsazione"]];
-const VIB_PATTERNS = { standard: [0, 700, 900, 700], short: [0, 400, 300, 400], long: [0, 1200, 600, 1200] };
+import { saveAllowDirect, loadAllowDirect, saveAppLock, loadAppLock, loadPreferredServer, savePreferredServer, loadKeyfile, saveAutoTranslate, loadAutoTranslate, saveTranslateTarget, loadTranslateTarget } from "../lib/store";
 import { TRANSLATE_LANGS, langName } from "../lib/langs";
 import { getThreatLog, clearThreatLog, getThreatCount } from "../lib/threatLog";
 
@@ -217,9 +213,6 @@ export default function SettingsScreen({ navigation }) {
   const [appLock, setAppLock] = useState(true);
   const [pushOk, setPushOk] = useState(null);
   const [pushBusy, setPushBusy] = useState(false);
-  const [ringtone, setRingtone] = useState("classic");
-  const [ringVol, setRingVol] = useState(1);
-  const [vibMode, setVibMode] = useState("standard");
   const [autoTr, setAutoTr] = useState(false);
   const [trTarget, setTrTarget] = useState(null);
   const [showTrLang, setShowTrLang] = useState(false);
@@ -324,9 +317,6 @@ export default function SettingsScreen({ navigation }) {
     (async () => {
       setSecure(await isDeviceSecure());
       const al = await loadAppLock(); setAppLock(al !== false);
-      const rk = await loadRingtone(); setRingtone(rk);
-      const rv = await loadRingVolume(); setRingVol(rv);
-      const vm = await loadVibMode(); setVibMode(vm);
       setAutoTr(await loadAutoTranslate());
       setTrTarget(await loadTranslateTarget());
     })();
