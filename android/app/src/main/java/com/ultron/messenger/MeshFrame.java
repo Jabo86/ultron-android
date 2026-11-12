@@ -1,4 +1,4 @@
-package com.latticenetwork.pulse;
+package com.ultron.messenger;
 
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;

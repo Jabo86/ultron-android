@@ -5,7 +5,7 @@ export default {
   "rubrica.title": "पता-पुस्तिका", "rubrica.subtitle": "आपकी कंपनी के सहकर्मी और सहेजे गए संपर्क",
   "rubrica.searchPlaceholder": "नाम, LNS या कंपनी से खोजें…", "rubrica.addExternal": "{lns} जोड़ें",
   "rubrica.empty": "कोई संपर्क नहीं मिला।", "rubrica.external": "बाहरी", "rubrica.invite": "आमंत्रित करें",
-  "rubrica.inviteMsg": "Lattice पर मुझसे जुड़ें — हमारी कंपनी की पोस्ट-क्वांटम एन्क्रिप्टेड मैसेजिंग और नोटरीकृत डाक। ऐप डाउनलोड करें: https://lattice-network.it/downloads/lattice-pulse.apk",
+  "rubrica.inviteMsg": "ULTRON पर मुझसे संपर्क करें।",
   "search.placeholder": "सहकर्मी या डाक खोजें…", "search.hint": "सहकर्मी और नोटरीकृत डाक खोजने के लिए लिखें",
   "search.empty": "कोई परिणाम नहीं", "search.colleagues": "सहकर्मी", "search.mails": "नोटरीकृत डाक",
   "channels.title": "समूह", "channels.new": "नया समूह", "channels.empty": "कोई चैनल नहीं",

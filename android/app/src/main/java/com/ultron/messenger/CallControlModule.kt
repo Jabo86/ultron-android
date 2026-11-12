@@ -1,4 +1,4 @@
-package com.latticenetwork.pulse
+package com.ultron.messenger
 
 import android.Manifest
 import android.content.Context
@@ -36,7 +36,7 @@ class CallControlModule(private val ctx: ReactApplicationContext) : ReactContext
 
   @ReactMethod
   fun register(promise: Promise) {
-    promise.resolve(LatticeConnectionService.register(ctx))
+    promise.resolve(UltronConnectionService.register(ctx))
   }
 
   /// Chiamata in USCITA: la dichiariamo al sistema PRIMA di aprire il microfono.
@@ -44,10 +44,10 @@ class CallControlModule(private val ctx: ReactApplicationContext) : ReactContext
   fun startOutgoing(label: String, promise: Promise) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || !hasPerm()) { promise.resolve(false); return }
     try {
-      LatticeConnectionService.register(ctx)
+      UltronConnectionService.register(ctx)
       val tm = ctx.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
       val extras = Bundle()
-      extras.putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, LatticeConnectionService.handle(ctx))
+      extras.putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, UltronConnectionService.handle(ctx))
       extras.putBoolean(TelecomManager.EXTRA_START_CALL_WITH_VIDEO_STATE, false)
       tm.placeCall(uriFor(label), extras)
       promise.resolve(true)
@@ -60,35 +60,35 @@ class CallControlModule(private val ctx: ReactApplicationContext) : ReactContext
   fun reportIncoming(label: String, promise: Promise) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || !hasPerm()) { promise.resolve(false); return }
     try {
-      LatticeConnectionService.register(ctx)
+      UltronConnectionService.register(ctx)
       val tm = ctx.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
       val extras = Bundle()
       extras.putParcelable(TelecomManager.EXTRA_INCOMING_CALL_ADDRESS, uriFor(label))
-      tm.addNewIncomingCall(LatticeConnectionService.handle(ctx), extras)
+      tm.addNewIncomingCall(UltronConnectionService.handle(ctx), extras)
       promise.resolve(true)
     } catch (e: Throwable) { promise.resolve(false) }
   }
 
   @ReactMethod
   fun setActive(promise: Promise) {
-    try { LatticeConnectionService.current?.setActive(); promise.resolve(true) }
+    try { UltronConnectionService.current?.setActive(); promise.resolve(true) }
     catch (e: Throwable) { promise.resolve(false) }
   }
 
   @ReactMethod
   fun end(promise: Promise) {
     try {
-      val c = LatticeConnectionService.current
+      val c = UltronConnectionService.current
       c?.setDisconnected(DisconnectCause(DisconnectCause.LOCAL))
       c?.destroy()
-      LatticeConnectionService.current = null
+      UltronConnectionService.current = null
       promise.resolve(true)
     } catch (e: Throwable) { promise.resolve(false) }
   }
 
   @ReactMethod
   fun state(promise: Promise) {
-    promise.resolve(try { LatticeConnectionService.state() } catch (e: Throwable) { "none" })
+    promise.resolve(try { UltronConnectionService.state() } catch (e: Throwable) { "none" })
   }
 
   // Gli eventi arrivano dal thread del telecom: `addListener`/`removeListeners` servono

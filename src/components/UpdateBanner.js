@@ -44,7 +44,7 @@ export const UpdateBanner = () => {  const { lang } = useI18n();
       await downloadAndInstall(info, (p, phase) => { setPct(p); setPhase(phase || "download"); });
       suppressLock();
     } catch (e) {
-      setErr(en ? "Update failed: open lattice-network.it/downloads to install it manually." : "Aggiornamento non riuscito: apri lattice-network.it/downloads per installarlo a mano.");
+      setErr(en ? "Update failed." : "Aggiornamento non riuscito.");
     } finally { setBusy(false); }
   };
 

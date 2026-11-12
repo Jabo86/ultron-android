@@ -1,4 +1,5 @@
 import * as FileSystem from "expo-file-system/legacy";
+import { DEFAULT_SERVER } from "../config";
 import { setThreatDomains } from "./threatEngine";
 
 // Feed gratuito di domini malevoli (URLhaus) aggiornato sul server.
@@ -6,7 +7,7 @@ import { setThreatDomains } from "./threatEngine";
 // `?t=` che impediva qualsiasi cache) rallentava l'intera app per secondi.
 // Ora resta sul telefono, si riscarica al massimo una volta al giorno e viene caricata
 // dopo che l'app è già utilizzabile. La protezione è identica.
-const THREAT_LIST_URL = "https://lattice-network.it/downloads/threats.json";
+const THREAT_LIST_URL = DEFAULT_SERVER + "/downloads/threats.json";
 const FILE = FileSystem.documentDirectory + "threats.json";
 const MAX_AGE_MS = 24 * 3600 * 1000;
 

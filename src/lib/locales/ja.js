@@ -5,7 +5,7 @@ export default {
   "rubrica.title": "アドレス帳", "rubrica.subtitle": "社内の同僚と保存した連絡先",
   "rubrica.searchPlaceholder": "名前・LNS・会社で検索…", "rubrica.addExternal": "{lns} を追加",
   "rubrica.empty": "連絡先が見つかりません。", "rubrica.external": "社外", "rubrica.invite": "招待",
-  "rubrica.inviteMsg": "Lattice で連絡しましょう。当社のポスト量子暗号メッセージと認証郵便です。アプリ: https://lattice-network.it/downloads/lattice-pulse.apk",
+  "rubrica.inviteMsg": "ULTRON で連絡してください。",
   "search.placeholder": "同僚または郵便を検索…", "search.hint": "入力して同僚と認証郵便を検索",
   "search.empty": "結果なし", "search.colleagues": "同僚", "search.mails": "認証郵便",
   "channels.title": "グループ", "channels.new": "新しいグループ", "channels.empty": "チャンネルなし",

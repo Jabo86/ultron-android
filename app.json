@@ -10,11 +10,11 @@
     "backgroundColor": "#000000",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.latticenetwork.pulse",
+      "bundleIdentifier": "com.ultron.messenger",
       "infoPlist": {
-        "NSFaceIDUsageDescription": "Lattice usa il riconoscimento biometrico per sbloccare le tue conversazioni cifrate.",
-        "NSPhotoLibraryUsageDescription": "Lattice accede alle foto per allegarle in chat (cifrate end-to-end).",
-        "NSPhotoLibraryAddUsageDescription": "Lattice salva nella tua galleria le foto ricevute in chat."
+        "NSFaceIDUsageDescription": "ULTRON usa il riconoscimento biometrico per sbloccare le tue conversazioni cifrate.",
+        "NSPhotoLibraryUsageDescription": "ULTRON accede alle foto per allegarle in chat (cifrate end-to-end).",
+        "NSPhotoLibraryAddUsageDescription": "ULTRON salva nella tua galleria le foto ricevute in chat."
       }
     },
     "android": {

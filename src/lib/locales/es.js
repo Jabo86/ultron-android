@@ -6,7 +6,7 @@ export default {
   "rubrica.searchPlaceholder": "Buscar por nombre, LNS o empresa…",
   "rubrica.addExternal": "Añadir {lns}", "rubrica.empty": "No se han encontrado contactos.",
   "rubrica.external": "Externo", "rubrica.invite": "Invitar",
-  "rubrica.inviteMsg": "Únete a mí en Lattice, la mensajería y el correo notarizado cifrados post-cuánticos de nuestra empresa. Descarga la app: https://lattice-network.it/downloads/lattice-pulse.apk",
+  "rubrica.inviteMsg": "Contáctame en ULTRON.",
   "search.placeholder": "Buscar colega o correo…", "search.hint": "Escribe para buscar colegas y correo notarizado",
   "search.empty": "Sin resultados", "search.colleagues": "Colegas", "search.mails": "Correo notarizado",
   "channels.title": "Grupo", "channels.new": "Nuevo grupo",

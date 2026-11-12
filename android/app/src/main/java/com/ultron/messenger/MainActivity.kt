@@ -1,4 +1,4 @@
-package com.latticenetwork.pulse
+package com.ultron.messenger
 import expo.modules.splashscreen.SplashScreenManager
 
 import android.os.Build

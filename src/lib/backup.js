@@ -5,7 +5,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import * as DocumentPicker from "expo-document-picker";
-import * as Notifications from "expo-notifications";
+import { Platform } from "react-native";
+import notifee, { AndroidImportance, TimeUnit, TriggerType } from "react-native-notify-kit";
 import { scrypt } from "@noble/hashes/scrypt.js";
 import { gcm } from "@noble/ciphers/aes.js";
 import {
@@ -288,25 +289,26 @@ export async function getSchedule() {
 }
 export async function setSchedule(mode) {
   await AsyncStorage.setItem(K_EVERY, mode);
+  if (Platform.OS !== "android") return true;
+  const id = "backup-reminder";
   try {
-    const sched = await Notifications.getAllScheduledNotificationsAsync();
-    for (const s of sched) {
-      if (s && s.content && s.content.data && s.content.data.kind === "backup_reminder") {
-        await Notifications.cancelScheduledNotificationAsync(s.identifier);
-      }
-    }
-  } catch { /* */ }
-  if (mode === "off") return true;
-  const seconds = mode === "monthly" ? 30 * 86400 : 7 * 86400;
-  try {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: "Backup Lattice",
-        body: "Promemoria: crea un backup cifrato aggiornato delle tue chat.",
-        data: { kind: "backup_reminder" },
-      },
-      trigger: { type: "timeInterval", seconds, repeats: true },
+    await notifee.cancelTriggerNotification(id);
+    if (mode === "off") return true;
+    const channelId = await notifee.createChannel({
+      id: "backup-reminders",
+      name: "Promemoria backup",
+      importance: AndroidImportance.HIGH,
     });
-  } catch { /* notifiche non concesse */ }
+    await notifee.createTriggerNotification({
+      id,
+      title: "Backup ULTRON",
+      body: "Promemoria: crea un backup cifrato aggiornato delle tue chat.",
+      android: { channelId },
+    }, {
+      type: TriggerType.INTERVAL,
+      interval: mode === "monthly" ? 30 : 7,
+      timeUnit: TimeUnit.DAYS,
+    });
+  } catch { /* notifiche non disponibili */ }
   return true;
 }

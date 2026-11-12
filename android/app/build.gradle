@@ -87,7 +87,7 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.latticenetwork.pulse'
+    namespace 'com.ultron.messenger'
     defaultConfig {
         applicationId 'com.ultron.messenger'
         minSdkVersion rootProject.ext.minSdkVersion
@@ -116,10 +116,10 @@ android {
             if (f.exists()) {
                 def kp = new Properties()
                 f.withInputStream { kp.load(it) }
-                storeFile file(kp['LATTICE_STORE_FILE'])
-                storePassword kp['LATTICE_STORE_PASSWORD']
-                keyAlias kp['LATTICE_KEY_ALIAS']
-                keyPassword kp['LATTICE_KEY_PASSWORD']
+                storeFile file(kp['ULTRON_STORE_FILE'])
+                storePassword kp['ULTRON_STORE_PASSWORD']
+                keyAlias kp['ULTRON_KEY_ALIAS']
+                keyPassword kp['ULTRON_KEY_PASSWORD']
                 enableV1Signing false
                 enableV2Signing true
                 enableV3Signing true

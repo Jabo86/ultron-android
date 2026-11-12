@@ -6,7 +6,7 @@ export default {
   "rubrica.searchPlaceholder": "Поиск по имени, LNS или компании…",
   "rubrica.addExternal": "Добавить {lns}", "rubrica.empty": "Контакты не найдены.",
   "rubrica.external": "Внешний", "rubrica.invite": "Пригласить",
-  "rubrica.inviteMsg": "Присоединяйся ко мне в Lattice — постквантово шифрованный мессенджер и заверенная почта нашей компании. Скачать приложение: https://lattice-network.it/downloads/lattice-pulse.apk",
+  "rubrica.inviteMsg": "Свяжись со мной в ULTRON.",
   "search.placeholder": "Поиск коллеги или письма…", "search.hint": "Введите текст для поиска коллег и заверенных писем",
   "search.empty": "Ничего не найдено", "search.colleagues": "Коллеги", "search.mails": "Заверенная почта",
   "channels.title": "Группа", "channels.new": "Новая группа",

@@ -2,10 +2,9 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { AppState } from "react-native";
 import { useAuth } from "./AuthContext";
 import * as api from "../lib/api";
+import { isOwner } from "../lib/canary";
 
 const UnreadCtx = createContext({ chatUnread: 0, certifyUnread: 0, expiringLicenses: 0, bookRequests: 0, refresh: () => {} });
-
-const OWNER_LNS = "fabioastorino@latticenetwork.lns";
 
 export function UnreadProvider({ children }) {
   const { user } = useAuth();
@@ -41,7 +40,7 @@ export function UnreadProvider({ children }) {
       setBookRequests((Array.isArray(cs) ? cs : []).filter((c) => c.they_have_me && c.in_my_book === false && !c.blocked).length);
     } catch {}
     // Licenze in scadenza/scadute (solo owner) → pallino sul tab Impostazioni.
-    if (user?.lns === OWNER_LNS) {
+    if (isOwner(user)) {
       try {
         const ts = await api.consoleTenants();
         setExpiringLicenses((Array.isArray(ts) ? ts : []).filter((t) => {

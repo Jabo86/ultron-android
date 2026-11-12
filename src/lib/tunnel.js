@@ -8,24 +8,13 @@
 // Ordine dei vestiti: prima i più stabili (Apple, Cloudflare), microsoft come ultima risorsa.
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { NativeModules } from "react-native";
-import { DEFAULT_SERVER } from "../config";
+import { DEFAULT_SERVER, REALITY_PROFILE } from "../config";
 
 const KEY = "lat.darkmesh.v1";
 const LAST = "lat.darkmesh.last"; // ultimo vestito che ha funzionato: si riprova per primo
 const LASTSRV = "lat.darkmesh.lastsrv"; // ultimo indirizzo che ha funzionato (IP o dominio)
 const M = NativeModules.RealityTunnel;
 const SOCKS_PORT = 10808;
-
-// DUE INDIRIZZI PER LO STESSO SERVER, provati in ordine:
-//  1. l'IP, che non ha bisogno del DNS — e il DNS e' la prima cosa che viene manomessa
-//     proprio sulle reti dove un tunnel serve;
-//  2. il dominio, che resta valido anche se la macchina cambia indirizzo.
-// Si ricorda quale ha funzionato e la volta dopo si parte da quello.
-const HOST = DEFAULT_SERVER.replace(/^https?:\/\//, "").replace(/[/:].*$/, "");
-const SERVERS = ["167.233.85.189", HOST];
-const UUID = "0f75e5ec-2c99-4ba6-b9d7-c3dcd27333cc";
-const PBK = "L-9cuAvkkYo7l3aB5RUZSdDDLY6iCXktrqne-itAc2o";
-const SID = "f69fec0ed8358a2c";
 
 // Ogni "vestito": porta dedicata sul server + dominio di copertura (SNI).
 export const OUTFITS = [
@@ -34,7 +23,8 @@ export const OUTFITS = [
   { id: "microsoft", port: 8443, sni: "www.microsoft.com" },
 ];
 
-export function buildConfig(outfit, server = SERVERS[0]) {
+function buildConfig(outfit, server) {
+  const { uuid, publicKey, shortId } = REALITY_PROFILE;
   return JSON.stringify({
     log: { loglevel: "warning" },
     inbounds: [
@@ -43,17 +33,17 @@ export function buildConfig(outfit, server = SERVERS[0]) {
     outbounds: [
       {
         protocol: "vless", tag: "proxy",
-        settings: { vnext: [{ address: server, port: outfit.port, users: [{ id: UUID, encryption: "none", flow: "xtls-rprx-vision" }] }] },
+        settings: { vnext: [{ address: server, port: outfit.port, users: [{ id: uuid, encryption: "none", flow: "xtls-rprx-vision" }] }] },
         streamSettings: {
           network: "tcp", security: "reality",
-          realitySettings: { serverName: outfit.sni, fingerprint: "chrome", publicKey: PBK, shortId: SID },
+          realitySettings: { serverName: outfit.sni, fingerprint: "chrome", publicKey, shortId },
         },
       },
     ],
   });
 }
 
-export function available() { return !!M; }
+export function available() { return !!(M && REALITY_PROFILE); }
 
 export async function isEnabled() {
   try { return (await AsyncStorage.getItem(KEY)) === "1"; } catch { return false; }
@@ -73,8 +63,9 @@ async function tunnelWorks(timeoutMs = 9000) {
 async function orderedServers() {
   let last = null;
   try { last = await AsyncStorage.getItem(LASTSRV); } catch { /* niente */ }
-  if (!last || !SERVERS.includes(last)) return SERVERS;
-  return [last].concat(SERVERS.filter((x) => x !== last));
+  const servers = REALITY_PROFILE.servers;
+  if (!last || !servers.includes(last)) return servers;
+  return [last].concat(servers.filter((server) => server !== last));
 }
 
 // Ordina i vestiti mettendo per primo l'ultimo che aveva funzionato.
@@ -90,6 +81,7 @@ async function ordered() {
 /// Avvia il tunnel provando i vestiti in ordine, con collaudo reale. Torna il vestito scelto.
 export async function start() {
   if (!M) throw new Error("Modulo tunnel non disponibile in questa versione.");
+  if (!REALITY_PROFILE) throw new Error("Tunnel ULTRON non ancora configurato.");
   const list = await ordered();
   const servers = await orderedServers();
   let lastErr = null;
@@ -129,5 +121,5 @@ export async function setEnabled(v) {
 
 /// All'avvio dell'app: se era acceso, riavvia il tunnel (in sottofondo, senza bloccare).
 export async function boot() {
-  try { if (M && (await isEnabled())) await start(); } catch { /* si potrà riaccendere a mano */ }
+  try { if (available() && (await isEnabled())) await start(); } catch { /* si potrà riaccendere a mano */ }
 }

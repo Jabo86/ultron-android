@@ -71,11 +71,11 @@ async function showIncomingCall(notifee, K, data) {
         smallIcon: "notification_icon",
         color: "#22C55E",
         timeoutAfter: 35000,
-        fullScreenAction: { id: "incoming-call", launchActivity: "com.latticenetwork.pulse.MainActivity" },
-        pressAction: { id: "incoming-call", launchActivity: "com.latticenetwork.pulse.MainActivity" },
+        fullScreenAction: { id: "incoming-call", launchActivity: "com.ultron.messenger.MainActivity" },
+        pressAction: { id: "incoming-call", launchActivity: "com.ultron.messenger.MainActivity" },
         actions: [
-          { title: "Rispondi", pressAction: { id: "answer", launchActivity: "com.latticenetwork.pulse.MainActivity" } },
-          { title: "Rifiuta", pressAction: { id: "reject", launchActivity: "com.latticenetwork.pulse.MainActivity" } },
+          { title: "Rispondi", pressAction: { id: "answer", launchActivity: "com.ultron.messenger.MainActivity" } },
+          { title: "Rifiuta", pressAction: { id: "reject", launchActivity: "com.ultron.messenger.MainActivity" } },
         ],
       },
     });

@@ -7,17 +7,17 @@ const assert = require("node:assert/strict");
 const path = require("node:path");
 
 const files = [
-  "App.js", "index.js", "package.json", "app.json",
+  "App.js", "index.js", "package.json", "package-lock.json", "app.json",
   "src/config.js", "src/lib/config.js", "src/lib/notifications.js",
-  "src/lib/wake.js", "src/screens/SettingsScreen.js",
+  "src/lib/wake.js", "src/lib/backup.js", "src/lib/canary.js", "src/screens/SettingsScreen.js",
   "android/app/build.gradle", "android/build.gradle",
   "android/app/src/main/AndroidManifest.xml"
 ];
 const forbidden = [
   /@react-native-firebase/i, /expo-notifications/i, /getDevicePushTokenAsync/,
-  /googleServicesFile/, /com\\.google\\.gms\\.google-services/,
-  /com\\.google\\.firebase/, /ExpoFirebaseMessagingService/,
-  /firebase_messaging_notification_delegation_enabled/,
+  /googleServicesFile/, /com\.google\.gms\.google-services/,
+  /com\.google\.firebase/, /ExpoFirebaseMessagingService/,
+  /firebase_messaging_notification_delegation_enabled/, /com\.latticenetwork\.(pulse|disguise)/,
 ];
 let errors = [];
 for (const file of files) {
@@ -33,7 +33,7 @@ assert.equal(pkg.dependencies["@react-native-firebase/app"], undefined);
 assert.equal(pkg.dependencies["@react-native-firebase/messaging"], undefined);
 assert.equal(pkg.dependencies["expo-notifications"], undefined);
 const js = fs.readFileSync("src/config.js", "utf8");
-const native = fs.readFileSync("android/app/src/main/java/com/latticenetwork/pulse/WakeService.kt", "utf8");
+const native = fs.readFileSync("android/app/src/main/java/com/ultron/messenger/WakeService.kt", "utf8");
 if (!js.includes("https://49.12.242.0")) errors.push("Default server does not target ULTRON");
 if (!native.includes("https://49.12.242.0")) errors.push("WakeService does not target ULTRON");
 if (!native.includes("/api/public/wake/poll")) errors.push("WakeService endpoint mismatch");

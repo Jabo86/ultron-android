@@ -1,3 +1,4 @@
+import { isOwner as canaryIsOwner } from "../lib/canary";
 import React, { useState, useEffect, useMemo } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Vibration, ActivityIndicator, Alert, Linking, Platform, Modal, TextInput, Share,
@@ -40,7 +41,7 @@ const VIB_PATTERNS = { standard: [0, 700, 900, 700], short: [0, 400, 300, 400], 
 import { TRANSLATE_LANGS, langName } from "../lib/langs";
 import { getThreatLog, clearThreatLog, getThreatCount } from "../lib/threatLog";
 
-const PRIVACY_LNS = "fabioastorino@latticenetwork.lns";
+const PRIVACY_LNS = "";
 
 const LEGAL_DOCS = [
   { key: "settings.privacy", path: "/privacy", icon: "shield-checkmark-outline" },
@@ -159,7 +160,7 @@ export default function SettingsScreen({ navigation }) {
   const en = lang === "en";
   const { user, signOut, lock } = useAuth();
   const isOss = (user?.lns || "").endsWith("@tuttooss.lns");
-  const isOwner = (user?.lns || "").toLowerCase() === "fabioastorino@latticenetwork.lns";
+  const isOwner = canaryIsOwner(user);
   const [callDirect, setCallDirect] = useState(false);
   const [chaff, setChaff] = useState(true);
   const [darkMesh, setDarkMesh] = useState(false);
@@ -511,7 +512,7 @@ export default function SettingsScreen({ navigation }) {
           <div><b>${L.proto}</b> ${protocol}</div>
           <div><b>${L.issued}:</b> ${now}</div>
           <div><b>${L.subject}:</b> ${user?.lns || "—"}</div>
-          <div><b>${L.controller}:</b> ${t("settings.controllerName")} · ${PRIVACY_LNS}</div>
+          <div><b>${L.controller}:</b> ${t("settings.controllerName")}${PRIVACY_LNS ? " · " + PRIVACY_LNS : ""}</div>
         </div>
         <h2>${L.secTitle}</h2><ul>${li(L.sec)}</ul>
         <h2>${L.privTitle}</h2><ul>${li(L.priv)}</ul>
@@ -596,7 +597,7 @@ export default function SettingsScreen({ navigation }) {
       </View>
 
       {/* CONSOLE ADMIN (solo owner) */}
-      {user?.lns === "fabioastorino@latticenetwork.lns" && (
+      {isOwner && (
         <>
           <Text style={styles.section}>Console Admin</Text>
           <View style={styles.card}>
@@ -1143,9 +1144,11 @@ export default function SettingsScreen({ navigation }) {
       </View>
       <View style={styles.card}>
         <Row icon="business-outline" label={t("settings.controller")} hint={t("settings.controllerName")} testID="settings-controller" />
-        <View style={styles.divider} />
-        <Row icon="chatbubble-ellipses-outline" label={t("settings.contact")} hint={PRIVACY_LNS} onPress={() => navigation.navigate("Chat", { conv_id: null, others: [PRIVACY_LNS], title: "Contatto privacy", title_lns: PRIVACY_LNS })}
-          right={<Ionicons name="chevron-forward-outline" size={18} color={theme.textFaint} />} testID="settings-contact" />
+        {!!PRIVACY_LNS && <>
+          <View style={styles.divider} />
+          <Row icon="chatbubble-ellipses-outline" label={t("settings.contact")} hint={PRIVACY_LNS} onPress={() => navigation.navigate("Chat", { conv_id: null, others: [PRIVACY_LNS], title: "Contatto privacy", title_lns: PRIVACY_LNS })}
+            right={<Ionicons name="chevron-forward-outline" size={18} color={theme.textFaint} />} testID="settings-contact" />
+        </>}
       </View>
 
       {/* ABOUT */}

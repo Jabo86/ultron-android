@@ -5,7 +5,7 @@ export default {
   "rubrica.title": "Adres defteri", "rubrica.subtitle": "Şirketinizdeki meslektaşlar ve kayıtlı kişiler",
   "rubrica.searchPlaceholder": "Ada, LNS'ye veya şirkete göre ara…", "rubrica.addExternal": "{lns} ekle",
   "rubrica.empty": "Kişi bulunamadı.", "rubrica.external": "Dış", "rubrica.invite": "Davet et",
-  "rubrica.inviteMsg": "Lattice'te bana katıl: şirketimizin post-kuantum şifreli mesajlaşması ve noter onaylı postası. Uygulamayı indir: https://lattice-network.it/downloads/lattice-pulse.apk",
+  "rubrica.inviteMsg": "ULTRON üzerinden benimle iletişime geç.",
   "search.placeholder": "Meslektaş veya posta ara…", "search.hint": "Meslektaşları ve noter onaylı postayı aramak için yazın",
   "search.empty": "Sonuç yok", "search.colleagues": "Meslektaşlar", "search.mails": "Noter onaylı posta",
   "channels.title": "Grup", "channels.new": "Yeni grup", "channels.empty": "Kanal yok",

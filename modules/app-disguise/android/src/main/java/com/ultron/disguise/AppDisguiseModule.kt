@@ -1,4 +1,4 @@
-package com.latticenetwork.disguise
+package com.ultron.disguise
 
 import android.content.ComponentName
 import android.content.pm.PackageManager

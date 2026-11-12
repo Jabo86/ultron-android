@@ -43,7 +43,7 @@ const N_PROBE = "\u0001p";
 const N_INDEX = "\u0001i";
 const PROBE_MAGIC = "L2V";
 export const MAX_TRIES = 3;
-export const PACKAGE_NAME = "com.latticenetwork.pulse";
+export const PACKAGE_NAME = "com.ultron.messenger";
 
 let memKey = null; // chiave AES derivata dal PIN, solo in RAM
 // Namespace del profilo attivo. Stringa vuota = installazioni vecchie, dove i blocchi

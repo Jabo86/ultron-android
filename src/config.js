@@ -1,18 +1,9 @@
 // Default server (trial/hosted). Companies with a license run their OWN server:
 // the employee points the app to their company server (or the keyfile embeds it).
 export const DEFAULT_SERVER = "https://49.12.242.0";
-// Chi amministra il server. Riceve i promemoria di manutenzione del canarino;
-// tutti gli altri vedono soltanto lo stato, senza notifiche di sistema.
-// L'owner non e' UN indirizzo: e' un elenco. Con un solo valore, cambiare account
-// (o averne due) significa spegnere in silenzio TUTTI gli avvisi di manutenzione —
-// ed e' esattamente quello che e' accaduto: `OWNER_LNS` puntava a un indirizzo non piu
-// in uso, quindi `isOwner()` era sempre falso, la striscia del canarino non compariva
-// mai e nessuna notifica di scadenza e' mai partita.
-export const OWNER_LNS_LIST = [
-  "fabioastorino@latticenetwork.lns",
-  "gerardoastorino@lattice.lns",
-];
-export const OWNER_LNS = OWNER_LNS_LIST[0];
+// Compilare dopo il provisioning degli amministratori e del tunnel ULTRON.
+export const OWNER_LNS_LIST = [];
+export const REALITY_PROFILE = null;
 
 // Chiamate WebRTC: SOLO infrastruttura nostra (coturn sul VPS sovrano). Gli STUN pubblici
 // di Google sono stati rimossi: contattarli significherebbe dire a un terzo che stai

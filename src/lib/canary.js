@@ -9,7 +9,8 @@
 // Gli avvisi (3 giorni, 1 giorno) sono SOLO per l'owner: sono manutenzione, non una notizia.
 // Gli utenti comuni vedono lo stato, e basta.
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as Notifications from "expo-notifications";
+import { Platform } from "react-native";
+import notifee, { AndroidImportance } from "react-native-notify-kit";
 import { DEFAULT_SERVER, OWNER_LNS_LIST } from "../config";
 
 const URL = "/downloads/canary-status.json";
@@ -74,7 +75,7 @@ export async function status() {
 /// davanti al server con la chiave, e questo non sempre capita entro tre giorni.
 /// Una volta al giorno al massimo, così non diventa rumore e quindi non viene ignorato.
 export async function remindOwner(user, it) {
-  if (!isOwner(user)) return false;
+  if (Platform.OS !== "android" || !isOwner(user)) return false;
   const s = await status();
   if (s.state === "unknown") return false;
   const SCALA = [14, 10, 7, 5, 3, 2, 1, 0];
@@ -89,9 +90,17 @@ export async function remindOwner(user, it) {
     ? (it ? "Motivo: " + (s.reason || "sconosciuto") + ". Va rifirmato adesso." : "Reason: " + (s.reason || "unknown") + ". It must be re-signed now.")
     : (it ? "Restano " + s.daysLeft + " giorni. Rifirmalo prima della scadenza." : s.daysLeft + " days left. Re-sign it before it expires.");
   try {
-    await Notifications.scheduleNotificationAsync({
-      content: { title: titolo, body: corpo, data: { canary: true } },
-      trigger: null,
+    const channelId = await notifee.createChannel({
+      id: "canary-reminders",
+      name: "Promemoria canarino",
+      importance: AndroidImportance.HIGH,
+    });
+    await notifee.displayNotification({
+      id: "canary-reminder",
+      title: titolo,
+      body: corpo,
+      data: { canary: "true" },
+      android: { channelId },
     });
     await AsyncStorage.setItem(K_LAST, oggi + ":" + s.state + ":" + s.daysLeft);
     return true;

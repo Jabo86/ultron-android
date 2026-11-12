@@ -6,7 +6,7 @@ export default {
   "rubrica.searchPlaceholder": "ابحث بالاسم أو LNS أو الشركة…",
   "rubrica.addExternal": "إضافة {lns}", "rubrica.empty": "لم يتم العثور على جهات اتصال.",
   "rubrica.external": "خارجي", "rubrica.invite": "دعوة",
-  "rubrica.inviteMsg": "انضم إليّ على Lattice، تطبيق المراسلة والبريد الموثّق المشفّر بعد الكمّي الخاص بشركتنا. حمّل التطبيق: https://lattice-network.it/downloads/lattice-pulse.apk",
+  "rubrica.inviteMsg": "تواصل معي على ULTRON.",
   "search.placeholder": "ابحث عن زميل أو بريد…", "search.hint": "اكتب للبحث في الزملاء والبريد الموثّق",
   "search.empty": "لا نتائج", "search.colleagues": "الزملاء", "search.mails": "البريد الموثّق",
   "channels.title": "مجموعة", "channels.new": "مجموعة جديدة",

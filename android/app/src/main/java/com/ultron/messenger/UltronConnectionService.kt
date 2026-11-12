@@ -1,4 +1,4 @@
-package com.latticenetwork.pulse
+package com.ultron.messenger
 
 import android.content.ComponentName
 import android.content.Context
@@ -15,13 +15,13 @@ import androidx.annotation.RequiresApi
 
 // CHIAMATE SOVRANE — v2.5.0
 //
-// Il problema che risolve, in una riga: prima Lattice era una app qualunque che teneva
+// Il problema che risolve, in una riga: prima ULTRON era una app qualunque che teneva
 // aperto il microfono. Se arrivava una chiamata GSM (o una di WhatsApp), il sistema
 // strappava l'audio senza dire niente a nessuno: la voce spariva, la chiamata sembrava
 // caduta e non c'era modo di riprenderla.
 //
 // Con una `ConnectionService` AUTOGESTITA (`CAPABILITY_SELF_MANAGED`) la chiamata di
-// Lattice diventa una chiamata VERA per Android: entra nel registro del telecom, ha la
+// ULTRON diventa una chiamata VERA per Android: entra nel registro del telecom, ha la
 // priorita di una telefonata, e quando ne arriva un'altra il sistema NON ci spegne —
 // ci chiama `onHold()` e lascia decidere all'utente. Noi mettiamo in pausa il microfono e
 // lo riaccendiamo a `onUnhold()`, senza perdere la sessione crittografica.
@@ -30,7 +30,7 @@ import androidx.annotation.RequiresApi
 // sistema, non chiediamo di leggere il registro chiamate, non passiamo numeri di telefono
 // al telecom. L'unica cosa che il sistema vede e' che "c'e' una chiamata in corso".
 @RequiresApi(Build.VERSION_CODES.O)
-class LatticeConnectionService : ConnectionService() {
+class UltronConnectionService : ConnectionService() {
 
   override fun onCreateOutgoingConnection(
     from: PhoneAccountHandle?,
@@ -51,19 +51,19 @@ class LatticeConnectionService : ConnectionService() {
   }
 
   private fun build(request: ConnectionRequest?, outgoing: Boolean): Connection {
-    val conn = LatticeConnection()
+    val conn = UltronConnection()
     conn.setAddress(request?.address ?: Uri.fromParts("sip", "lattice", null), TelecomManager.PRESENTATION_ALLOWED)
     conn.connectionCapabilities = Connection.CAPABILITY_HOLD or Connection.CAPABILITY_SUPPORT_HOLD or
       Connection.CAPABILITY_MUTE
     conn.audioModeIsVoip = true
-    conn.setCallerDisplayName("Lattice", TelecomManager.PRESENTATION_ALLOWED)
+    conn.setCallerDisplayName("ULTRON", TelecomManager.PRESENTATION_ALLOWED)
     if (outgoing) conn.setDialing() else conn.setRinging()
     current = conn
     return conn
   }
 
-  // ── La singola connessione. Un canale, una chiamata: Lattice non ne tiene due. ──
-  class LatticeConnection : Connection() {
+  // ── La singola connessione. Un canale, una chiamata: ULTRON non ne tiene due. ──
+  class UltronConnection : Connection() {
     override fun onAnswer() { setActive(); CallControlModule.emit("answer", "") }
     override fun onReject() { setDisconnected(DisconnectCause(DisconnectCause.REJECTED)); destroy(); current = null; CallControlModule.emit("reject", "") }
     override fun onDisconnect() { setDisconnected(DisconnectCause(DisconnectCause.LOCAL)); destroy(); current = null; CallControlModule.emit("end", "") }
@@ -81,19 +81,19 @@ class LatticeConnectionService : ConnectionService() {
   companion object {
     var current: Connection? = null
 
-    const val ACCOUNT_ID = "lattice-voip"
+    const val ACCOUNT_ID = "ultron-voip"
 
     fun handle(ctx: Context): PhoneAccountHandle =
-      PhoneAccountHandle(ComponentName(ctx, LatticeConnectionService::class.java), ACCOUNT_ID)
+      PhoneAccountHandle(ComponentName(ctx, UltronConnectionService::class.java), ACCOUNT_ID)
 
     /// Registra l'account. Idempotente: chiamarla mille volte non cambia niente.
     fun register(ctx: Context): Boolean {
       if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
       return try {
         val tm = ctx.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
-        val acc = PhoneAccount.builder(handle(ctx), "Lattice")
+        val acc = PhoneAccount.builder(handle(ctx), "ULTRON")
           .setCapabilities(PhoneAccount.CAPABILITY_SELF_MANAGED)
-          .setShortDescription("Lattice · voce cifrata")
+          .setShortDescription("ULTRON · voce cifrata")
           .build()
         tm.registerPhoneAccount(acc)
         true

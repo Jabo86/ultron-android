@@ -2,7 +2,7 @@ import React from "react";
 import { View, Text, ScrollView } from "react-native";
 
 // Mostra a schermo qualsiasi errore di rendering (invece di una chiusura silenziosa),
-// lo salva su file e ne manda la traccia tecnica al nostro server.
+// salva la traccia tecnica sul dispositivo.
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -21,13 +21,6 @@ export default class ErrorBoundary extends React.Component {
       const FS = require("expo-file-system/legacy");
       FS.writeAsStringAsync(FS.documentDirectory + "lastcrash.txt", trace).catch(() => {});
     } catch (e) { /* niente da fare */ }
-    try {
-      fetch("https://lattice-network.it/api/public/crash", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ v: "render", android: "boundary", trace: trace.slice(0, 5000) }),
-      }).catch(() => {});
-    } catch (e) {}
   }
   render() {
     if (this.state.error) {

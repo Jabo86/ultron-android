@@ -3,11 +3,11 @@ plugins {
   id 'expo-module-gradle-plugin'
 }
 
-group = 'com.latticenetwork.disguise'
+group = 'com.ultron.disguise'
 version = '1.0.0'
 
 android {
-  namespace "com.latticenetwork.disguise"
+  namespace "com.ultron.disguise"
   defaultConfig {
     versionCode 1
     versionName '1.0.0'

@@ -1,4 +1,4 @@
-package com.latticenetwork.pulse
+package com.ultron.messenger
 
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule

@@ -1,4 +1,4 @@
-package com.latticenetwork.pulse
+package com.ultron.messenger
 
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.AdvertiseCallback

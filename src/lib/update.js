@@ -8,6 +8,7 @@ import * as IntentLauncher from "expo-intent-launcher";
 import { Linking, Platform } from "react-native";
 import { loadServer } from "./store";
 import { DEFAULT_SERVER } from "../config";
+import { VENDOR_PUB } from "./vendorKey";
 import { verifyManifest, fileSha256 } from "./apkVerify";
 
 const cur = () => String(Constants.expoConfig?.version || "0.0.0");
@@ -29,12 +30,13 @@ async function base() {
 
 // { available, version, current, url, notes, verified, untrusted, manifest }
 export async function checkUpdate() {
+  if (!VENDOR_PUB) return { available: false, untrusted: false, verified: false, current: cur() };
   const b = await base();
   const r = await fetch(b + "/downloads/latest.json?t=" + Date.now());
   if (!r.ok) throw new Error("HTTP " + r.status);
   const d = await r.json();
   const version = String(d.versionName || d.version || "");
-  const url = d.url && /^https?:/.test(d.url) ? d.url : b + "/downloads/lattice-pulse.apk";
+  const url = d.url && /^https?:/.test(d.url) ? d.url : b + "/downloads/ultron-messenger.apk";
   const manifest = { ...d, versionName: version, url };
   const verified = verifyManifest(manifest);
   const newer = !!version && cmp(version, cur()) > 0;
@@ -55,6 +57,7 @@ export async function checkUpdate() {
 // rifiuta: senza manifest firmato non installiamo nulla).
 // onProgress(p 0..1, fase: "download" | "verify")
 export async function downloadAndInstall(info, onProgress) {
+  if (!VENDOR_PUB) throw new Error("Aggiornamenti ULTRON non ancora configurati.");
   if (typeof info === "string") info = await checkUpdate();
   const m = info && info.manifest;
   if (!m || !verifyManifest(m)) throw new Error("Firma del manifest non valida: aggiornamento rifiutato.");
@@ -62,7 +65,7 @@ export async function downloadAndInstall(info, onProgress) {
   const url = m.url;
   if (Platform.OS !== "android") { await Linking.openURL(url); return; }
 
-  const dest = FileSystem.cacheDirectory + "lattice-update.apk";
+  const dest = FileSystem.cacheDirectory + "ultron-update.apk";
   try { await FileSystem.deleteAsync(dest, { idempotent: true }); } catch { /* nuovo file */ }
   const task = FileSystem.createDownloadResumable(url, dest, {}, (p) => {
     if (onProgress && p.totalBytesExpectedToWrite > 0) {

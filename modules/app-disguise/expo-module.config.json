@@ -1,6 +1,6 @@
 {
   "platforms": ["android"],
   "android": {
-    "modules": ["com.latticenetwork.disguise.AppDisguiseModule"]
+    "modules": ["com.ultron.disguise.AppDisguiseModule"]
   }
 }
