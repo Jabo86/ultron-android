@@ -18,7 +18,6 @@ export default function GlobalSearchScreen({ navigation }) {
   const [q, setQ] = useState("");
   const [dq, setDq] = useState("");
   const [contacts, setContacts] = useState([]);
-  const [mails, setMails] = useState([]);
   const [groups, setGroups] = useState([]);
   const [msgHits, setMsgHits] = useState([]);
   const [msgBusy, setMsgBusy] = useState(false);
@@ -32,13 +31,9 @@ export default function GlobalSearchScreen({ navigation }) {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [c, m] = await Promise.all([
-        api.contacts().catch(() => []),
-        api.certifyInbox("inbox").catch(() => []),
-      ]);
+      const c = await api.contacts().catch(() => []);
       if (!alive) return;
       setContacts(Array.isArray(c) ? c : []);
-      setMails(Array.isArray(m) ? m : []);
       setLoading(false);
     })();
     const to = setTimeout(() => inputRef.current?.focus(), 350);
@@ -49,13 +44,8 @@ export default function GlobalSearchScreen({ navigation }) {
   const foundContacts = useMemo(() => (sq
     ? contacts.filter((c) => c.lns.includes(sq) || (c.display_name || "").toLowerCase().includes(sq) || (c.department || "").toLowerCase().includes(sq))
     : []), [contacts, sq]);
-  const foundMails = useMemo(() => (sq
-    ? mails.filter((m) => (m.subject || "").toLowerCase().includes(sq) || (m.sender_lns || "").toLowerCase().includes(sq))
-    : []), [mails, sq]);
 
   const openChat = useCallback((c) => { Keyboard.dismiss(); navigation.replace("Chat", { conv_id: null, others: [c.lns], title: c.display_name || c.lns.split("@")[0], title_lns: c.lns }); }, [navigation]);
-  const openMail = useCallback((c) => { Keyboard.dismiss(); navigation.replace("CertifyCompose", { draft: { recipients: [c.lns] } }); }, [navigation]);
-  const openMailDetail = useCallback((m) => { Keyboard.dismiss(); navigation.replace("CertifyDetail", { mail_id: m.mail_id, box: "inbox" }); }, [navigation]);
 
   // Ricerca gruppi pubblici (ingresso su richiesta, approvata dagli admin del gruppo).
   useEffect(() => {
@@ -135,8 +125,6 @@ export default function GlobalSearchScreen({ navigation }) {
   const sections = [];
   if (foundContacts.length) sections.push({ type: "header", key: "h-c", label: t("search.colleagues") });
   foundContacts.forEach((c) => sections.push({ type: "contact", key: "c-" + c.lns, c }));
-  if (foundMails.length) sections.push({ type: "header", key: "h-m", label: t("search.mails") });
-  foundMails.forEach((m) => sections.push({ type: "mail", key: "m-" + m.mail_id, m }));
   if (groups.length) sections.push({ type: "header", key: "h-g", label: "GRUPPI PUBBLICI" });
   groups.forEach((g) => sections.push({ type: "group", key: "g-" + g.chan_id, g }));
   if (dq.trim().length >= 2) {
@@ -159,16 +147,13 @@ export default function GlobalSearchScreen({ navigation }) {
           <TouchableOpacity style={[styles.action, { borderColor: theme.accent + "66" }]} onPress={() => openChat(c)} testID="search-chat-btn">
             <Ionicons name="chatbubble-ellipses-outline" size={17} color={theme.accent} />
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.action, { borderColor: theme.primary + "66" }]} onPress={() => openMail(c)} testID="search-mail-btn">
-            <Ionicons name="mail-outline" size={17} color={theme.primary} />
-          </TouchableOpacity>
         </View>
       );
     }
     if (item.type === "msgcta") {
       return (
         <TouchableOpacity style={styles.row} onPress={searchMessages} disabled={msgBusy} testID="search-messages-cta">
-          <View style={styles.mailIcon}>
+          <View style={styles.resultIcon}>
             {msgBusy ? <ActivityIndicator size="small" color={theme.primary} /> : <Ionicons name="chatbubbles-outline" size={18} color={theme.primary} />}
           </View>
           <View style={styles.info}>
@@ -186,7 +171,7 @@ export default function GlobalSearchScreen({ navigation }) {
       const h = item.h;
       return (
         <TouchableOpacity style={styles.row} onPress={() => openMsg(h)} testID="search-message-row">
-          <View style={styles.mailIcon}><Ionicons name="chatbubble-ellipses-outline" size={18} color={theme.accent} /></View>
+          <View style={styles.resultIcon}><Ionicons name="chatbubble-ellipses-outline" size={18} color={theme.accent} /></View>
           <View style={styles.info}>
             <Text style={styles.name} numberOfLines={1}>{h.title}</Text>
             <Text style={styles.sub} numberOfLines={2}>{(h.mine ? (lang === "en" ? "You: " : "Tu: ") : "") + h.text}</Text>
@@ -199,7 +184,7 @@ export default function GlobalSearchScreen({ navigation }) {
       const state = g.my_state || "none";
       return (
         <View style={styles.row} testID="search-group-row">
-          <View style={styles.mailIcon}><Ionicons name="people-outline" size={18} color={theme.accent} /></View>
+          <View style={styles.resultIcon}><Ionicons name="people-outline" size={18} color={theme.accent} /></View>
           <View style={styles.info}>
             <Text style={styles.name} numberOfLines={1}>{g.name}</Text>
             <Text style={styles.sub} numberOfLines={1}>
@@ -220,17 +205,7 @@ export default function GlobalSearchScreen({ navigation }) {
         </View>
       );
     }
-    const m = item.m;
-    return (
-      <TouchableOpacity style={styles.row} onPress={() => openMailDetail(m)} testID="search-mail-row">
-        <View style={styles.mailIcon}><Ionicons name="shield-checkmark-outline" size={18} color={theme.primary} /></View>
-        <View style={styles.info}>
-          <Text style={[styles.name, !m.read_at && { fontWeight: "800" }]} numberOfLines={1}>{m.subject || "—"}</Text>
-          <Text style={styles.sub} numberOfLines={1}>{m.sender_lns}</Text>
-        </View>
-        <Ionicons name="chevron-forward-outline" size={18} color={theme.textFaint} />
-      </TouchableOpacity>
-    );
+    return null;
   };
 
   return (
@@ -295,7 +270,7 @@ const styles = StyleSheet.create({
   name: { color: theme.text, fontSize: 15, fontWeight: "600" },
   sub: { color: theme.textFaint, fontSize: 12, marginTop: 1 },
   action: { width: 38, height: 38, borderRadius: 10, borderWidth: 1, alignItems: "center", justifyContent: "center" },
-  mailIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: theme.primary + "1A", alignItems: "center", justifyContent: "center" },
+  resultIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: theme.primary + "1A", alignItems: "center", justifyContent: "center" },
   joinBtn: { borderWidth: 1, borderColor: theme.primary + "88", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7 },
   joinTxt: { color: theme.primary, fontSize: 12, fontWeight: "700" },
 });

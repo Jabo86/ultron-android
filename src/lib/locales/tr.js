@@ -6,7 +6,7 @@ export default {
   "rubrica.searchPlaceholder": "Ada, LNS'ye veya şirkete göre ara…", "rubrica.addExternal": "{lns} ekle",
   "rubrica.empty": "Kişi bulunamadı.", "rubrica.external": "Dış", "rubrica.invite": "Davet et",
   "rubrica.inviteMsg": "ULTRON üzerinden benimle iletişime geç.",
-  "search.placeholder": "Meslektaş veya posta ara…", "search.hint": "Meslektaşları ve noter onaylı postayı aramak için yazın",
+  "search.placeholder": "Kişileri ve grupları ara…", "search.hint": "Kişileri ve grupları aramak için yazın",
   "search.empty": "Sonuç yok", "search.colleagues": "Meslektaşlar", "search.mails": "Noter onaylı posta",
   "channels.title": "Grup", "channels.new": "Yeni grup", "channels.empty": "Kanal yok",
   "channels.emptyHint": "Aynı anda çok kişiye ulaşmak için bir yayın kanalı oluşturun.",

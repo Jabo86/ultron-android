@@ -22,7 +22,6 @@ import AddressBookScreen from "./src/screens/AddressBookScreen";
 
 import ChatScreen from "./src/screens/ChatScreen";
 
-import CertifyScreen from "./src/screens/CertifyScreen";
 
 
 
@@ -50,9 +49,6 @@ const ReportsScreen = lazyScreen(() => require("./src/screens/ReportsScreen"), "
 const RotateKeyScreen = lazyScreen(() => require("./src/screens/RotateKeyScreen"), "Ricambio chiavi");
 const ForwardScreen = lazyScreen(() => require("./src/screens/ForwardScreen"), "Inoltra");
 const ChannelDetailScreen = lazyScreen(() => require("./src/screens/ChannelDetailScreen"), "Gruppo");
-const CertifyComposeScreen = lazyScreen(() => require("./src/screens/CertifyComposeScreen"), "Nuova raccomandata");
-const CertifyDetailScreen = lazyScreen(() => require("./src/screens/CertifyDetailScreen"), "Raccomandata");
-const CertifyCalendarScreen = lazyScreen(() => require("./src/screens/CertifyCalendarScreen"), "Calendario");
 const StatusScreen = lazyScreen(() => require("./src/screens/StatusScreen"), "Stato");
 const CallLogScreen = lazyScreen(() => require("./src/screens/CallLogScreen"), "Registro chiamate");
 const LeadsScreen = lazyScreen(() => require("./src/screens/LeadsScreen"), "Concorsi");
@@ -97,14 +93,12 @@ export const navRef = createNavigationContainerRef();
 const TAB_ICONS = {
   Conversazioni: "chatbubbles",
   Rubrica: "book",
-  Certify: "shield-checkmark",
   Profilo: "person",
   Impostazioni: "settings",
 };
 const TAB_KEY = {
   Conversazioni: "tab.conversations",
   Rubrica: "tab.rubrica",
-  Certify: "tab.certify",
   Profilo: "tab.profile",
   Impostazioni: "tab.settings",
 };
@@ -116,7 +110,7 @@ function MainTabs() {
   const glassEdge = alpha(look.tint, 0.3);
   const tint = useTint();
   const { t } = useI18n();
-  const { chatUnread, certifyUnread, expiringLicenses, bookRequests } = useUnread();
+  const { chatUnread, expiringLicenses, bookRequests } = useUnread();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -142,7 +136,6 @@ function MainTabs() {
       })}
     >
       <Tab.Screen name="Conversazioni" component={ConversationsScreen} options={{ tabBarBadge: chatUnread > 0 ? (chatUnread > 99 ? "99+" : chatUnread) : undefined }} />
-      <Tab.Screen name="Certify" component={CertifyScreen} options={{ tabBarBadge: certifyUnread > 0 ? (certifyUnread > 99 ? "99+" : certifyUnread) : undefined }} />
       <Tab.Screen name="Rubrica" component={AddressBookScreen} options={{ tabBarBadge: bookRequests > 0 ? (bookRequests > 99 ? "99+" : bookRequests) : undefined }} />
       <Tab.Screen name="Impostazioni" component={SettingsScreen} options={{ tabBarBadge: expiringLicenses > 0 ? (expiringLicenses > 99 ? "99+" : expiringLicenses) : undefined }} />
     </Tab.Navigator>
@@ -208,7 +201,7 @@ function Root() {
     if (data.type === "contact_add") return { name: "Main", params: { screen: "Rubrica", params: { focusLns: data.lns || null } } };
     if (data.type === "license-expiry") return { name: "Licenses" };
     if (data.channel) return { name: "ChannelDetail", params: { chan_id: data.channel } };
-    if (data.kind === "certify") return { name: "Main", params: { screen: "Certify" } };
+    if (data.kind === "certify") return null;
     if (data.kind === "report") return { name: "Reports" };
     if (data.kind === "daily_quiz") {
       return data.quiz_chan
@@ -401,9 +394,6 @@ function Root() {
           <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ headerShown: false }} />
           <Stack.Screen name="Chat" component={ChatScreen} options={{ title: "Chat" }} />
           <Stack.Screen name="ChannelDetail" component={ChannelDetailScreen} options={{ title: "Gruppo" }} />
-          <Stack.Screen name="CertifyCompose" component={CertifyComposeScreen} options={{ title: "Nuova Certify" }} />
-          <Stack.Screen name="CertifyDetail" component={CertifyDetailScreen} options={{ title: "Certify" }} />
-          <Stack.Screen name="CertifyCalendar" component={CertifyCalendarScreen} options={{ title: "Calendario" }} />
           <Stack.Screen name="Call" component={CallScreen} options={{ headerShown: false, presentation: "fullScreenModal", animation: "fade" }} />
           <Stack.Screen name="Status" component={StatusScreen} options={{ headerShown: false }} />
           <Stack.Screen name="CallLog" component={CallLogScreen} options={{ headerShown: false }} />

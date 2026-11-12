@@ -4,12 +4,11 @@ import { useAuth } from "./AuthContext";
 import * as api from "../lib/api";
 import { isOwner } from "../lib/canary";
 
-const UnreadCtx = createContext({ chatUnread: 0, certifyUnread: 0, expiringLicenses: 0, bookRequests: 0, refresh: () => {} });
+const UnreadCtx = createContext({ chatUnread: 0, expiringLicenses: 0, bookRequests: 0, refresh: () => {} });
 
 export function UnreadProvider({ children }) {
   const { user } = useAuth();
   const [chatUnread, setChatUnread] = useState(0);
-  const [certifyUnread, setCertifyUnread] = useState(0);
   const [expiringLicenses, setExpiringLicenses] = useState(0);
   const [bookRequests, setBookRequests] = useState(0);
   const busy = useRef(false);
@@ -25,7 +24,6 @@ export function UnreadProvider({ children }) {
       // I gruppi stanno dentro Pulse: il pallino li comprende, altrimenti racconta metà
       // della storia.
       setChatUnread((Number(b?.chat) || 0) + (Number(b?.groups) || 0));
-      setCertifyUnread(Number(b?.certify) || 0);
     } catch {}
     fast.current = false;
   }, [user]);
@@ -56,7 +54,7 @@ export function UnreadProvider({ children }) {
   }, [user, tick]);
 
   useEffect(() => {
-    if (!user) { setChatUnread(0); setCertifyUnread(0); setExpiringLicenses(0); setBookRequests(0); return; }
+    if (!user) { setChatUnread(0); setExpiringLicenses(0); setBookRequests(0); return; }
     refresh();
     const fastId = setInterval(() => { if (AppState.currentState === "active") tick(); }, 1500);
     const slowId = setInterval(() => { if (AppState.currentState === "active") refresh(); }, 30000);
@@ -65,7 +63,7 @@ export function UnreadProvider({ children }) {
   }, [user, refresh, tick]);
 
   return (
-    <UnreadCtx.Provider value={useMemo(() => ({ chatUnread, certifyUnread, expiringLicenses, bookRequests, refresh }), [chatUnread, certifyUnread, expiringLicenses, bookRequests, refresh])}>
+    <UnreadCtx.Provider value={useMemo(() => ({ chatUnread, expiringLicenses, bookRequests, refresh }), [chatUnread, expiringLicenses, bookRequests, refresh])}>
       {children}
     </UnreadCtx.Provider>
   );

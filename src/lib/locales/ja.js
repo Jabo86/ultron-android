@@ -6,7 +6,7 @@ export default {
   "rubrica.searchPlaceholder": "名前・LNS・会社で検索…", "rubrica.addExternal": "{lns} を追加",
   "rubrica.empty": "連絡先が見つかりません。", "rubrica.external": "社外", "rubrica.invite": "招待",
   "rubrica.inviteMsg": "ULTRON で連絡してください。",
-  "search.placeholder": "同僚または郵便を検索…", "search.hint": "入力して同僚と認証郵便を検索",
+  "search.placeholder": "連絡先とグループを検索…", "search.hint": "入力して連絡先とグループを検索",
   "search.empty": "結果なし", "search.colleagues": "同僚", "search.mails": "認証郵便",
   "channels.title": "グループ", "channels.new": "新しいグループ", "channels.empty": "チャンネルなし",
   "channels.emptyHint": "一度に多くの人へ届けるブロードキャストチャンネルを作成します。",

@@ -7,7 +7,7 @@ export default {
   "rubrica.addExternal": "Добавить {lns}", "rubrica.empty": "Контакты не найдены.",
   "rubrica.external": "Внешний", "rubrica.invite": "Пригласить",
   "rubrica.inviteMsg": "Свяжись со мной в ULTRON.",
-  "search.placeholder": "Поиск коллеги или письма…", "search.hint": "Введите текст для поиска коллег и заверенных писем",
+  "search.placeholder": "Поиск контактов и групп…", "search.hint": "Введите текст для поиска контактов и групп",
   "search.empty": "Ничего не найдено", "search.colleagues": "Коллеги", "search.mails": "Заверенная почта",
   "channels.title": "Группа", "channels.new": "Новая группа",
   "channels.empty": "Нет каналов", "channels.emptyHint": "Создайте канал вещания, чтобы обращаться сразу ко многим.",

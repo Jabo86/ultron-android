@@ -7,7 +7,7 @@ export default {
   "rubrica.addExternal": "{lns} hinzufügen", "rubrica.empty": "Keine Kontakte gefunden.",
   "rubrica.external": "Extern", "rubrica.invite": "Einladen",
   "rubrica.inviteMsg": "Kontaktiere mich auf ULTRON.",
-  "search.placeholder": "Kollegen oder Post suchen…", "search.hint": "Tippen, um Kollegen und notarisierte Post zu suchen",
+  "search.placeholder": "Kontakte und Gruppen suchen…", "search.hint": "Tippen, um Kontakte und Gruppen zu suchen",
   "search.empty": "Keine Ergebnisse", "search.colleagues": "Kollegen", "search.mails": "Notarisierte Post",
   "channels.title": "Gruppe", "channels.new": "Neue Gruppe",
   "channels.empty": "Keine Kanäle", "channels.emptyHint": "Erstelle einen Broadcast-Kanal, um viele Menschen gleichzeitig zu erreichen.",

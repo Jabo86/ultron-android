@@ -6,7 +6,7 @@ export default {
   "rubrica.searchPlaceholder": "按姓名、LNS 或公司搜索…", "rubrica.addExternal": "添加 {lns}",
   "rubrica.empty": "未找到联系人。", "rubrica.external": "外部", "rubrica.invite": "邀请",
   "rubrica.inviteMsg": "在 ULTRON 上联系我。",
-  "search.placeholder": "搜索同事或邮件…", "search.hint": "输入以搜索同事和公证邮件",
+  "search.placeholder": "搜索联系人和群组…", "search.hint": "输入内容以搜索联系人和群组",
   "search.empty": "没有结果", "search.colleagues": "同事", "search.mails": "公证邮件",
   "channels.title": "群组", "channels.new": "新建群组", "channels.empty": "暂无频道",
   "channels.emptyHint": "创建广播频道，一次触达很多人。",

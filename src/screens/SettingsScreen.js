@@ -952,8 +952,8 @@ export default function SettingsScreen({ navigation }) {
         </View>
         <Text style={styles.shieldDesc}>
           {lang !== "en"
-            ? "Protezione 100% sul dispositivo su Pulse e Certify. Nulla viene mai caricato: i tuoi messaggi restano privati."
-            : "100% on-device protection across Pulse and Certify. Nothing is uploaded — your messages stay private."}
+            ? "Protezione dei messaggi sul dispositivo."
+            : "On-device message protection."}
         </Text>
         {(lang !== "en"
           ? [

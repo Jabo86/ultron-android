@@ -7,7 +7,7 @@ export default {
   "rubrica.addExternal": "Ajouter {lns}", "rubrica.empty": "Aucun contact trouvé.",
   "rubrica.external": "Externe", "rubrica.invite": "Inviter",
   "rubrica.inviteMsg": "Contacte-moi sur ULTRON.",
-  "search.placeholder": "Rechercher un collègue ou un courrier…", "search.hint": "Tapez pour chercher collègues et courriers certifiés",
+  "search.placeholder": "Rechercher des contacts et groupes…", "search.hint": "Saisissez du texte pour rechercher des contacts et groupes",
   "search.empty": "Aucun résultat", "search.colleagues": "Collègues", "search.mails": "Courrier notarié",
   "channels.title": "Groupe", "channels.new": "Nouveau groupe",
   "channels.empty": "Aucun canal", "channels.emptyHint": "Créez un canal de diffusion pour joindre plusieurs personnes à la fois.",

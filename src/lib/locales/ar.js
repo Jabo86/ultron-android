@@ -7,7 +7,7 @@ export default {
   "rubrica.addExternal": "إضافة {lns}", "rubrica.empty": "لم يتم العثور على جهات اتصال.",
   "rubrica.external": "خارجي", "rubrica.invite": "دعوة",
   "rubrica.inviteMsg": "تواصل معي على ULTRON.",
-  "search.placeholder": "ابحث عن زميل أو بريد…", "search.hint": "اكتب للبحث في الزملاء والبريد الموثّق",
+  "search.placeholder": "البحث في جهات الاتصال والمجموعات…", "search.hint": "اكتب للبحث في جهات الاتصال والمجموعات",
   "search.empty": "لا نتائج", "search.colleagues": "الزملاء", "search.mails": "البريد الموثّق",
   "channels.title": "مجموعة", "channels.new": "مجموعة جديدة",
   "channels.empty": "لا توجد قنوات", "channels.emptyHint": "أنشئ قناة بثّ للوصول إلى عدد كبير من الأشخاص في وقت واحد.",

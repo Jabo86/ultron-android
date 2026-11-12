@@ -168,7 +168,6 @@ export default function AddressBookScreen({ navigation, route }) {
   const startChat = (c) => navigation.navigate("Chat", {
     conv_id: null, others: [c.lns], title: c.display_name || c.lns.split("@")[0], title_lns: c.lns,
   });
-  const startMail = (c) => navigation.navigate("CertifyCompose", { draft: { recipients: [c.lns] } });
 
   const toggleFav = async (c) => {
     setContacts((xs) => xs.map((x) => (x.lns === c.lns ? { ...x, favorite: !x.favorite } : x)));
@@ -292,9 +291,6 @@ export default function AddressBookScreen({ navigation, route }) {
       <TouchableOpacity style={[styles.action, { borderColor: theme.accent + "66" }]} onPress={() => startChat(item)} testID="rubrica-chat-btn">
         <Ionicons name="chatbubble-ellipses-outline" size={18} color={theme.accent} />
       </TouchableOpacity>
-      <TouchableOpacity style={[styles.action, { borderColor: tint + "66" }]} onPress={() => startMail(item)} testID="rubrica-mail-btn">
-        <Ionicons name="mail-outline" size={18} color={tint} />
-      </TouchableOpacity>
       <TouchableOpacity style={styles.delBtn} onPress={() => moreActions(item)} testID="rubrica-more-btn" hitSlop={8}>
         <Ionicons name={item.blocked ? "ban" : "ellipsis-vertical"} size={17} color={item.blocked ? theme.danger : theme.textDim} />
       </TouchableOpacity>
@@ -347,7 +343,7 @@ export default function AddressBookScreen({ navigation, route }) {
       {dirResults.length > 0 && (
         <View style={styles.dirBox}>
           <Text style={styles.dirTitle} testID="rubrica-directory-title">
-            {"DIRECTORY LATTICE" + (dirBusy ? " …" : "")}
+            {"DIRECTORY ULTRON" + (dirBusy ? " …" : "")}
           </Text>
           {dirResults.slice(0, 8).map((d) => (
             <TouchableOpacity key={d.lns} style={styles.dirRow} onPress={() => addFromDirectory(d.lns)} disabled={adding} testID="rubrica-directory-row">

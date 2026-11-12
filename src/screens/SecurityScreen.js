@@ -79,7 +79,6 @@ function buildSections(it) {
       items: [
         { i: "document-text", t: "Export firmati sul dispositivo", d: "Le conversazioni esportate sono firmate con la tua chiave: chiunque può verificarne l'autenticità, anche fra anni, senza fidarsi di noi." },
         { i: "git-commit", t: "Registro amministrativo a prova di manomissione", d: "Ogni azione di amministrazione entra in un registro concatenato con hash: se qualcuno modificasse una riga, la catena si romperebbe e si vedrebbe." },
-        { i: "cube", t: "Notarizzazione su registro distribuito", d: "Le comunicazioni certificate (Certify) vengono ancorate su un registro permissionato: data e contenuto diventano dimostrabili." },
       ],
     },
   ] : [
