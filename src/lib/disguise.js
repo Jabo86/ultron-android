@@ -22,7 +22,7 @@ const native = requireOptionalNativeModule("AppDisguise");
 export const AVAILABLE = !!native;
 
 export const OPTIONS = [
-  { key: "default", it: "Lattice (icona vera)", en: "Lattice (real icon)", icon: "shield-checkmark-outline" },
+  { key: "default", it: "ULTRON (icona vera)", en: "ULTRON (real icon)", icon: "shield-checkmark-outline" },
   { key: "calc", it: "Calcolatrice", en: "Calculator", icon: "calculator-outline" },
   { key: "notes", it: "Note", en: "Notes", icon: "document-text-outline" },
   { key: "weather", it: "Meteo", en: "Weather", icon: "partly-sunny-outline" },

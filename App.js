@@ -376,6 +376,7 @@ function Root() {
         <>
           <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
           <Stack.Screen name="Signup" component={SignupScreen} options={{ headerShown: false }} />
+          <Stack.Screen name="Backup" component={BackupScreen} options={{ headerShown: false }} />
         </>
       ) : (
         <>

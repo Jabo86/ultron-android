@@ -248,8 +248,8 @@ export default function BackupScreen({ route, navigation }) {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>{en ? "Restore a backup" : "Ripristina un backup"}</Text>
           <Text style={styles.cardHint}>
-            {en ? "Pick the .lattice file and type its password. On a new phone this also brings back your identity key."
-                : "Scegli il file .lattice e digita la sua password. Su un telefono nuovo torna anche il tuo file chiave (identità)."}
+            {en ? "Pick the encrypted backup file and type its password. On a new phone this also brings back your identity key."
+                : "Scegli il file di backup cifrato e digita la sua password. Su un telefono nuovo torna anche il tuo file chiave (identità)."}
           </Text>
           <TouchableOpacity style={styles.btnGhost} onPress={doPick} disabled={!!busy} testID="backup-pick-btn">
             {busy === "pick" ? <ActivityIndicator color={theme.text} /> : (

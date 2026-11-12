@@ -48,12 +48,12 @@ function wrapHex(hex, n) {
 function buildHtml(meta, msgs, digest, sig, signer, lang) {
   const it = lang !== "en";
   const T = it
-    ? { title: "Lattice Network — Esportazione conversazione", sub: "Documento a valore probatorio · firmato end-to-end sul dispositivo",
+    ? { title: "ULTRON Messaggi — Esportazione conversazione", sub: "Documento a valore probatorio · firmato end-to-end sul dispositivo",
         conv: "Conversazione", parts: "Partecipanti", when: "Esportato il", count: "Messaggi", algo: "Algoritmo di firma",
         thNo: "#", thWhen: "Data/ora", thFrom: "Mittente", thBody: "Messaggio",
         sigTitle: "Firma crittografica", sha: "SHA-256 della trascrizione", sigLbl: "Firma (ML-DSA-65, hex)", pk: "Chiave pubblica del firmatario", who: "Firmatario (LNS)",
         howTitle: "Come verificare", how: "Questo documento è stato generato e firmato interamente sul dispositivo del firmatario con la sua chiave privata post-quantum ML-DSA-65. Il server non ha mai avuto accesso ai contenuti. Per verificare l'autenticità: ricostruire il canonicale dai campi del file .json allegato e verificare la firma con la chiave pubblica indicata (ml_dsa65.verify). Qualsiasi modifica al testo invalida la firma." }
-    : { title: "Lattice Network — Conversation export", sub: "Legally-probative document · signed end-to-end on the device",
+    : { title: "ULTRON Messaggi — Conversation export", sub: "Legally-probative document · signed end-to-end on the device",
         conv: "Conversation", parts: "Participants", when: "Exported at", count: "Messages", algo: "Signature algorithm",
         thNo: "#", thWhen: "Date/time", thFrom: "Sender", thBody: "Message",
         sigTitle: "Cryptographic signature", sha: "SHA-256 of transcript", sigLbl: "Signature (ML-DSA-65, hex)", pk: "Signer public key", who: "Signer (LNS)",

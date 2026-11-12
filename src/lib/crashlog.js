@@ -28,7 +28,7 @@ export async function reportPendingCrash(isEnglish) {
         : "Ecco cosa è andato storto. Mandalo allo sviluppatore: è tutto quello che serve per sistemarlo.\n\n") +
       txt.slice(0, 700),
     [
-      { text: en ? "Share" : "Condividi", onPress: () => Share.share({ message: "Lattice crash:\n" + txt.slice(0, 3000) }).catch(() => {}) },
+      { text: en ? "Share" : "Condividi", onPress: () => Share.share({ message: "ULTRON crash:\n" + txt.slice(0, 3000) }).catch(() => {}) },
       { text: "OK", style: "cancel" },
     ]
   );

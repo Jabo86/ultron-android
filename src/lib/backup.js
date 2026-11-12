@@ -163,7 +163,7 @@ export function encryptContainer(payload, password, hint) {
 }
 
 export function decryptContainer(container, password) {
-  if (!container || container.fmt !== FMT) throw new Error("Questo file non è un backup Lattice.");
+  if (!container || container.fmt !== FMT) throw new Error("Questo file non è un backup ULTRON.");
   const k = container.kdf || {};
   const key = scrypt(enc8(password), hexToBytes(k.salt || ""), { N: k.N || KDF.N, r: k.r || KDF.r, p: k.p || KDF.p, dkLen: 32 });
   let pt;
@@ -207,8 +207,8 @@ export async function pickBackupFile() {
   if (!asset) return null;
   const txt = await FileSystem.readAsStringAsync(asset.uri);
   let container;
-  try { container = JSON.parse(txt); } catch { throw new Error("File illeggibile: non è un backup Lattice."); }
-  if (container.fmt !== FMT) throw new Error("Questo file non è un backup Lattice.");
+  try { container = JSON.parse(txt); } catch { throw new Error("File illeggibile: non è un backup ULTRON."); }
+  if (container.fmt !== FMT) throw new Error("Questo file non è un backup ULTRON.");
   return { container, name: asset.name || "backup" };
 }
 
