@@ -21,8 +21,7 @@ jobs:
         run: |
           set -euo pipefail
           git clone --depth 1 --branch 'ultron/android-migration' https://github.com/Jabo86/lattice-android.git /tmp/ultron-upstream
-          rsync -a --exclude='.git' --exclude='.github/workflows/export-ultron-project.yml' --exclude='google-services.json' --exclude='android/app/google-services.json' /tmp/ultron-upstream/ ./
-          rm -f .github/workflows/export-ultron-project.yml
+          rsync -a --exclude='.git' --exclude='.github/workflows/' --exclude='google-services.json' --exclude='android/app/google-services.json' /tmp/ultron-upstream/ ./
           cat > README.md <<'EOF'
           # ULTRON Android
           
