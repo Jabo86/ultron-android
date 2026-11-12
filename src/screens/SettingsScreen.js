@@ -441,7 +441,7 @@ export default function SettingsScreen({ navigation }) {
       const protocol = `LN-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${Math.random().toString(16).slice(2, 8).toUpperCase()}`;
       let logo = "";
       try {
-        const asset = Asset.fromModule(require("../../assets/lattice-logo.png"));
+        const asset = Asset.fromModule(require("../../assets/ultron-logo.png"));
         await asset.downloadAsync();
         if (asset.localUri) {
           const b64 = await FileSystem.readAsStringAsync(asset.localUri, { encoding: FileSystem.EncodingType.Base64 });

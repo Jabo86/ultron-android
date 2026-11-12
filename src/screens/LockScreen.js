@@ -24,7 +24,7 @@ export default function LockScreen() {
 
   return (
     <View style={styles.root} testID="lock-screen">
-      <Image source={require("../../assets/lattice-logo.png")} style={styles.logo} resizeMode="contain" />
+      <Image source={require("../../assets/ultron-logo.png")} style={styles.logo} resizeMode="contain" />
       <Text style={styles.title}>{t("lock.title")}</Text>
       <Text style={styles.sub}>{t("lock.sub")}</Text>
 

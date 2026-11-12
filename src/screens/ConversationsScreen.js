@@ -268,7 +268,7 @@ export default function ConversationsScreen({ navigation }) {
       <CanaryReminder user={user} t={t} />
       <View style={styles.header}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          <Image source={require("../../assets/lattice-logo.png")} style={styles.logo} resizeMode="contain" />
+          <Image source={require("../../assets/icon.png")} style={styles.logo} resizeMode="contain" />
           <View>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
               <Text style={styles.hTitle}>Lattice</Text>
