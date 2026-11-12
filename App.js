@@ -77,7 +77,6 @@ import { useLook } from "./src/lib/appearance";
 import { alpha } from "./src/components/Surface";
 import { loadAppLock, loadConsent, saveConsent, CONSENT_VERSION } from "./src/lib/store";
 import * as api from "./src/lib/api";
-import { DEFAULT_SERVER } from "./src/config";
 import ErrorBoundary from "./src/components/ErrorBoundary";
 import { I18nProvider, useI18n } from "./src/lib/i18n";
 import { loadThreatList } from "./src/lib/threatList";
@@ -258,7 +257,13 @@ function Root() {
   const contactSet = useRef([]);
   const contactsAt = useRef(0);
   useEffect(() => {
-    if (api.getServerUrl() === DEFAULT_SERVER || !user?.dh?.secretKey || !user?.kem?.secretKey) return;
+    if (locked || !user?.dh?.secretKey || !user?.kem?.secretKey) return;
+    dhCache.current = {};
+    contactSet.current = [];
+    contactsAt.current = 0;
+    activeCall.current = null;
+    let stopped = false;
+    let busy = false;
     const myLns = user.lns;
     const refreshContacts = async () => {
       try {
@@ -268,11 +273,17 @@ function Root() {
         (Array.isArray(ct) ? ct : []).forEach((c) => { const l = typeof c === "string" ? c : c && c.lns; if (l && l !== myLns) set.add(l); });
         const list = [...set];
         contactSet.current = list;
-        const missing = list.filter((l) => !dhCache.current[l]);
-        if (missing.length) { const dh = await api.pulseDhKeys(missing).catch(() => ({})); Object.assign(dhCache.current, dh || {}); }
+        const refreshed = {};
+        for (let i = 0; i < list.length; i += 32) {
+          const dh = await api.pulseDhKeys(list.slice(i, i + 32)).catch(() => ({}));
+          Object.assign(refreshed, dh || {});
+        }
+        if (!stopped) dhCache.current = refreshed;
       } catch {}
     };
     const tick = async () => {
+      if (stopped || busy || RNAppState.currentState !== "active") return;
+      busy = true;
       try {
         if (Date.now() - contactsAt.current > 60000) { contactsAt.current = Date.now(); await refreshContacts(); }
         const contacts = contactSet.current.filter((l) => dhCache.current[l]);
@@ -281,26 +292,33 @@ function Root() {
         const ridMap = {};
         for (const from of contacts) {
           const shared = anonSharedSecret(user.dh.secretKey, dhCache.current[from]);
-          for (const ep of epochs) ridMap[discRid(shared, from, myLns, ep)] = true;
+          for (const ep of epochs) ridMap[discRid(shared, from, myLns, ep)] = from;
         }
         const rids = Object.keys(ridMap);
         if (!rids.length || !navRef.isReady()) return;
-        const res = await api.anonPoll(rids);
-        const hits = (res && res.hits) || [];
-        if (!hits.length) return;
-        const cur = navRef.getCurrentRoute && navRef.getCurrentRoute();
-        if (cur && cur.name === "Call") return;
-        const got = await api.anonGet(hits[0]);
-        if (!got || !got.found || !got.ping) return;
-        const inv = openInvite(got.ping, user.kem.secretKey);
-        if (!inv || !inv.chan || activeCall.current === inv.chan) return;
+        let inv;
+        for (let i = 0; i < rids.length && !inv && !stopped; i += 128) {
+          const { hits = [] } = await api.anonPoll(rids.slice(i, i + 128));
+          for (const hit of hits) {
+            const got = await api.anonGet(hit);
+            const candidate = got?.ping && openInvite(got.ping, user.kem.secretKey);
+            if (candidate?.chan && candidate.offer && candidate.from === ridMap[hit]
+                && activeCall.current !== candidate.chan) {
+              const session = await api.anonGet(candidate.chan);
+              if (!session.bye && !session.answer) { inv = candidate; break; }
+            }
+          }
+        }
+        if (!inv || stopped || RNAppState.currentState !== "active"
+            || navRef.getCurrentRoute()?.name === "Call") return;
         activeCall.current = inv.chan;
         navRef.navigate("Call", { incoming: true, anon: true, chan: inv.chan, from: inv.from, from_pk: inv.from_pk, from_kem: inv.from_kem, video: !!inv.video, offer: inv.offer, offer_sig: inv.offer_sig });
-      } catch {}
+      } catch {} finally { busy = false; }
     };
+    tick();
     const iv = setInterval(tick, 3500);
-    return () => clearInterval(iv);
-  }, [user]);
+    return () => { stopped = true; clearInterval(iv); };
+  }, [user, locked]);
   // Ri-blocca SOLO dopo un vero background prolungato (>8s), non per i popup di
   // permesso (microfono/foto) che mandano l'app in inactive/background per un istante:
   // evita il loop del PIN quando si aprono chat/stato.

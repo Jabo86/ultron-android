@@ -124,12 +124,15 @@ export const pulseKeys1024 = (lns_list) =>
 export const pulseDhKeys = (lns_list) =>
   withAuth((a) => client.post("/public/pulse/dhkeys", { lns_list }, a).then((r) => r.data));
 // ── Signaling anonimo (blind rendezvous): endpoint pubblici non identificanti ──
-export const anonPut = (rid, slot, data) =>
-  client.post("/public/anon/put", { rid, slot, data }).then((r) => r.data);
+const anonPost = (path, body) => getServerUrl() === DEFAULT_SERVER
+  ? withAuth((a) => client.post(path, body, a).then((r) => r.data))
+  : client.post(path, body).then((r) => r.data);
+export const anonPut = (rid, slot, data) => anonPost("/public/anon/put", { rid, slot, data });
 export const anonGet = (rid, ice_c_from = 0, ice_e_from = 0) =>
-  client.post("/public/anon/get", { rid, ice_c_from, ice_e_from }).then((r) => r.data);
-export const anonPoll = (rids) =>
-  client.post("/public/anon/poll", { rids }).then((r) => r.data);
+  anonPost("/public/anon/get", { rid, ice_c_from, ice_e_from });
+export const anonPoll = (rids) => anonPost("/public/anon/poll", { rids });
+export const callTurn = () =>
+  withAuth((a) => client.get("/public/pulse/turn", { ...a, timeout: 8000 }).then((r) => r.data));
 // `ghost`: se non viene passato si legge l'impostazione del telefono, così TUTTI i punti
 // che registrano il token (login, impostazioni, cassette anonime) mandano il valore giusto
 // senza doverlo sapere. Il server sceglie il canale Android in base a questo contrassegno.

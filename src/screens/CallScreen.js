@@ -17,6 +17,7 @@ import { loadRingtone, loadRingVolume, loadVibMode } from "../lib/store";
 const VIB_PATTERNS = { standard: [0, 700, 900, 700], short: [0, 400, 300, 400], long: [0, 1200, 600, 1200] };
 const RINGTONES = { classic: require("../../assets/ringtone.wav"), chime: require("../../assets/ring_chime.wav"), beep: require("../../assets/ring_beep.wav"), digital: require("../../assets/ring_digital.wav"), marimba: require("../../assets/ring_marimba.wav"), pulse: require("../../assets/ring_pulse.wav") };
 import { DEFAULT_SERVER, iceConfig } from "../config";
+import { getVerified, keyFingerprint } from "../lib/verify";
 import { loadAllowDirect } from "../lib/store";
 import { useTint } from "../lib/appearance";
 import { theme } from "../theme";
@@ -175,18 +176,27 @@ export default function CallScreen({ route, navigation }) {
   const allowDirect = useRef(false);
   useEffect(() => { loadAllowDirect().then((v) => { allowDirect.current = !!v; }).catch(() => {}); }, []);
 
-  const makePc = useCallback(() => {
+  const makePc = useCallback((config) => {
     // relay-only: media SOLO via TURN self-hosted → nessun peer conosce l'IP dell'altro.
     // "relay": TUTTO il media passa dal TURN coturn. È la sola configurazione che dà un
     // percorso audio SIMMETRICO su qualsiasi rete (con "all" si otteneva audio in un solo
     // verso su reti dietro NAT) e non espone l'IP. Non toccare senza test su rete reale.
-    const p = new RTCPeerConnection(iceConfig(allowDirect.current));
+    const p = new RTCPeerConnection(config);
     p.addEventListener("icecandidate", (e) => {
       if (e.candidate && chan.current) {
         const c = e.candidate.toJSON ? e.candidate.toJSON() : e.candidate;
         api.anonPut(chan.current, localIce.current, c).catch(() => {});
       }
     });
+    if (config.iceTransportPolicy === "relay" && api.getServerUrl() === DEFAULT_SERVER) {
+      p.addEventListener("iceconnectionstatechange", () => {
+        if (p.iceConnectionState === "connected" || p.iceConnectionState === "completed") setStatus("connected");
+        if (p.iceConnectionState === "failed") {
+          setErrMsg("Connessione audio tramite TURN non riuscita.");
+          setStatus("error");
+        }
+      });
+    }
     p.addEventListener("track", (e) => {
       const st = (e.streams && e.streams[0]) || null;
       try { if (e.track) e.track.enabled = true; } catch {}
@@ -195,9 +205,9 @@ export default function CallScreen({ route, navigation }) {
     return p;
   }, []);
 
-  const applyRemoteIce = useCallback((list) => {
+  const applyRemoteIce = useCallback(async (list) => {
     if (!Array.isArray(list) || !pc.current) return;
-    for (const cand of list) { try { pc.current.addIceCandidate(new RTCIceCandidate(cand)); } catch {} }
+    for (const cand of list) { try { await pc.current.addIceCandidate(new RTCIceCandidate(cand)); } catch {} }
   }, []);
 
   // Calcola il SAS (emoji di verifica) dai fingerprint DTLS di entrambi i peer, appena disponibili.
@@ -215,14 +225,20 @@ export default function CallScreen({ route, navigation }) {
 
   useEffect(() => {
     if (!accepted) return;
-    if (api.getServerUrl() === DEFAULT_SERVER) {
-      setErrMsg(lang === "en" ? "Calling is unavailable on this server." : "Le chiamate su questo server non sono ancora disponibili.");
-      setStatus("error");
-      return;
-    }
     let mounted = true;
     (async () => {
       try {
+        const hosted = api.getServerUrl() === DEFAULT_SERVER;
+        let config = iceConfig(allowDirect.current);
+        if (hosted) {
+          let relay;
+          try { relay = await api.callTurn(); }
+          catch { throw new Error(lang === "en" ? "TURN relay unavailable." : "Relay TURN non disponibile."); }
+          if (!relay?.urls?.length || !relay.username || !relay.credential) throw new Error("Relay TURN non disponibile.");
+          config = { iceTransportPolicy: "relay", bundlePolicy: "max-bundle",
+            iceServers: [{ urls: relay.urls, username: relay.username, credential: relay.credential }] };
+        }
+        if (!mounted) return;
         suppressLock();
         // Se l'offer del chiamante contiene un flusso video, la chiamata è una
         // videochiamata anche se il flag della push dice il contrario.
@@ -241,15 +257,19 @@ export default function CallScreen({ route, navigation }) {
         }
         if (!mounted) { stream.getTracks().forEach((t) => t.stop()); return; }
         setLocalStream(stream);
-        pc.current = makePc();
+        pc.current = makePc(config);
         stream.getTracks().forEach((t) => pc.current.addTrack(t, stream));
 
         if (!incoming) {
           // CHIAMANTE: chiavi del ricevente (KEM per cifrare, DH per il rid), offer firmata, invito cifrato.
-          const [kemMap, dhMap] = await Promise.all([api.pulseKeys([to]), api.pulseDhKeys([to])]);
+          const [kemMap, dhMap] = await Promise.all([api.pulseStaticKeys([to]), api.pulseDhKeys([to])]);
           const calleeKem = kemMap && kemMap[to];
           const calleeDh = dhMap && dhMap[to];
-          if (!calleeKem || !calleeDh) throw new Error("no-keys");
+          if (!calleeKem || !calleeDh) throw new Error("Chiavi del contatto non disponibili.");
+          const pinned = hosted ? await getVerified(to) : null;
+          if (pinned && keyFingerprint(to, calleeKem, calleeDh) !== pinned.fp) {
+            throw new Error("Le chiavi del contatto verificato sono cambiate. Verifica di nuovo il QR.");
+          }
           chan.current = newChan();
           const offer0 = await pc.current.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
           // Il ritocco si applica PRIMA di firmare e PRIMA di setLocalDescription:
@@ -264,7 +284,8 @@ export default function CallScreen({ route, navigation }) {
           await api.anonPut(discRid(shared, myLns, to, anonEpoch()), "ping", ping);
           // Squillo via notifica: se il destinatario non ha dispositivi registrati non
           // può squillare ad app chiusa, e lo diciamo subito a chi chiama.
-          api.callRing({ to, video: false, call_id: chan.current }).then((r) => {
+          if (hosted && mounted) setWarn(lang === "en" ? "The recipient must have ULTRON open." : "Il destinatario deve avere ULTRON aperto.");
+          if (!hosted) api.callRing({ to, video: false, call_id: chan.current }).then((r) => {
             if (mounted && r && r.devices === 0) {
               setWarn(lang === "en"
                 ? "The recipient has no registered device: they will only ring with the app open."
@@ -282,6 +303,7 @@ export default function CallScreen({ route, navigation }) {
             const _sig = route.params?.offer_sig || pushInv?.offer_sig; const _fpk = route.params?.from_pk || pushInv?.from_pk;
             const ok = _sig && _fpk ? verifyMessage(off.sdp, _sig, _fpk) : false;
             setVerified(ok);
+            if (!ok && hosted) throw new Error("Firma dell’invito non valida.");
             await pc.current.setRemoteDescription(new RTCSessionDescription(off));
             const answer0 = await pc.current.createAnswer();
             // Stesso ritocco dell'offer: Opus per primo, FEC acceso, portata costante.
@@ -292,8 +314,8 @@ export default function CallScreen({ route, navigation }) {
             const sealed = peerKem.current ? encryptForRecipients(JSON.stringify(ansObj), { c: peerKem.current })[0] : ansObj;
             await api.anonPut(chan.current, "answer", sealed);
             addCallLog({ call_id: chan.current, peer: route.params?.from || "", direction: "in", video: !!video, created_at: new Date().toISOString(), answered_at: new Date().toISOString(), ended_at: "" });
-            setStatus("connected");
-            try { if (chan.current) api.callAnswered(chan.current); } catch {}
+            if (!hosted) setStatus("connected");
+            try { if (chan.current && api.getServerUrl() !== DEFAULT_SERVER) api.callAnswered(chan.current).catch(() => {}); } catch {}
             trySas();
           }
         }
@@ -309,24 +331,29 @@ export default function CallScreen({ route, navigation }) {
 
   const startPolling = useCallback(() => {
     if (poll.current) clearInterval(poll.current);
+    let reading = false;
     poll.current = setInterval(async () => {
-      if (ended.current || !chan.current) return;
+      if (reading || ended.current || !chan.current) return;
+      reading = true;
+      try {
       let g;
       try { g = await api.anonGet(chan.current, iceCFrom.current, iceEFrom.current); } catch { return; }
       if (!g || !g.found) return;
       if (g.bye) { cleanup(); navigation.goBack(); return; }
       if (!incoming && !remoteSet.current && g.answer) {
-        remoteSet.current = true;
         let ans = g.answer;
         if (ans && ans.ct) { try { const pt = decryptEnvelope(ans, user.kem.secretKey); ans = pt ? JSON.parse(pt) : null; } catch { ans = null; } }
         if (ans && ans.answer && ans.answer.sdp) {
           const ok = ans.answer_sig && ans.to_pk ? verifyMessage(ans.answer.sdp, ans.answer_sig, ans.to_pk) : false;
           setVerified(ok);
-          try { await pc.current.setRemoteDescription(new RTCSessionDescription(ans.answer)); setStatus("connected"); try { if (chan.current) api.callAnswered(chan.current); } catch {} trySas(); } catch {}
+          if (!ok && api.getServerUrl() === DEFAULT_SERVER) { setErrMsg("Firma della risposta non valida."); setStatus("error"); return; }
+          try { await pc.current.setRemoteDescription(new RTCSessionDescription(ans.answer)); remoteSet.current = true; if (api.getServerUrl() !== DEFAULT_SERVER) setStatus("connected"); try { if (chan.current && api.getServerUrl() !== DEFAULT_SERVER) api.callAnswered(chan.current).catch(() => {}); } catch {} trySas(); } catch {}
         }
       }
-      if (incoming) { const l = g.ice_c || []; applyRemoteIce(l); iceCFrom.current += l.length; }
-      else { const l = g.ice_e || []; applyRemoteIce(l); iceEFrom.current += l.length; }
+      if (!pc.current?.remoteDescription) return;
+      if (incoming) { const l = g.ice_c || []; await applyRemoteIce(l); iceCFrom.current += l.length; }
+      else { const l = g.ice_e || []; await applyRemoteIce(l); iceEFrom.current += l.length; }
+      } finally { reading = false; }
     // 800 ms: è il ritmo con cui si scambiano risposta e candidati ICE. A 1,5 s la
     // connessione partiva con un secondo di ritardo secco.
     }, 800);
