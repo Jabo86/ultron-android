@@ -1,7 +1,7 @@
 name: ULTRON dependency security audit
 on:
   push:
-    branches: [ultron/android-migration]
+    branches: [main]
     paths:
       - 'package.json'
       - 'package-lock.json'
@@ -45,7 +45,7 @@ jobs:
           if test -f yarn.lock; then git rm -f yarn.lock; fi
           if ! git diff --cached --quiet; then
             git commit -m "security: sync audited npm lockfile; drop stale Yarn advisory source"
-            git push origin HEAD:ultron/android-migration
+            git push origin HEAD:main
           else
             echo 'Security lockfile already synchronized'
           fi
