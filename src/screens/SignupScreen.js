@@ -33,6 +33,7 @@ export default function SignupScreen({ navigation }) {
   const [created, setCreated] = useState(null); // { keyfile, lns_name }
   const [saved, setSaved] = useState(false);
   const tRef = useRef(null);
+  const pending = useRef(null);
 
   useEffect(() => { isDeviceSecure().then(setSecure).catch(() => {}); }, []);
 
@@ -54,11 +55,12 @@ export default function SignupScreen({ navigation }) {
 
   const doSignup = async () => {
     const u = normUser(username);
-    if (u.length < 3 || busy) return;
+    if (u.length < 3 || busy || avail === false) return;
     setBusy(true); setErr("");
     try {
       // 1) chiavi generate SUL DISPOSITIVO: la privata non viene mai inviata al server
-      const kp = keygen();
+      if (pending.current?.username !== u) pending.current = { username: u, keypair: keygen() };
+      const kp = pending.current.keypair;
       const lns = `${u}@${DOMAIN}`;
       const signature_hex = signMessage(`ultron-personal-signup-v1:${lns}`, kp.secretKeyHex);
       const r = await api.personalSignup({ username: u, public_key_hex: kp.publicKeyHex, signature_hex });
@@ -69,6 +71,7 @@ export default function SignupScreen({ navigation }) {
         server_url: api.getServerUrl(), created_at: r.created_at,
       };
       setCreated({ keyfile, lns_name: r.lns_name });
+      pending.current = null;
     } catch (e) {
       setErr(api.apiErr(e));
     } finally { setBusy(false); }
@@ -173,8 +176,8 @@ export default function SignupScreen({ navigation }) {
 
         {!!err && <Text style={styles.err} testID="signup-error">{err}</Text>}
 
-        <TouchableOpacity style={[styles.primaryBtn, (avail !== true || busy) && styles.btnDim]}
-          onPress={doSignup} disabled={avail !== true || busy} testID="signup-submit">
+        <TouchableOpacity style={[styles.primaryBtn, (username.length < 3 || avail === false || busy) && styles.btnDim]}
+          onPress={doSignup} disabled={username.length < 3 || avail === false || busy} testID="signup-submit">
           {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnTxt}>{it ? "Crea account" : "Create account"}</Text>}
         </TouchableOpacity>
       </ScrollView>

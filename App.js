@@ -14,6 +14,7 @@ import TamperGate from "./src/components/TamperGate";
 import { UnreadProvider, useUnread } from "./src/context/UnreadContext";
 import LoginScreen from "./src/screens/LoginScreen";
 
+import { isDeviceSecure } from "./src/lib/biometrics";
 import LockScreen from "./src/screens/LockScreen";
 import PinLockScreen from "./src/screens/PinLockScreen";
 
@@ -75,7 +76,7 @@ import ConsentScreen from "./src/screens/ConsentScreen";
 import LanguageScreen from "./src/screens/LanguageScreen";
 import { useLook } from "./src/lib/appearance";
 import { alpha } from "./src/components/Surface";
-import { loadConsent, saveConsent, CONSENT_VERSION, loadConsentSynced, saveConsentSynced } from "./src/lib/store";
+import { loadAppLock, loadConsent, saveConsent, CONSENT_VERSION, loadConsentSynced, saveConsentSynced } from "./src/lib/store";
 import * as api from "./src/lib/api";
 import ErrorBoundary from "./src/components/ErrorBoundary";
 import { I18nProvider, useI18n } from "./src/lib/i18n";
@@ -321,13 +322,17 @@ function Root() {
         // Galleria/fotocamera/permessi: NON ribloccare finché la finestra di soppressione
         // è valida (non azzerarla al primo "active": il popup dei permessi la bruciava).
         if (isLockSuppressed()) return;
-        if (away > 8000) lock();
+        if (away > 8000 && user) {
+          Promise.all([loadAppLock(), isDeviceSecure()]).then(([enabled, secure]) => {
+            if (secure && enabled !== false) lock();
+          }).catch(() => lock());
+        }
       } else if (next === "background") {
         if (!bgSince.current) bgSince.current = Date.now();
       }
     });
     return () => sub.remove();
-  }, [lock]);
+  }, [lock, user]);
   // Primissima schermata assoluta: la lingua. Prima del consenso, prima dell'identità,
   // prima di qualunque rete. Chiedere di accettare documenti in una lingua che non si legge
   // non è un consenso.

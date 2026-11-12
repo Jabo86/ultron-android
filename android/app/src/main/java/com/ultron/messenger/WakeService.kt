@@ -147,7 +147,7 @@ class WakeService : Service() {
           backoff = 5000L
           val n = try { JSONObject(body).optInt("n", 0) } catch (e: Exception) { 0 }
           val now = System.currentTimeMillis()
-          if (n > 0 && now - lastNotified > 15000L) {
+          if (running && enabled(this) && n > 0 && now - lastNotified > 15000L) {
             notifyMessages(n)
             lastNotified = now
             Thread.sleep(20000) // l'app, se aperta, marca i messaggi come consegnati

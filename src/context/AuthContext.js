@@ -25,15 +25,23 @@ export function AuthProvider({ children }) {
   const [mustRotate, setMustRotate] = useState(false); // primo accesso: cambio chiave obbligatorio
   const [pinGate, setPinGate] = useState(false); // PIN dell'app da inserire (dati locali cifrati)
 
-  const unlock = useCallback(() => setLocked(false), []);
-  const lockApp = useCallback(() => {
+  const unlock = useCallback(() => {
+    if (user) api.setKeyfile({ lns: user.lns, sk: user.sk, pk: user.pk });
+    setLocked(false);
+  }, [user]);
+  const lockApp = useCallback(async () => {
     if (!user) return;
     // TEMPRA (parità col web): bloccare l'app deve azzerare il token di sessione in RAM,
     // la chiave derivata dal PIN e i contenuti decifrati in cache. Così, prima di un
     // eventuale sblocco con il PIN di copertura, non resta viva in memoria nessuna sessione
     // vera — la si rideriva dal file chiave (esca o reale) solo dopo il PIN.
     try { api.clearAuth(); } catch { /* */ }
+    const hasPin = await lock.hasPin();
     try { lock.lockMemory(); } catch { /* */ }
+    if (hasPin) {
+      setUser(null);
+      setPinGate(true);
+    }
     try { msgCache.clearAll(); } catch { /* */ }
     setLocked(true);
   }, [user]);
