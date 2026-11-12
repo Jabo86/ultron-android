@@ -1019,7 +1019,7 @@ export default function SettingsScreen({ navigation }) {
         {LEGAL_DOCS.map((d, i) => (
           <View key={d.path}>
             {i > 0 && <View style={styles.divider} />}
-            <Row icon={d.icon} label={t(d.key)} onPress={() => openLegal(d.id)} right={<Ionicons name="open-outline" size={17} color={theme.textFaint} />} testID={`settings-legal-${d.path}`} />
+            <Row icon={d.icon} label={d.id === "license" ? (en ? "Software license" : "Licenza software") : t(d.key)} onPress={() => openLegal(d.id)} right={<Ionicons name="open-outline" size={17} color={theme.textFaint} />} testID={`settings-legal-${d.path}`} />
           </View>
         ))}
       </View>

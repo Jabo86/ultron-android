@@ -8,6 +8,7 @@ export function LegalDocument({ id, server, onSelect, onClose }) {
   const { lang, t } = useI18n();
   const en = lang === "en";
   const doc = LEGAL_DOCS.find((entry) => entry.id === id);
+  const title = id === "license" ? (en ? "Software license" : "Licenza software") : doc && t(doc.key);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const url = doc && legalServerUrl(server, doc.path);
@@ -41,10 +42,10 @@ export function LegalDocument({ id, server, onSelect, onClose }) {
 
   return <ScrollView contentContainerStyle={s.content} testID="legal-document">
     {onClose && <Pressable accessibilityRole="button" onPress={onClose}><Text style={s.link}>{en ? "‹ Back" : "‹ Indietro"}</Text></Pressable>}
-    <Text style={s.title}>{doc ? t(doc.key) : (en ? "Document unavailable" : "Documento non disponibile")}</Text>
+    <Text style={s.title}>{title || (en ? "Document unavailable" : "Documento non disponibile")}</Text>
     {id === "index" ? LEGAL_DOCS.filter((entry) => entry.id !== "index").map((entry) => (
       <Pressable key={entry.id} accessibilityRole="button" onPress={() => onSelect(entry.id)}>
-        <Text style={s.link}>{t(entry.key)}</Text>
+        <Text style={s.link}>{entry.id === "license" ? (en ? "Software license" : "Licenza software") : t(entry.key)}</Text>
       </Pressable>
     )) : (LEGAL_TEXT[id]?.[en ? "en" : "it"] || []).map((paragraph, i) => (
       <Text key={i} selectable style={s.paragraph}>{paragraph}</Text>
@@ -52,7 +53,8 @@ export function LegalDocument({ id, server, onSelect, onClose }) {
     {doc && id !== "license" && id !== "index" && <Text style={s.note}>{en
       ? "Offline guide. Official service documents depend on the server operator."
       : "Guida consultabile offline. I documenti ufficiali del servizio dipendono dal gestore del server."}</Text>}
-    {url && id !== "license" && <Pressable accessibilityRole="button" disabled={busy} onPress={openServer} testID="legal-open-server">
+    {id === "license" && <Text style={s.note}>{en ? "Original software license included in the repository." : "Testo originale della licenza software inclusa nel repository."}</Text>}
+    {url && <Pressable accessibilityRole="button" disabled={busy} onPress={openServer} testID="legal-open-server">
       <Text style={s.link}>{busy ? (en ? "Checking…" : "Verifica…") : (en ? "Open server document" : "Apri documento del gestore")}</Text>
     </Pressable>}
     {!!message && <Text accessibilityLiveRegion="polite" style={s.note}>{message}</Text>}

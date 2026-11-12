@@ -76,7 +76,7 @@ import ConsentScreen from "./src/screens/ConsentScreen";
 import LanguageScreen from "./src/screens/LanguageScreen";
 import { useLook } from "./src/lib/appearance";
 import { alpha } from "./src/components/Surface";
-import { loadAppLock, loadConsent, saveConsent, CONSENT_VERSION, loadConsentSynced, saveConsentSynced } from "./src/lib/store";
+import { loadAppLock, loadConsent, saveConsent, CONSENT_VERSION } from "./src/lib/store";
 import * as api from "./src/lib/api";
 import ErrorBoundary from "./src/components/ErrorBoundary";
 import { I18nProvider, useI18n } from "./src/lib/i18n";
@@ -168,19 +168,6 @@ function Root() {
   useEffect(() => {
     loadConsent().then((c) => setConsent(!!c && c.version === CONSENT_VERSION));
   }, []);
-  // Once authenticated, record the accepted consent on the server (GDPR audit trail).
-  useEffect(() => {
-    if (!user || consent !== true) return;
-    (async () => {
-      const c = await loadConsent();
-      if (!c) return;
-      if ((await loadConsentSynced()) === c.version) return;
-      try {
-        await api.recordConsent({ version: c.version, accepted_at: c.at, platform: Platform.OS, documents: ["privacy", "terms"] });
-        await saveConsentSynced(c.version);
-      } catch {}
-    })();
-  }, [user, consent]);
   const userRef = useRef(null);
   useEffect(() => { userRef.current = user; }, [user]);
   // ULTRON: solo permessi notifiche locali e connessione diretta WakeService.
