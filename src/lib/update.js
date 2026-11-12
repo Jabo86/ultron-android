@@ -30,7 +30,7 @@ async function base() {
 
 // { available, version, current, url, notes, verified, untrusted, manifest }
 export async function checkUpdate() {
-  if (!VENDOR_PUB) return { available: false, untrusted: false, verified: false, current: cur() };
+  if (!VENDOR_PUB) throw new Error("Aggiornamenti ULTRON non ancora configurati.");
   const b = await base();
   const r = await fetch(b + "/downloads/latest.json?t=" + Date.now());
   if (!r.ok) throw new Error("HTTP " + r.status);

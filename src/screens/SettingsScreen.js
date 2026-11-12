@@ -366,11 +366,6 @@ export default function SettingsScreen({ navigation }) {
   };
   const toggleMesh = async (v) => {
     if (meshBusy) return;
-    if (!tunnel.available()) {
-      Alert.alert(t("sm.019"),
-        t("sm.020"));
-      return;
-    }
     setMeshBusy(true);
     try {
       await tunnel.setEnabled(v);
