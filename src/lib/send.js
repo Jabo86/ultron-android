@@ -2,12 +2,21 @@
 // Il doppio ratchet vale per OGNI destinatario: nelle chat a due e nei gruppi (una busta
 // ratchet per ciascun dispositivo di ciascun membro). Chi ha un'app vecchia riceve la busta
 // nello schema precedente, così nessuno resta senza messaggi.
-import { encryptForRecipients } from "./crypto";
+import { DEFAULT_SERVER } from "../config";
+import { bytesToHex, encryptForRecipients } from "./crypto";
 import { addSelfKeys } from "./devices";
 import { ratchetEnvelopesFor } from "./ratchet";
 import * as api from "./api";
 
 export async function buildEnvelopes(payload, others, user) {
+  // The hosted gateway exposes static ML-KEM keys for individual chat.
+  if (others.length === 1 && api.getServerUrl() === DEFAULT_SERVER) {
+    const [peer] = others;
+    const keys = await api.pulseStaticKeys([peer]);
+    if (!keys?.[peer]) throw new Error(peer);
+    return encryptForRecipients(payload, { [peer]: keys[peer], [user.lns]: bytesToHex(user.kem.publicKey) });
+  }
+
   const envelopes = [];
   const keyMap = {};
   for (const peer of others) {

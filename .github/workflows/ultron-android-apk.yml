@@ -23,9 +23,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - uses: actions/setup-go@v6
-        with:
-          go-version: '1.26.0'
       - uses: android-actions/setup-android@v3
         with:
           packages: "platform-tools platforms;android-36 build-tools;36.0.0 ndk;27.1.12297006"
@@ -37,8 +34,6 @@ jobs:
           npm audit --audit-level=low
       - name: Verify proprietary notification routing
         run: node tools/verify-ultron-notifications.cjs
-      - name: Build native Xray AAR from checked-in source
-        run: bash tools/build-libv2ray.sh "$GITHUB_WORKSPACE/third_party/libxray" "$GITHUB_WORKSPACE/android/app/libs/libv2ray.aar"
       - name: Configure Android signing
         env:
           ULTRON_KEYSTORE: ${{ secrets.ULTRON_ANDROID_KEYSTORE_B64 }}

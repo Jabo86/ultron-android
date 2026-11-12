@@ -3,7 +3,7 @@ import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useI18n } from "../lib/i18n";
 import { AUDIT_SECTIONS } from "../lib/auditEntries";
-import { checkBackupEncryption, checkMeshPacket, checkShield } from "../lib/securityAudit";
+import { checkBackupEncryption, checkShield } from "../lib/securityAudit";
 import { theme } from "../theme";
 
 export default function SecurityScreen({ navigation }) {
@@ -25,7 +25,6 @@ export default function SecurityScreen({ navigation }) {
         const { domains } = checkShield();
         return it ? `${domains} domini caricati` : `${domains} domains loaded`;
       }],
-      [it ? "Crittografia mesh" : "Mesh cryptography", () => { checkMeshPacket(); return it ? "4 strati, pacchetto alterato rifiutato" : "4 layers, altered packet rejected"; }],
       [it ? "Cifratura backup" : "Backup encryption", () => { checkBackupEncryption(); return it ? "password errata rifiutata" : "wrong password rejected"; }],
     ];
     const lines = checks.map(([title, check]) => {
@@ -42,8 +41,8 @@ export default function SecurityScreen({ navigation }) {
     </Pressable>
     <Text style={s.title}>{it ? "Sicurezza e audit" : "Security and audit"}</Text>
     <Text style={s.description}>{it
-      ? "Controlli locali e stato della configurazione. Per le prove radio usa Modalità Nodo Sovrano su almeno due telefoni."
-      : "Local checks and configuration status. For radio tests, use Sovereign Node mode on at least two phones."}</Text>
+      ? "Controlli locali e stato della configurazione."
+      : "Local checks and configuration status."}</Text>
     <Pressable accessibilityRole="button" disabled={busy} onPress={run} testID="security-run-local-audit">
       <Text style={s.link}>{busy ? (it ? "Test in corso…" : "Testing…") : (it ? "Esegui test locali" : "Run local tests")}</Text>
     </Pressable>

@@ -29,14 +29,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as cover from "../lib/cover";
 import { ICE_SERVERS } from "../config";
 import { threatListSize } from "../lib/threatEngine";
-import * as tunnel from "../lib/tunnel";
-import * as meshNode from "../lib/mesh";
-import MeshConstellation from "../components/MeshConstellation";
 import { UI_LANGS } from "../lib/locales";
-import * as meshRuntime from "../lib/mesh/runtime";
-import * as meshRadio from "../lib/mesh/radio";
-import * as meshChat from "../lib/meshchat";
-import * as decdiag from "../lib/decdiag";
 import { saveAllowDirect, loadAllowDirect, saveAppLock, loadAppLock, loadPreferredServer, savePreferredServer, loadKeyfile, saveAutoTranslate, loadAutoTranslate, saveTranslateTarget, loadTranslateTarget } from "../lib/store";
 import { TRANSLATE_LANGS, langName } from "../lib/langs";
 import { getThreatLog, clearThreatLog, getThreatCount } from "../lib/threatLog";
@@ -54,12 +47,6 @@ function fmtAgo(ts, lang, t) {
   try { return new Date(ts).toLocaleDateString(); } catch { return ""; }
 }
 
-function radioLabel(v, t) {
-  const k = String(v || "off");
-  const known = ["off", "perm", "on", "group", "bt-off", "adv+scan", "near"];
-  return known.includes(k) ? t("sm.radio." + k) : k;
-}
-
 export default function SettingsScreen({ navigation }) {
   const tint = useTint();
   const styles = useMemo(() => makeStyles(tint), [tint]);
@@ -71,15 +58,6 @@ export default function SettingsScreen({ navigation }) {
   const isOwner = canaryIsOwner(user);
   const [callDirect, setCallDirect] = useState(false);
   const [chaff, setChaff] = useState(true);
-  const [darkMesh, setDarkMesh] = useState(false);
-  const [meshBusy, setMeshBusy] = useState(false);
-  const [sovereign, setSovereign] = useState(false);
-  const [netHealth, setNetHealth] = useState(null);
-  const [sovBusy, setSovBusy] = useState(false);
-  const [probeCode, setProbeCode] = useState("");
-  const [meshQ, setMeshQ] = useState(null);
-  const [relayCode, setRelayCode] = useState("");
-  const [testBusy, setTestBusy] = useState(false);
   const [wakeOn, setWakeOn] = useState(false);
   const [wakeBusy, setWakeBusy] = useState(false);
   const [upBusy, setUpBusy] = useState(false);
@@ -87,22 +65,33 @@ export default function SettingsScreen({ navigation }) {
   // Controllo manuale: se c'è una versione più nuova la scarica e apre l'installazione
   // in sovrascrittura (nessuna disinstallazione).
   const doCheckUpdate = async () => {
-    setUpBusy(true); setUpMsg("");
+    setUpBusy(true); setUpMsg(en ? "Checking for updates…" : "Controllo aggiornamenti…");
     try {
       if (!updatesConfigured) {
-        setUpMsg(en ? "Updates require the official release signature." : "Gli aggiornamenti richiedono la firma di rilascio ufficiale.");
+        setUpMsg(en ? "This test build needs the official version installed first." : "Questa build di prova richiede prima l’installazione della versione ufficiale.");
         return;
       }
-      const release = await checkAndPrepare({ force: true });
+      const release = await checkAndPrepare((value, phase) => {
+        const label = phase === "verify"
+          ? (en ? "Verifying APK" : "Verifica APK")
+          : (en ? "Downloading" : "Scaricamento");
+        setUpMsg(label + " · " + Math.floor(value * 100) + "%");
+      });
       if (!release) {
         setUpMsg(en ? "No update available." : "Nessun aggiornamento disponibile.");
         return;
       }
+      setUpMsg(en ? "Confirm the update in Android." : "Conferma l’aggiornamento in Android.");
       suppressLock();
       await installUpdate(release.file);
-      setUpMsg(en ? "Android installer opened." : "Installazione affidata ad Android.");
     } catch (e) {
-      setUpMsg(String((e && e.message) || (t("sm.007"))));
+      if (e?.message === "ULTRON_RELEASE_UNAVAILABLE") {
+        setUpMsg(en ? "The official release is unavailable." : "Il rilascio ufficiale non è disponibile.");
+      } else if (e?.message === "ULTRON_INSTALL_PERMISSION") {
+        setUpMsg(en ? "Allow ULTRON to install updates, then try again." : "Consenti a ULTRON di installare aggiornamenti e riprova.");
+      } else {
+        setUpMsg(String(e?.message || t("sm.007")));
+      }
     } finally { setUpBusy(false); }
   };
   const shareCard = async () => {
@@ -264,59 +253,6 @@ export default function SettingsScreen({ navigation }) {
     if (v) { const ok = await authenticate(); if (!ok) return; }
     setAppLock(v); await saveAppLock(v);
   };
-  // PROVA FISICA: l'unica che vale. Il pacchetto passa dal mezzo reale (UDP sulla Wi-Fi).
-  const runProbe = async () => {
-    if (testBusy) return;
-    setTestBusy(true);
-    try { setProbeCode(await meshRuntime.sendProbe()); }
-    catch (e) { Alert.alert(t("sm.013"), String((e && e.message) || e)); }
-    finally { setTestBusy(false); }
-  };
-  const runRelay = async () => {
-    if (testBusy) return;
-    setTestBusy(true);
-    try { setRelayCode(await meshRuntime.startSelfTest()); }
-    catch (e) { Alert.alert(t("sm.013"), String((e && e.message) || e)); }
-    finally { setTestBusy(false); }
-  };
-  const chooseSovereign = async (v) => {
-    if (sovBusy || v === sovereign) return;
-    setSovBusy(true);
-    try {
-      if (v) {
-        // FASE 2: senza questi permessi Android non consente Wi-Fi Direct né BLE.
-        if (!(await meshRadio.has())) {
-          Alert.alert(t("sm.014"),
-            t("sm.015"));
-          try { await meshRadio.request(); } catch { /* si procede: la mesh Wi-Fi funziona comunque */ }
-        }
-        await meshRuntime.start(user, meshChat.onDeliver, () => meshChat.flush(user), require("../lib/bridge").carry);
-        setSovereign(true);
-        Alert.alert(t("sm.016"),
-          t("sm.017"));
-      } else {
-        await meshRuntime.stop();
-        setSovereign(false);
-      }
-    } catch (e) {
-      setSovereign(false);
-      Alert.alert(t("sm.018"), String((e && e.message) || e));
-    } finally { setSovBusy(false); }
-  };
-  const toggleMesh = async (v) => {
-    if (meshBusy) return;
-    setMeshBusy(true);
-    try {
-      await tunnel.setEnabled(v);
-      setDarkMesh(v);
-      if (v) Alert.alert(t("sm.021"),
-        t("sm.022"));
-    } catch (e) {
-      setDarkMesh(false);
-      Alert.alert(t("sm.023"),
-        t("sm.024"));
-    } finally { setMeshBusy(false); }
-  };
   const checkPush = async (askPermission = false) => {
     setPushBusy(true);
     try {
@@ -333,21 +269,6 @@ export default function SettingsScreen({ navigation }) {
     return navigation.addListener("focus", refresh);
   }, [navigation]);
   useEffect(() => { cover.isEnabled().then(setChaff).catch(() => {}); }, []);
-  useEffect(() => { tunnel.isEnabled().then(setDarkMesh).catch(() => {}); }, []);
-  useEffect(() => { meshNode.getMode().then((m) => setSovereign(m === meshNode.SOVEREIGN)).catch(() => {}); }, []);
-  // Barometro: si aggiorna solo mentre la modalità è attiva (nessun consumo altrimenti).
-  useEffect(() => {
-    if (!sovereign) { setNetHealth(null); return undefined; }
-    let alive = true;
-    const tick = () => {
-      meshRuntime.status().then((st) => { if (alive) setNetHealth(st); }).catch(() => {});
-      meshChat.status().then((s) => { if (alive) setMeshQ(s); }).catch(() => {});
-    };
-    tick();
-    const iv = setInterval(tick, 5000);
-    return () => { alive = false; clearInterval(iv); };
-  }, [sovereign]);
-
   const doExport = async () => {
     setExporting(true);
     try {
@@ -613,10 +534,7 @@ export default function SettingsScreen({ navigation }) {
       <View style={styles.privStatus} testID="settings-privacy-status">
         {[
           { on: chaff, label: (en ? "Cover traffic requested" : "Rumore configurato"), tid: "privstat-noise" },
-          { on: darkMesh, label: "Dark Mesh", tid: "privstat-mesh" },
           { on: !callDirect && HAS_TURN, label: HAS_TURN ? t("sm.032") : (en ? "TURN unavailable" : "TURN non configurato"), tid: "privstat-relay" },
-          ...(sovereign ? [{ on: netHealth ? netHealth.key !== "isolated" : false, tid: "privstat-mesh-health",
-            label: (t("sm.033")) + meshNode.healthLabel(netHealth ? netHealth.key : "isolated", en) }] : []),
         ].map((it) => (
           <View key={it.tid} style={styles.privPill} testID={it.tid}>
             <View style={[styles.privDot, { backgroundColor: it.on ? "#50C878" : theme.textFaint }]} />
@@ -648,129 +566,6 @@ export default function SettingsScreen({ navigation }) {
           hint={en ? "Runs while Android keeps the service active. 24/7 operation is unverified."
             : "Funziona quando Android mantiene il servizio attivo. La continuità H24 è da verificare."}
           right={<Switch value={chaff} onValueChange={async (v) => { setChaff(v); await cover.setEnabled(v); }} trackColor={{ true: tint, false: theme.border }} thumbColor="#fff" testID="settings-chaff" />} />
-        <View style={styles.divider} />
-        <Row icon="eye-off-outline"
-          label={t("sm.043")}
-          hint={tunnel.available() ? (darkMesh ? t("sm.044") : t("sm.045"))
-            : (en ? "No tunnel profile configured." : "Profilo del tunnel assente in questa build.")}
-          right={meshBusy
-            ? <ActivityIndicator color={tint} />
-            : <Switch value={darkMesh} disabled={!tunnel.available()} onValueChange={toggleMesh} trackColor={{ true: tint, false: theme.border }} thumbColor="#fff" testID="settings-darkmesh" />} />
-        <View style={styles.divider} />
-        <View style={styles.modeBox} testID="mesh-mode">
-          <Text style={styles.modeTitle}>{t("sm.046")}</Text>
-          <Text style={styles.modeHint}>
-            {en ? "Experimental mesh mode. The app can still contact the server or use a bridge." : "Modalità mesh sperimentale. L’app può ancora usare il server o un ponte."}
-          </Text>
-          <View style={styles.modeRow}>
-            <TouchableOpacity
-              style={[styles.modeBtn, !sovereign && { borderColor: tint, backgroundColor: tint + "1A" }]}
-              onPress={() => chooseSovereign(false)}
-              disabled={sovBusy}
-              testID="mesh-mode-standard"
-            >
-              <Ionicons name="cloud-outline" size={17} color={!sovereign ? tint : theme.textDim} />
-              <Text style={[styles.modeBtnTxt, !sovereign && { color: tint }]}>{t("sm.048")}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.modeBtn, sovereign && { borderColor: tint, backgroundColor: tint + "1A" }]}
-              onPress={() => chooseSovereign(true)}
-              disabled={sovBusy}
-              testID="mesh-mode-sovereign"
-            >
-              {sovBusy ? <ActivityIndicator color={tint} /> : <Ionicons name="git-network-outline" size={17} color={sovereign ? tint : theme.textDim} />}
-              <Text style={[styles.modeBtnTxt, sovereign && { color: tint }]}>{t("sm.049")}</Text>
-            </TouchableOpacity>
-          </View>
-          {sovereign && (
-            <View style={styles.testBox} testID="mesh-test">
-              <MeshConstellation status={netHealth} t={t} tint={tint} details={
-                <Text style={styles.modeMeta} testID="mesh-map-raw">
-                  {(t("sm.050")) + ((netHealth && netHealth.neighbours) || 0)
-                    + (t("sm.051")) + ((netHealth && netHealth.hybrid) || 0)
-                    + (t("sm.052")) + ((netHealth && netHealth.mix) || 0)
-                    + (t("sm.053")) + ((netHealth && netHealth.pulses) || 0)}
-                </Text>
-              } />
-              <Text style={styles.testTitle}>{t("sm.054")}</Text>
-              <Text style={styles.modeHint}>
-                {t("sm.055")}
-              </Text>
-              <TouchableOpacity style={[styles.testBtn, { borderColor: tint }]} onPress={runProbe} disabled={testBusy} testID="mesh-test-probe">
-                {testBusy ? <ActivityIndicator color={tint} /> : <Ionicons name="wifi-outline" size={17} color={tint} />}
-                <Text style={[styles.testBtnTxt, { color: tint }]}>{t("sm.056")}</Text>
-              </TouchableOpacity>
-              {!!probeCode && (
-                <Text style={styles.testOut} testID="mesh-test-sent">
-                  {(t("sm.057")) + probeCode + (t("sm.058"))}
-                </Text>
-              )}
-              <Text style={styles.testOut} testID="mesh-test-recv">
-                {(t("sm.059")) + (netHealth ? netHealth.probes || 0 : 0)
-                  + (netHealth && netHealth.probeCode ? (t("sm.060")) + netHealth.probeCode : "")}
-              </Text>
-              <TouchableOpacity style={[styles.testBtn, { borderColor: tint }]} onPress={runRelay} disabled={testBusy} testID="mesh-test-relay">
-                <Ionicons name="git-network-outline" size={17} color={tint} />
-                <Text style={[styles.testBtnTxt, { color: tint }]}>{t("sm.061")}</Text>
-              </TouchableOpacity>
-              {!!relayCode && (
-                <Text style={styles.testOut} testID="mesh-test-relay-out">
-                  {(() => {
-                    const st = netHealth && netHealth.self;
-                    if (!st) return t("sm.062");
-                    if (st.done) return (t("sm.063")) + Math.round(st.ms / 100) / 10 + "s"
-                      + (st.net ? (t("sm.064"))
-                                : (t("sm.065")));
-                    return (t("sm.066")) + st.hops + "/4 · " + Math.round(st.elapsed / 1000) + "s"
-                      + (st.elapsed > 90000 ? (t("sm.067")) : "");
-                  })()}
-                </Text>
-              )}
-              <Text style={styles.modeMeta} testID="mesh-health-detail">
-              {(t("sm.068")) + meshNode.healthLabel(netHealth ? netHealth.key : "isolated", en)
-                + (t("sm.053")) + (netHealth ? netHealth.pulses : 0)
-                + (t("sm.069"))}
-              </Text>
-              <Text style={styles.modeMeta} testID="mesh-diag">
-              {(() => {
-                const d = netHealth && netHealth.diag;
-                if (!d) return t("sm.070");
-                let l = (t("sm.071")) + (d.running ? (t("sm.072")) : (t("sm.073")))
-                  + (d.ip ? " \u00b7 IP " + d.ip : "")
-                  + (t("sm.074")) + d.tx
-                  + (t("sm.075")) + d.rx
-                  + (t("sm.076")) + d.loops
-                  + (d.txErr ? (t("sm.077")) + d.txErr : "");
-                l += "\n" + "Wi-Fi Direct: " + radioLabel(d.p2p, t)
-                  + (t("sm.078")) + (d.p2pFound || 0)
-                  + (t("sm.079")) + (d.p2pPeers || 0)
-                  + (d.p2pClients ? (t("sm.080")) + d.p2pClients : "");
-                l += "\n" + "Bluetooth: " + radioLabel(d.ble, t)
-                  + (t("sm.081")) + (d.bleSeen || 0)
-                  + (d.bleAt ? (t("sm.082")) + Math.max(0, Math.round((Date.now() - d.bleAt) / 1000)) + (t("sm.083")) : "");
-                if (d.radioErr) l += "\n" + (t("sm.084")) + d.radioErr;
-                l += "\n" + decdiag.line(en);
-                if (meshQ && (meshQ.badSeal || meshQ.unknown || meshQ.delivered || meshQ.sent)) {
-                  l += "\n" + (t("sm.085")) + meshQ.sent
-                    + (t("sm.075")) + meshQ.delivered
-                    + (t("sm.086")) + meshQ.badSeal
-                    + (t("sm.087")) + meshQ.unknown;
-                }
-                l += "\n" + (t("sm.050")) + (netHealth.neighbours || 0)
-                  + (t("sm.052")) + (netHealth.mix || 0)
-                  + (t("sm.088")) + (meshQ ? meshQ.known : 0)
-                  + (t("sm.089")) + (meshQ ? meshQ.queued : 0);
-                if (d.targets) l += "\n" + (t("sm.090")) + d.targets;
-                if (d.err) l += "\n" + (t("sm.091")) + d.err;
-                if (!d.running) l += "\n" + (t("sm.092"));
-                else if (d.loops > 0 && !d.probes) l += "\n" + (t("sm.093"));
-                else if (d.running && d.tx > 0 && d.rx === 0) l += "\n" + (t("sm.094"));
-                return l;
-              })()}
-              </Text>
-            </View>
-          )}
-        </View>
         <View style={styles.divider} />
         <Row
           icon={pushOk ? "checkmark-circle-outline" : "alert-circle-outline"}
@@ -990,10 +785,10 @@ export default function SettingsScreen({ navigation }) {
         <Ionicons name="cloud-download-outline" size={16} color={tint} />
         <View style={{ flex: 1 }}>
           <Text style={styles.infoTitle}>{t("sm.101")}</Text>
-          <Text style={styles.infoText} testID="settings-update-info">
+          <Text style={styles.infoText} accessibilityLiveRegion="polite" testID="settings-update-info">
             {upMsg || (updatesConfigured
               ? (en ? "Checks the official release, its signature and the APK hash." : "Controlla la versione ufficiale, la firma e l’impronta dell’APK.")
-              : (en ? "Test build. Install a new test APK manually." : "Build di prova. Installa manualmente il nuovo APK di prova."))}
+              : (en ? "Test build. In-app updates start with the official version." : "Build di prova. Gli aggiornamenti dall’app partono dalla versione ufficiale."))}
           </Text>
           <TouchableOpacity style={styles.updBtn} onPress={doCheckUpdate} disabled={upBusy} testID="settings-check-update">
             {upBusy ? <ActivityIndicator color={tint} /> : (
@@ -1155,18 +950,6 @@ const makeStyles = (tint) => StyleSheet.create({
   privPill: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 6 },
   privDot: { width: 9, height: 9, borderRadius: 5 },
   privPillTxt: { fontSize: 12, fontWeight: "600" },
-  modeBox: { paddingHorizontal: 16, paddingVertical: 14 },
-  modeTitle: { color: theme.text, fontSize: 15, fontWeight: "700" },
-  modeHint: { color: theme.textDim, fontSize: 12, lineHeight: 17, marginTop: 4 },
-  modeRow: { flexDirection: "row", gap: 10, marginTop: 12 },
-  modeBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderWidth: 1, borderColor: theme.border, borderRadius: 12, paddingVertical: 11 },
-  modeBtnTxt: { color: theme.textDim, fontSize: 13, fontWeight: "700" },
-  modeMeta: { color: theme.textFaint, fontSize: 11, lineHeight: 16, marginTop: 10 },
-  testBox: { marginTop: 14, borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 14 },
-  testTitle: { color: theme.text, fontSize: 14, fontWeight: "700", marginBottom: 2 },
-  testBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1, borderRadius: 12, paddingVertical: 11, marginTop: 10 },
-  testBtnTxt: { fontSize: 13, fontWeight: "700" },
-  testOut: { color: theme.textDim, fontSize: 11, lineHeight: 16, marginTop: 8 },
   card: { backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border, borderRadius: 14, marginHorizontal: 14, marginBottom: 10, overflow: "hidden" },
   row: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 14 },
   rowLabel: { color: theme.text, fontSize: 15, fontWeight: "600" },

@@ -47,10 +47,6 @@ export async function onReset(fromLns, user) {
   try {
     await resetRatchet(fromLns);
     counters.honoured++;
-    try {
-      const msh = require("./meshchat");
-      await msh.publishTo(fromLns, user, { force: true, req: false });
-    } catch { /* il prossimo messaggio porterà comunque l'init */ }
     return true;
   } catch { return false; }
 }

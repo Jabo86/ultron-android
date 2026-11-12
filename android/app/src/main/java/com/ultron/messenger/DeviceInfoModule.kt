@@ -19,6 +19,11 @@ class DeviceInfoModule(private val ctx: ReactApplicationContext) : ReactContextB
   override fun getName() = "LatticeDeviceInfo"
 
   @ReactMethod
+  fun canInstallUpdates(promise: Promise) {
+    promise.resolve(Build.VERSION.SDK_INT < Build.VERSION_CODES.O || ctx.packageManager.canRequestPackageInstalls())
+  }
+
+  @ReactMethod
   fun display(promise: Promise) {
     val m = Arguments.createMap()
     try {

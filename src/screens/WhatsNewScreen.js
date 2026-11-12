@@ -8,6 +8,20 @@ import { useI18n } from "../lib/i18n";
 // Changelog completo di ULTRON Messaggi (più recente in alto). Bilingue IT/EN.
 const CHANGELOG = [
   {
+    v: "3.5.8",
+    date: "2026-11",
+    it: [
+      "La chat usa il server HTTPS configurato. Dark Mesh e la scelta del modo di rete sono stati rimossi.",
+      "La conversazione aperta si aggiorna ogni secondo mentre l’app è in primo piano.",
+      "Controlla aggiornamenti verifica il rilascio firmato, mostra scaricamento e verifica, poi apre l’installazione Android.",
+    ],
+    en: [
+      "Chat uses the configured HTTPS server. Dark Mesh and the network mode selector have been removed.",
+      "The open conversation refreshes every second while the app is in the foreground.",
+      "Check for updates verifies the signed release, shows download and verification progress, and opens Android installation.",
+    ],
+  },
+  {
     v: "2.3.1",
     date: "2026-06",
     it: [

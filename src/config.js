@@ -1,9 +1,8 @@
 // Default server (trial/hosted). Companies with a license run their OWN server:
 // the employee points the app to their company server (or the keyfile embeds it).
 export const DEFAULT_SERVER = "https://49.12.242.0";
-// Compilare dopo il provisioning degli amministratori e del tunnel ULTRON.
+// Compilare dopo il provisioning degli amministratori.
 export const OWNER_LNS_LIST = [];
-export const REALITY_PROFILE = null;
 
 // Chiamate WebRTC: SOLO infrastruttura nostra (coturn sul VPS sovrano). Gli STUN pubblici
 // di Google sono stati rimossi: contattarli significherebbe dire a un terzo che stai

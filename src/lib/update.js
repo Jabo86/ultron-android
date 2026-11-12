@@ -1,10 +1,10 @@
-// Aggiornamento in-app VERIFICATO: legge /downloads/latest.json, controlla che il manifest
+// Aggiornamento in-app: legge il manifest del rilascio GitHub e controlla che
 // sia firmato dal produttore (ML-DSA-65), scarica l'APK e ne verifica l'impronta SHA-256
 // prima di passarlo all'installer. Se il server viene bucato e l'APK sostituito, la firma o
 // l'impronta non tornano e l'installazione NON parte. Rifiutati anche i "downgrade".
 import * as FileSystem from "expo-file-system/legacy";
 import * as IntentLauncher from "expo-intent-launcher";
-import { Platform } from "react-native";
+import { NativeModules, Platform } from "react-native";
 import { VENDOR_PUB } from "./vendorKey";
 import { verifyManifest, fileSha256 } from "./apkVerify";
 
@@ -22,9 +22,19 @@ function authentic(m) {
 
 export async function checkUpdate() {
   if (!updatesConfigured) return null;
-  const response = await fetch(releaseBase + "/latest/download/latest.json", { cache: "no-store" });
-  if (!response.ok) throw new Error("HTTP " + response.status);
-  const manifest = await response.json();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  let manifest;
+  try {
+    const response = await fetch(releaseBase + "/latest/download/latest.json", {
+      cache: "no-store", signal: controller.signal,
+    });
+    if (response.status === 404) throw new Error("ULTRON_RELEASE_UNAVAILABLE");
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    manifest = await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
   if (!authentic(manifest)) throw new Error("Manifest ULTRON non valido.");
   return manifest.versionCode > currentCode ? manifest : null;
 }
@@ -62,6 +72,13 @@ export async function prepareUpdate(m, onProgress) {
 }
 
 export async function installUpdate(uri) {
+  const canInstall = NativeModules.LatticeDeviceInfo?.canInstallUpdates;
+  if (canInstall && !(await canInstall())) {
+    await IntentLauncher.startActivityAsync("android.settings.MANAGE_UNKNOWN_APP_SOURCES", {
+      data: "package:com.ultron.messenger",
+    });
+    if (!(await canInstall())) throw new Error("ULTRON_INSTALL_PERMISSION");
+  }
   const contentUri = await FileSystem.getContentUriAsync(uri);
   const opts = { data: contentUri, flags: 1, type: "application/vnd.android.package-archive" };
   try {

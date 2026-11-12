@@ -16,7 +16,7 @@ import java.net.URL
 
 /**
  * Notifiche del nodo ULTRON, senza push di terze parti.
- * Tiene aperta una connessione in attesa verso il server Lattice (long-poll) e mostra una
+ * Tiene aperta una connessione in attesa verso il server ULTRON (long-poll) e mostra una
  * notifica locale quando ci sono messaggi. Non conosce chiavi, non decifra nulla: sa solo
  * che "c'è posta". Il contenuto lo legge l'app, dopo lo sblocco.
  */
@@ -119,7 +119,8 @@ class WakeService : Service() {
   }
 
   private fun loop() {
-    var lastNotified = 0L
+    var previousRid = ""
+    var previousCount = 0
     var backoff = 5000L
     while (running) {
       val cfg = config(this)
@@ -133,6 +134,10 @@ class WakeService : Service() {
       val rid = cfg.optString("rid", "")
       val base = cfg.optString("base", "https://49.12.242.0").trimEnd('/')
       if (rid.length < 32) { stopSelf(); return }
+      if (rid != previousRid) {
+        previousRid = rid
+        previousCount = 0
+      }
       try {
         val url = URL("$base/api/public/wake/poll?rid=$rid&wait=25")
         val c = url.openConnection() as HttpURLConnection
@@ -146,12 +151,13 @@ class WakeService : Service() {
           c.disconnect()
           backoff = 5000L
           val n = try { JSONObject(body).optInt("n", 0) } catch (e: Exception) { 0 }
-          val now = System.currentTimeMillis()
-          if (running && enabled(this) && n > 0 && now - lastNotified > 15000L) {
-            notifyMessages(n)
-            lastNotified = now
-            Thread.sleep(20000) // l'app, se aperta, marca i messaggi come consegnati
+          val current = config(this)
+          if (running && current?.optBoolean("on", false) == true && current.optString("rid") == rid) {
+            if (n > previousCount) notifyMessages(n)
+            previousCount = n
           }
+          // A nonzero count returns immediately even when it has not changed.
+          if (n > 0) Thread.sleep(1000)
         } else {
           c.disconnect()
           if (code == 404) { stopSelf(); return } // gettone revocato

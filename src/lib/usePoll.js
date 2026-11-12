@@ -13,7 +13,14 @@ function useTimer(fn, ms, { runOnFocus, active, needFocus, focused }) {
     if (!active) return;
     if (needFocus && !focused) return;
     let alive = true;
-    const tick = () => { if (alive && AppState.currentState === "active") fnRef.current(); };
+    let inFlight = false;
+    const tick = async () => {
+      if (!alive || inFlight || AppState.currentState !== "active") return;
+      inFlight = true;
+      try { await fnRef.current(); }
+      catch { /* the next tick can retry */ }
+      finally { inFlight = false; }
+    };
     if (runOnFocus) tick();
     const id = setInterval(tick, ms);
     // Al rientro nell'app si aggiorna subito, senza aspettare il giro successivo.

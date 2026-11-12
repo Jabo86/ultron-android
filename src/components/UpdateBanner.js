@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
+import * as FileSystem from "expo-file-system/legacy";
 import { AppState, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../theme";
+import { suppressLock } from "../lib/lockGuard";
 import { useI18n } from "../lib/i18n";
 import { checkUpdate, installUpdate, prepareUpdate, updatesConfigured } from "../lib/update";
 
@@ -9,22 +11,18 @@ let pending;
 let prepared;
 let lastCheck = 0;
 
-export function checkAndPrepare({ force = false } = {}) {
-  if (pending) return force ? pending : pending.catch(() => prepared);
-  if (!force && Date.now() - lastCheck < 15 * 60_000) return Promise.resolve(prepared);
-  lastCheck = Date.now();
+export function checkAndPrepare(onProgress) {
+  if (pending) return pending;
   pending = (async () => {
     const manifest = await checkUpdate();
     if (!manifest) { prepared = null; return null; }
-    if (prepared?.versionCode !== manifest.versionCode) {
-      prepared = { ...manifest, file: await prepareUpdate(manifest) };
+    if (prepared?.versionCode !== manifest.versionCode ||
+        !(await FileSystem.getInfoAsync(prepared.file)).exists) {
+      prepared = { ...manifest, file: await prepareUpdate(manifest, onProgress) };
     }
     return prepared;
-  })().catch((error) => {
-    lastCheck = Date.now() - 14 * 60_000;
-    throw error;
-  }).finally(() => { pending = null; });
-  return force ? pending : pending.catch(() => prepared);
+  })().finally(() => { pending = null; });
+  return pending;
 }
 
 export function UpdateBanner() {
@@ -39,9 +37,9 @@ export function UpdateBanner() {
     if (!updatesConfigured) return;
     let alive = true;
     const refresh = () => {
-      if (AppState.currentState === "active") {
-        checkAndPrepare().then((result) => { if (alive) setRelease(result); }).catch(() => {});
-      }
+      if (AppState.currentState !== "active" || Date.now() - lastCheck < 15 * 60_000) return;
+      lastCheck = Date.now();
+      checkUpdate().then((result) => { if (alive) setRelease(result); }).catch(() => {});
     };
     refresh();
     const sub = AppState.addEventListener("change", refresh);
@@ -52,7 +50,15 @@ export function UpdateBanner() {
   const install = async () => {
     setInstalling(true);
     setFailed(false);
-    try { await installUpdate(release.file); }
+    try {
+      const update = await checkAndPrepare();
+      if (update) {
+        suppressLock();
+        await installUpdate(update.file);
+      } else {
+        setRelease(null);
+      }
+    }
     catch { setFailed(true); }
     finally { setInstalling(false); }
   };
@@ -61,11 +67,11 @@ export function UpdateBanner() {
   return <View style={[styles.wrap, { paddingTop: top + 8 }]}>
     <Text style={styles.text}>
       {failed
-        ? (english ? "Could not open Android installer." : "Impossibile aprire il programma di installazione Android.")
-        : (english ? "Verified update ready" : "Aggiornamento verificato pronto") + " · " + release.versionName}
+        ? (english ? "Update failed. Try again from Settings." : "Aggiornamento non riuscito. Riprova dalle impostazioni.")
+        : (english ? "Signed update available" : "Aggiornamento firmato disponibile") + " · " + release.versionName}
     </Text>
     <Pressable accessibilityRole="button" onPress={install} disabled={installing}>
-      <Text style={styles.button}>{english ? "Install" : "Installa"}</Text>
+      <Text style={styles.button}>{installing ? (english ? "Preparing…" : "Preparazione…") : (english ? "Install" : "Installa")}</Text>
     </Pressable>
   </View>;
 }

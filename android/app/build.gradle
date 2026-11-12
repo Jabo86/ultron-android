@@ -93,7 +93,7 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode Integer.parseInt(System.getenv("EXPO_PUBLIC_ULTRON_VERSION_CODE") ?: "183")
-        versionName "3.5.7"
+        versionName "3.5.8"
 
         // Solo arm64-v8a: copre tutti gli smartphone moderni e riduce l'APK da ~137MB a ~50MB
         // (download mobile affidabile). x86/x86_64 servono solo agli emulatori.
@@ -180,8 +180,6 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
-    // Motore Xray (Dark Mesh / XTLS-Reality) — AndroidLibXrayLite, .aar pre-compilato.
-    implementation(files("libs/libv2ray.aar"))
 
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";

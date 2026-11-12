@@ -101,8 +101,6 @@ export function AuthProvider({ children }) {
       // server gli indirizzi di chi non ha ancora i gettoni (senza questo non ci si può
       // scrivere) e pota solo quelli diventati superflui.
       book.reconcile(u).catch(() => {});
-      // Nodo Sovrano: se è acceso, il motore mesh parte da solo (chat anche senza server).
-      try { require("../lib/meshboot").boot(u); } catch { /* */ }
       // Manutenzione automatica: chiavi orfane sul server, vecchie installazioni,
       // chiavi statiche in cassaforte. Non blocca l'avvio e non chiede nulla.
       try { require("../lib/maintenance").run([]); } catch { /* */ }
@@ -132,8 +130,6 @@ export function AuthProvider({ children }) {
       const book = require("../lib/book");
       book.setUser(u2);
       book.reconcile(u2).catch(() => {});
-      // Nodo Sovrano: se è acceso, il motore mesh parte da solo (chat anche senza server).
-      try { require("../lib/meshboot").boot(u2); } catch { /* */ }
       // Manutenzione automatica: chiavi orfane sul server, vecchie installazioni,
       // chiavi statiche in cassaforte. Non blocca l'avvio e non chiede nulla.
       try { require("../lib/maintenance").run([]); } catch { /* */ }

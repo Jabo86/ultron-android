@@ -7,13 +7,9 @@ import android.content.res.Configuration
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
-import com.facebook.react.ReactPackage
 import com.facebook.react.ReactHost
 import com.facebook.react.common.ReleaseLevel
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint
-import com.facebook.react.modules.network.OkHttpClientFactory
-import com.facebook.react.modules.network.OkHttpClientProvider
-import okhttp3.OkHttpClient
 
 import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ExpoReactHostFactory
@@ -25,7 +21,7 @@ class MainApplication : Application(), ReactApplication {
       context = applicationContext,
       packageList =
         PackageList(this).packages.apply {
-          add(RealityTunnelPackage())
+          add(UltronNativePackage())
         }
     )
   }
@@ -79,33 +75,8 @@ class MainApplication : Application(), ReactApplication {
     } catch (e: IllegalArgumentException) {
       ReleaseLevel.STABLE
     }
-    installTunnelProxy()
     loadReactNative(this)
     ApplicationLifecycleDispatcher.onApplicationCreate(this)
-  }
-
-  // DARK MESH: quando il tunnel è attivo, TUTTA la rete dell'app (fetch/XHR/axios via OkHttp)
-  // passa dal SOCKS locale 127.0.0.1:10808 → Reality → internet. Quando è spento, connessione
-  // diretta come sempre. Il ProxySelector legge il flag a ogni richiesta, così l'interruttore
-  // ha effetto immediato senza ricreare il client di rete.
-  private fun installTunnelProxy() {
-    try {
-      OkHttpClientProvider.setOkHttpClientFactory(object : OkHttpClientFactory {
-        override fun createNewNetworkModuleClient(): OkHttpClient {
-          return OkHttpClientProvider.createClientBuilder(this@MainApplication)
-            .proxySelector(object : java.net.ProxySelector() {
-              override fun select(uri: java.net.URI?): MutableList<java.net.Proxy> {
-                return if (RealityTunnelModule.active.get())
-                  mutableListOf(java.net.Proxy(java.net.Proxy.Type.SOCKS,
-                    java.net.InetSocketAddress("127.0.0.1", RealityTunnelModule.SOCKS_PORT)))
-                else mutableListOf(java.net.Proxy.NO_PROXY)
-              }
-              override fun connectFailed(uri: java.net.URI?, sa: java.net.SocketAddress?, e: java.io.IOException?) { }
-            })
-            .build()
-        }
-      })
-    } catch (e: Throwable) { /* in caso di API diversa, si resta senza tunnel: l'app funziona */ }
   }
 
   override fun onConfigurationChanged(newConfig: Configuration) {

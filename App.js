@@ -65,7 +65,6 @@ import * as wake from "./src/lib/wake";
 import { reportPendingCrash } from "./src/lib/crashlog";
 import { flushBlobs } from "./src/lib/lock";
 import * as cover from "./src/lib/cover";
-import * as tunnel from "./src/lib/tunnel";
 import { initNotificationHandler } from "./src/lib/notifications";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import { UpdateBanner } from "./src/components/UpdateBanner";
@@ -432,7 +431,6 @@ export default function App() {
     // Traffico di Rumore: rumore di rete casuale e continuo mentre l'app è in primo piano,
     // così nessuno può capire dall'esterno QUANDO stai davvero scrivendo o chiamando.
     cover.start().catch(() => {});
-    tunnel.boot().catch(() => {});
     return () => { cover.stop(); };
   }, []);
   useEffect(() => {

@@ -1,15 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
   <uses-permission android:name="android.permission.INTERNET"/>
   <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
-  <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
-  <!-- FASE 2 della mesh: Wi-Fi Direct (trasporto senza router) e BLE (solo scoperta). -->
-  <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
-  <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation" tools:targetApi="s"/>
-  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="32"/>
   <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
   <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
-  <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" tools:targetApi="s"/>
-  <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" tools:targetApi="s"/>
   <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
   <uses-permission android:name="android.permission.WAKE_LOCK"/>
   <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
@@ -93,8 +86,6 @@
         <action android:name="android.telecom.ConnectionService"/>
       </intent-filter>
     </service>
-    <!-- Motore mesh in un PROCESSO SEPARATO: la radio non tocca il thread dell'interfaccia. -->
-    <service android:name="com.ultron.messenger.MeshService" android:exported="false" android:process=":mesh" android:foregroundServiceType="dataSync"/>
     <receiver android:name="com.ultron.messenger.BootReceiver" android:exported="true" android:enabled="true">
       <intent-filter>
         <action android:name="android.intent.action.BOOT_COMPLETED"/>

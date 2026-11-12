@@ -95,7 +95,7 @@ export default function ConversationsScreen({ navigation }) {
   }, [load, navigation]);
 
   // Lista conversazioni: aggiornata solo quando la stai guardando.
-  usePoll(load, 8000, { runOnFocus: false });
+  usePoll(load, 1500, { runOnFocus: false });
 
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 

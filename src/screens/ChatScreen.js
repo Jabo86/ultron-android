@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from "react";
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
-  ActivityIndicator, Alert, Keyboard, Modal, Pressable, InteractionManager,
+  ActivityIndicator, Alert, AppState, Keyboard, Modal, Pressable, InteractionManager,
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import * as ImagePicker from "expo-image-picker";
@@ -20,8 +20,6 @@ import * as api from "../lib/api";
 import { decryptAny } from "../lib/devices";
 import { buildEnvelopes } from "../lib/send";
 import * as msh from "../lib/meshchat";
-import * as meshRuntime from "../lib/mesh/runtime";
-import ChatConstellation from "../components/ChatConstellation";
 import * as decdiag from "../lib/decdiag";
 import * as ratchetheal from "../lib/ratchetheal";
 import { localPrekeyIds, deviceId as myDeviceId } from "../lib/devices";
@@ -140,10 +138,7 @@ export default function ChatScreen({ route, navigation }) {
   const netDone = useRef(false);   // la rete ha già risposto per questa chat
   const arcRef = useRef({ cid: null, list: [] });
   const anonRef = useRef({ cid: null, list: [], dirty: true });
-  const [baro, setBaro] = useState(null);
   // La Costellazione del messaggio: chiusa di default, si apre toccando il lucchetto.
-  const [mapOpen, setMapOpen] = useState(false);
-  const [mapRoute, setMapRoute] = useState({ via: null, neighbours: 0, hybrid: 0, pulses: 0 });
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(true);
@@ -203,12 +198,6 @@ export default function ChatScreen({ route, navigation }) {
       title,
       headerRight: () => (
         <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-          {!!baro && (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }} testID="chat-baro">
-              <Ionicons name={baro.icon} size={15} color={baro.color} />
-              <Text style={{ color: baro.color, fontSize: 10, fontWeight: "700" }}>{baro.label}</Text>
-            </View>
-          )}
           {others.length === 1 && (
             <>
               <TouchableOpacity onPress={() => navigation.navigate("Call", { to: others[0], to_name: title, video: false })} testID="chat-call-audio" hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}>
@@ -377,7 +366,6 @@ export default function ChatScreen({ route, navigation }) {
               // Identità mesh del contatto (chat sulla mesh): controllo invisibile.
               if (typeof body === "string" && body.startsWith(msh.CTL_PREFIX)) {
                 msgCache.put(cid, m.message_id, { csig, ctl: true });
-                if (!m.mine) { try { await msh.onControl(body, m.from_lns || ""); } catch { /* */ } }
                 continue;
               }
               if (typeof body === "string" && body.startsWith(mbx.CTL_PREFIX)) {
@@ -405,7 +393,8 @@ export default function ChatScreen({ route, navigation }) {
           // Cassetta anonima + messaggi arrivati (o in attesa) sulla mesh: entrambi vivono
           // solo qui, nel blob cifrato del telefono.
           const anonList = await mbx.localForConv(cid);
-          const meshList = await msh.localForConv(cid);
+          const meshList = (await msh.localForConv(cid)).map((message) =>
+            message.pending ? { ...message, pending: false, sendFailed: true } : message);
           anonRef.current = { cid, list: anonList.concat(meshList), dirty: false };
         }
         const anon = anonRef.current.list;
@@ -459,6 +448,10 @@ export default function ChatScreen({ route, navigation }) {
       // Stato del ratchet e chiavi: su disco una volta, non a ogni messaggio.
       flushBlobs().catch(() => {});
       if (mounted.current) {
+        if (!preRaw && !deepMode && navigation.isFocused() && AppState.currentState === "active"
+            && raw.some((message) => !message.mine && message.read === false)) {
+          api.markRead(cid).then(refresh).catch(() => {});
+        }
         // Se non è cambiato nulla non si ridisegna la chat: ogni setMsgs ricostruiva
         // l'intera lista dei messaggi.
         let vsig = out.length + "#";
@@ -476,7 +469,7 @@ export default function ChatScreen({ route, navigation }) {
         }
       }
     } catch { if (mounted.current) setLoading(false); }
-  }, [user]);
+  }, [navigation, refresh, user]);
 
   // Passata profonda (tentativi a tentoni sulle buste ancora chiuse): parte SOLO quando
   // l'utente non sta interagendo, una volta ogni 30 secondi al massimo, e non tocca il
@@ -518,69 +511,33 @@ export default function ChatScreen({ route, navigation }) {
     load(convId, INITIAL_WIN).then(() => {
       if (pendingRef.current) scheduleRepair(convId);
     });
-    if (convId) api.markRead(convId).then(() => refresh()).catch(() => {});
     // Cassetta anonima: consegna i gettoni al contatto e ritira i depositi in arrivo.
-    msh.setIdentity(user);
     // Chiave statica del contatto in cassaforte: così la catena che si rigenera parte anche
     // se domani la richiesta al server non riesce.
     try { require("../lib/maintenance").warmStaticKeys(others); } catch { /* */ }
     if (others.length === 1) {
       mbx.publishTo(others[0], user).catch(() => {});
-      // Chat sulla mesh: identità mesh e sigillo condiviso, dentro la chat cifrata.
-      msh.publishTo(others[0], user).catch(() => {});
     }
     return () => { mounted.current = false; };
-  }, [convId, load, refresh, others, user, scheduleRepair]);
+  }, [convId, load, others, user, scheduleRepair]);
 
   // Aggiornamenti: solo con l'app in primo piano e questa chat davanti agli occhi.
   // Passata leggera: i messaggi già decifrati arrivano dalla memoria, i nuovi si decifrano
   // per la loro strada. Niente tentativi a tentoni qui: quelli vanno in sottofondo.
-  usePoll(() => {
-    load(convId, winRef.current, false).then(() => { if (pendingRef.current) scheduleRepair(convId); });
-  }, 4000, { runOnFocus: false, active: !!convId });
+  usePoll(async () => {
+    await load(convId, winRef.current, false);
+    if (pendingRef.current) scheduleRepair(convId);
+  }, 1000, { runOnFocus: false, active: !!convId });
   usePoll(async () => {
     try { const r = await api.pulseTypingGet(convId); if (mounted.current) setTypers(Array.isArray(r?.typing) ? r.typing : []); } catch { /* */ }
     try { await api.presencePing(); } catch { /* */ }
   }, 4000, { runOnFocus: false, active: !!convId });
-  usePoll(() => {
-    mbx.pickup(user).then((n) => { if (n && mounted.current) { anonRef.current.dirty = true; load(convId, winRef.current, false); } }).catch(() => {});
-    // Coda mesh: quello che era in attesa parte da solo appena c'è una via (server o nodo).
-    msh.flush(user).catch(() => {});
-    // I messaggi arrivati sulla mesh sono già nel blob cifrato: si rilegge e compaiono.
-    if (mounted.current) { anonRef.current.dirty = true; load(convId, winRef.current, false); }
+  usePoll(async () => {
+    if (await mbx.pickup(user) && mounted.current) {
+      anonRef.current.dirty = true;
+      await load(convId, winRef.current, false);
+    }
   }, 15000, { runOnFocus: false, active: !!convId });
-
-  // BAROMETRO: dice da dove stanno passando i messaggi in questo momento.
-  // server (nuvola) · mesh sulla Wi-Fi · Wi-Fi Direct (nessun router) · in attesa.
-  useEffect(() => {
-    let alive = true;
-    const tick = async () => {
-      try {
-        const q = await msh.status();
-        let st = null;
-        try { st = await meshRuntime.status(); } catch { /* nodo spento */ }
-        if (!alive) return;
-        const p2p = st && st.diag ? st.diag.p2p : "off";
-        const on = st && st.diag ? st.diag.running : false;
-        setMapRoute({
-          via: q.lastVia || (on ? "server" : null),
-          neighbours: (st && st.neighbours) || 0,
-          hybrid: (st && st.hybrid) || 0,
-          pulses: (st && st.pulses) || 0,
-        });
-        if (q.queued > 0) setBaro({ icon: "time-outline", label: q.queued + (lang === "en" ? " waiting" : " in attesa"), color: "#50C878" });
-        else if (q.lastVia === "corriere") setBaro({ icon: "walk-outline", label: lang === "en" ? "Courier" : "Corriere", color: "#50C878" });
-        else if (q.lastVia === "ponte") setBaro({ icon: "swap-horizontal-outline", label: lang === "en" ? "Bridge" : "Ponte", color: "#50C878" });
-        else if (q.lastVia === "mesh" && p2p === "group") setBaro({ icon: "git-network-outline", label: "Wi-Fi Direct", color: "#50C878" });
-        else if (q.lastVia === "mesh") setBaro({ icon: "wifi-outline", label: "Mesh", color: "#50C878" });
-        else if (on) setBaro({ icon: "cloud-outline", label: lang === "en" ? "Server" : "Server", color: "rgba(255,255,255,0.45)" });
-        else setBaro(null);
-      } catch { /* il barometro non deve mai disturbare */ }
-    };
-    tick();
-    const id = setInterval(tick, 6000);
-    return () => { alive = false; clearInterval(id); };
-  }, [lang]);
 
   const onSend = async (override) => {
     atBottomRef.current = true; // dopo un invio è giusto tornare in fondo
@@ -611,23 +568,10 @@ export default function ChatScreen({ route, navigation }) {
     setText(""); setReplyTo(null); Keyboard.dismiss(); setSending(false);
     const done = () => { sendingRef.current = sendingRef.current.filter((x) => x.id !== tmp.id); msgsSig.current = ""; };
     try {
-      // CASSETTA ANONIMA: se il contatto ci ha consegnato gettoni e chiavi monouso, il
-      // messaggio non passa da /pulse/send: il server non sa nemmeno che ci scriviamo.
-      try {
-        if (await mbx.trySend(others, { text: body, atts: [], reply: myReply, ttl }, convId, user)) {
-          anonRef.current.dirty = true; done();
-          await load(convId);
-          return;
-        }
-      } catch { /* si prosegue con l'invio normale */ }
       const payload = packMessage(body, [], myReply, ttl, null);
       const envelopes = await buildEnvelopes(payload, others, user);
-      // UNICA VIA D'INVIO: server → mesh → coda. Se il server non risponde e il Nodo
-      // Sovrano è acceso, il messaggio parte sulla rete locale; se non c'è percorso resta
-      // in attesa e parte da solo. L'utente non deve accorgersi della differenza.
-      const r = await msh.sendOrQueue({ to_lns: others, envelopes }, convId, user, { text: body, reply: myReply, ttl });
+      const r = await api.send({ to_lns: others, envelopes });
       if (r?.conv_id && r.conv_id !== convId) setConvId(r.conv_id);
-      if (r?.via === "mesh" || r?.queued) anonRef.current.dirty = true;
       done();
       await load(r?.conv_id || convId);
     } catch (e) {
@@ -875,11 +819,15 @@ export default function ChatScreen({ route, navigation }) {
           <Text style={styles.metaTime} testID="msg-time">{hhmm(item.at)}</Text>
           {item.mine && (
             <View style={styles.ticks} testID={item.read ? "tick-read" : item.delivered ? "tick-delivered" : "tick-sent"}>
-              <Ionicons
-                name={item.pending ? "time-outline" : item.delivered || item.read ? "checkmark-done" : "checkmark"}
-                size={15}
-                color={item.read ? "#50C878" : "rgba(255,255,255,0.55)"}
-              />
+              {item.sendFailed ? (
+                <Text style={styles.sigBad}>{lang === "en" ? "Not sent" : "Non inviato"}</Text>
+              ) : (
+                <Ionicons
+                  name={item.sendingLocal ? "time-outline" : item.delivered || item.read ? "checkmark-done" : "checkmark"}
+                  size={15}
+                  color={item.read ? "#50C878" : "rgba(255,255,255,0.55)"}
+                />
+              )}
             </View>
           )}
         </View>
@@ -890,28 +838,10 @@ export default function ChatScreen({ route, navigation }) {
 
   return (
     <KeyboardAvoidingView behavior="padding" keyboardVerticalOffset={headerHeight} style={styles.root}>
-      <TouchableOpacity
-        activeOpacity={0.75}
-        style={styles.e2eeBadge}
-        testID="chat-e2ee-badge"
-        onPress={() => setMapOpen((v) => !v)}
-      >
+      <View style={styles.e2eeBadge} testID="chat-e2ee-badge">
         <Ionicons name="lock-closed-outline" size={11} color={theme.accent} />
         <Text style={styles.e2eeBadgeText}>{t("chat.e2eeBadge")}</Text>
-        <Text style={styles.e2eeBadgeLink}>
-          {"  ·  " + (mapOpen ? t("chat.map.close") : t("chat.map.open"))}
-        </Text>
-      </TouchableOpacity>
-      {mapOpen && (
-        <ChatConstellation
-          via={mapRoute.via}
-          neighbours={mapRoute.neighbours}
-          hybrid={mapRoute.hybrid}
-          pulses={mapRoute.pulses}
-          t={t}
-          tint={tint}
-        />
-      )}
+      </View>
       {vfy === "changed" && others.length === 1 && (
         <TouchableOpacity
           style={styles.vfyBar}
@@ -1162,7 +1092,6 @@ const makeStyles = (tint) => StyleSheet.create({
   root: { flex: 1, backgroundColor: "transparent" },
   e2eeBadge: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 5, backgroundColor: "rgba(80,200,120,0.08)", borderBottomWidth: 1, borderBottomColor: "rgba(80,200,120,0.18)" },
   e2eeBadgeText: { color: theme.accent, fontSize: 11, fontWeight: "700", letterSpacing: 0.3 },
-  e2eeBadgeLink: { color: theme.textDim, fontSize: 11, fontWeight: "600" },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 40 },
   emptyLock: { fontSize: 40, marginBottom: 12 },
   emptyText: { color: theme.textDim, textAlign: "center", lineHeight: 20 },

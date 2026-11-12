@@ -69,8 +69,6 @@ class MainActivity : ReactActivity() {
     // SVEGLIA SENZA GOOGLE: se attiva, torna in ascolto sul nostro server.
     // Qualsiasi problema qui NON deve impedire l'avvio dell'app.
     try { WakeService.start(this) } catch (e: Throwable) { }
-    // Il motore mesh si accende da solo SOLO in Modalità Nodo Sovrano.
-    try { if (MeshService.sovereign(this)) MeshService.start(this) else MeshService.stop(this) } catch (e: Throwable) { }
   }
 
   // Ogni volta che si torna nell'app: (ri)avvia il servizio in background se serve — così
@@ -78,8 +76,6 @@ class MainActivity : ReactActivity() {
   override fun onResume() {
     super.onResume()
     try { WakeService.start(this) } catch (e: Throwable) { }
-    // Rete di sicurezza: se il motore mesh e' stato ucciso dal sistema, al rientro riparte.
-    try { if (MeshService.sovereign(this)) MeshService.start(this) } catch (e: Throwable) { }
   }
 
   /**
