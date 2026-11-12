@@ -86,8 +86,7 @@ export default function PinLockScreen() {
           <Ionicons name="warning-outline" size={64} color="#fff" />
           <Text style={styles.warnTitle}>Ultimo tentativo</Text>
           <Text style={styles.warnTxt}>
-            Al prossimo PIN errato l'app cancellerà definitivamente tutto: chiavi, messaggi, chiamate e
-            metadati, sia su questo telefono sia sul server. L'operazione è irreversibile.
+            Al prossimo PIN errato si avvia l’autodistruzione dei dati e delle chiavi locali. La rimozione dal server dipende dal gateway e dalla connessione. Le copie già esportate restano accessibili.
           </Text>
           <TouchableOpacity style={styles.warnBtn} onPress={() => setWarn(false)} testID="pin-warning-ok">
             <Text style={styles.warnBtnTxt}>Ho capito</Text>

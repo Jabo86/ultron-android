@@ -49,7 +49,7 @@ export default function PrivacyLockScreen({ navigation }) {
       await refresh();
       Alert.alert(
         "PIN attivo",
-        "Da adesso il file chiave e le chiavi di sessione su questo telefono sono cifrati col PIN, con derivazione argon2id (ogni tentativo costa memoria e tempo: un PIN non si prova piu a milioni al secondo). Tre PIN errati cancellano tutto."
+        "Da adesso il file chiave e le chiavi di sessione su questo telefono sono cifrati col PIN, con derivazione argon2id (ogni tentativo costa memoria e tempo: un PIN non si prova piu a milioni al secondo). Tre PIN errati avviano la cancellazione locale."
         + (conEsca
             ? "\n\nPROFILO ESCA ATTIVO. Inserendo il PIN esca si apre un secondo profilo, vuoto e pronto per un secondo account. Da dentro l'esca il profilo vero non e' raggiungibile e non esiste nulla che ne provi l'esistenza: non e' stato salvato nessun verificatore del PIN esca. Usalo davvero, di tanto in tanto: un'esca senza messaggi e senza contatti non convince nessuno."
             : "")
@@ -104,7 +104,7 @@ export default function PrivacyLockScreen({ navigation }) {
                 <Text style={styles.warnBoxTxt}>
                   Prima di attivare il PIN: tieni una copia del tuo file chiave in un posto sicuro
                   (fuori dal telefono). Se dimentichi il PIN non esiste recupero, e tre PIN errati
-                  cancellano tutto in modo definitivo.
+                  avviano la cancellazione dei dati locali.
                 </Text>
               </View>
               <TextInput style={styles.input} placeholder="PIN (4-10 cifre)" placeholderTextColor={theme.textFaint} keyboardType="number-pad" secureTextEntry value={pin} onChangeText={setPin} testID="pin-input" />
@@ -124,7 +124,7 @@ export default function PrivacyLockScreen({ navigation }) {
                 il contatore dei tre errori che scorre. Le cifre in piu servono a quello.
               </Text>
               <Text style={styles.hint}>
-                Il PIN di emergenza sembra sbloccare l'app ma cancella tutto in silenzio: serve se qualcuno ti costringe a sbloccare.
+                Il PIN di emergenza avvia la procedura di autodistruzione. La rimozione remota dipende dal server.
               </Text>
               <TextInput style={styles.input} placeholder="PIN esca — doppio fondo (opzionale)" placeholderTextColor={theme.textFaint} keyboardType="number-pad" secureTextEntry value={esca} onChangeText={setEsca} testID="decoy-pin-input" />
               <Text style={styles.hint}>
@@ -188,9 +188,7 @@ export default function PrivacyLockScreen({ navigation }) {
           <Text style={styles.p}>
             Con questa modalità i messaggi non vengono più inviati con il tuo account: vengono
             depositati in una cassetta dall'indirizzo casuale usando gettoni monouso che il tuo
-            contatto ti ha consegnato dentro la chat cifrata. Il server non sa chi scrive né che
-            voi due vi stiate scrivendo. Funziona quando entrambi avete la modalità attiva; i
-            messaggi ritirati restano solo sul telefono, cifrati.
+            contatto ti ha consegnato nella chat cifrata. Serve un gateway compatibile e l’attivazione su entrambi i telefoni. Il gestore può osservare i metadati di rete.
           </Text>
           <View style={styles.rowBetween}>
             <Text style={[styles.state, { color: mbxSt && mbxSt.on ? theme.accent : theme.textDim }]} testID="mbx-state">
@@ -216,9 +214,7 @@ export default function PrivacyLockScreen({ navigation }) {
         <Card>
           <Text style={[styles.h2, { color: theme.danger }]}>Autodistruzione</Text>
           <Text style={styles.p}>
-            Tre PIN errati (con avviso a schermo pieno al secondo) cancellano definitivamente: chiavi,
-            messaggi, chiamate, rubrica, gruppi e metadati, su questo telefono E sul server, compreso
-            l'indirizzo ULTRON. Alla fine si apre la schermata di disinstallazione.
+            Dopo tre PIN errati l’app avvia la cancellazione locale e richiede la disinstallazione. La cancellazione remota richiede un gateway compatibile e raggiungibile. Le copie esportate restano fuori dalla procedura.
           </Text>
           <TouchableOpacity style={styles.btnDanger} onPress={() => setWipeAsk(true)} testID="wipe-now-btn">
             <Ionicons name="nuclear-outline" size={18} color="#fff" />
@@ -232,8 +228,7 @@ export default function PrivacyLockScreen({ navigation }) {
           <Ionicons name="warning-outline" size={62} color="#fff" />
           <Text style={styles.warnTitle}>Sei sicuro?</Text>
           <Text style={styles.warnTxt}>
-            Questa operazione è irreversibile: perdi l'account, tutte le conversazioni e le chiavi.
-            Nessuno potrà recuperarle, nemmeno noi.
+            Questa operazione può eliminare i dati e le chiavi di questo telefono. Conserva il file chiave se vuoi poter accedere di nuovo. La cancellazione sul server dipende dal gateway.
           </Text>
           <TouchableOpacity style={styles.warnBtn} onPress={() => setWipeAsk(false)} testID="wipe-cancel">
             <Text style={[styles.btnTxt, { color: "#b91c1c" }]}>Annulla</Text>

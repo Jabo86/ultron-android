@@ -19,14 +19,14 @@ export default function AfterBorderScreen({ navigation }) {
 
   const STEPS = it
     ? [
-      { t: "Chiavi usa-e-getta", d: "Bruciate tutte. Il server butta le pubbliche, il telefono ne pubblica un lotto nuovo." },
+      { t: "Chiavi usa-e-getta", d: "L’app rimuove le prekey locali e tenta di sincronizzare un nuovo lotto con il server." },
       { t: "Chiavi d'aggancio", d: "Generazione nuova, X25519 e ML-KEM-1024. Numero di sicurezza invariato." },
       { t: "Sessioni e chiavi dei contatti", d: "Ogni conversazione riparte da una radice nuova. Le chiavi dei contatti tornano dal server." },
       { t: "Contatti verificati", d: "Si ricontrolla che l'impronta non sia cambiata mentre eravate lontani dal telefono." },
       { t: "File decifrati nella cache", d: "Foto, video, documenti aperti ed esportazioni: cancellati." },
     ]
     : [
-      { t: "One-time keys", d: "All burned. The server drops the public ones, the phone publishes a fresh batch." },
+      { t: "One-time keys", d: "The app removes local prekeys and attempts to sync a new batch with the server." },
       { t: "Handshake keys", d: "New generation, X25519 and ML-KEM-1024. Safety number unchanged." },
       { t: "Sessions and contact keys", d: "Every conversation restarts from a new root. Contact keys are fetched again." },
       { t: "Verified contacts", d: "Re-checks that no fingerprint changed while you were away from the phone." },

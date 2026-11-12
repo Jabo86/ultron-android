@@ -143,7 +143,7 @@ export default function BackupScreen({ route, navigation }) {
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>{en ? "Encrypted backup" : "Backup cifrato"}</Text>
-          <Text style={styles.sub}>{en ? "On your phone only — never on the server" : "Solo sul tuo telefono — mai sul server"}</Text>
+          <Text style={styles.sub}>{en ? "Encrypted on the phone before sharing" : "Cifrato sul telefono prima della condivisione"}</Text>
         </View>
       </View>
 
@@ -182,8 +182,8 @@ export default function BackupScreen({ route, navigation }) {
                   : "Dentro ci sono: file chiave (identità), rubrica, impostazioni, testo delle conversazioni e la cronologia delle cassette anonime."}
             </Text>
             <Text style={styles.warn} testID="backup-ephemeral-note">
-              {en ? "Disappearing messages are never included: if they are meant to vanish, they vanish here too. Deleted messages cannot be recovered from a backup either."
-                  : "I messaggi a scomparsa non vengono mai inclusi: se devono svanire, svaniscono anche qui. Nemmeno un backup può recuperare i messaggi cancellati."}
+              {en ? "New backups exclude messages identified as disappearing. Copies made before deletion can still contain data."
+                  : "Il nuovo backup esclude i messaggi riconosciuti come a scomparsa. Le copie create prima di una cancellazione possono ancora contenere dati."}
             </Text>
 
             <View style={styles.switchRow}>
