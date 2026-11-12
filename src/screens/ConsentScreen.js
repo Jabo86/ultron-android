@@ -1,19 +1,24 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Linking } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../theme";
 import { useI18n } from "../lib/i18n";
-import { DEFAULT_SERVER } from "../config";
+import { getServerUrl } from "../lib/api";
+import { LegalDocument } from "./LegalScreen";
 
 export default function ConsentScreen({ onAccept }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
+  const en = lang === "en";
+  const [document, setDocument] = useState(null);
   const insets = useSafeAreaInsets();
   const [privacy, setPrivacy] = useState(false);
   const [terms, setTerms] = useState(false);
   const ready = privacy && terms;
 
-  const open = (path) => Linking.openURL(DEFAULT_SERVER + path).catch(() => {});
+  if (document) return <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    <LegalDocument key={document} id={document} server={getServerUrl()} onClose={() => setDocument(null)} />
+  </View>;
 
   const Check = ({ value, onToggle, label, testID }) => (
     <TouchableOpacity style={styles.checkRow} onPress={() => onToggle(!value)} activeOpacity={0.7} testID={testID}>
@@ -27,23 +32,22 @@ export default function ConsentScreen({ onAccept }) {
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <View style={styles.logo}><Ionicons name="shield-checkmark-outline" size={34} color={theme.primary} /></View>
         <Text style={styles.title}>{t("consent.title")}</Text>
-        <Text style={styles.intro}>{t("consent.intro")}</Text>
+        <Text style={styles.intro}>{en ? "Read the privacy information and usage rules. Official documents depend on the server you use." : "Leggi le informazioni sulla privacy e le regole d’uso. I documenti ufficiali dipendono dal server che usi."}</Text>
 
-        <TouchableOpacity style={styles.link} onPress={() => open("/privacy")} testID="consent-open-privacy">
+        <TouchableOpacity style={styles.link} onPress={() => setDocument("privacy")} testID="consent-open-privacy">
           <Ionicons name="shield-checkmark-outline" size={18} color={theme.primary} />
           <Text style={styles.linkTxt}>{t("consent.readPrivacy")}</Text>
           <Ionicons name="open-outline" size={16} color={theme.textFaint} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.link} onPress={() => open("/termini")} testID="consent-open-terms">
+        <TouchableOpacity style={styles.link} onPress={() => setDocument("terms")} testID="consent-open-terms">
           <Ionicons name="document-text-outline" size={18} color={theme.primary} />
           <Text style={styles.linkTxt}>{t("consent.readTerms")}</Text>
           <Ionicons name="open-outline" size={16} color={theme.textFaint} />
         </TouchableOpacity>
 
         <View style={styles.divider} />
-        <Check value={privacy} onToggle={setPrivacy} label={t("consent.acceptPrivacy")} testID="consent-check-privacy" />
-        <Check value={terms} onToggle={setTerms} label={t("consent.acceptTerms")} testID="consent-check-terms" />
-        <Text style={styles.controller}>{t("consent.controller")}</Text>
+        <Check value={privacy} onToggle={setPrivacy} label={en ? "I have read the privacy information" : "Ho letto le informazioni sulla privacy"} testID="consent-check-privacy" />
+        <Check value={terms} onToggle={setTerms} label={en ? "I accept the general usage rules" : "Accetto le regole generali d’uso"} testID="consent-check-terms" />
       </ScrollView>
 
       <TouchableOpacity

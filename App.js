@@ -93,12 +93,14 @@ export const navRef = createNavigationContainerRef();
 
 const TAB_ICONS = {
   Conversazioni: "chatbubbles",
+  Stato: "aperture",
   Rubrica: "book",
   Profilo: "person",
   Impostazioni: "settings",
 };
 const TAB_KEY = {
   Conversazioni: "tab.conversations",
+  Stato: "tab.status",
   Rubrica: "tab.rubrica",
   Profilo: "tab.profile",
   Impostazioni: "tab.settings",
@@ -114,6 +116,7 @@ function MainTabs() {
   const { chatUnread, bookRequests } = useUnread();
   return (
     <Tab.Navigator
+      backBehavior="initialRoute"
       screenOptions={({ route }) => ({
         headerShown: false,
         lazy: true,
@@ -137,6 +140,7 @@ function MainTabs() {
       })}
     >
       <Tab.Screen name="Conversazioni" component={ConversationsScreen} options={{ tabBarBadge: chatUnread > 0 ? (chatUnread > 99 ? "99+" : chatUnread) : undefined }} />
+      <Tab.Screen name="Stato" component={StatusScreen} />
       <Tab.Screen name="Rubrica" component={AddressBookScreen} options={{ tabBarBadge: bookRequests > 0 ? (bookRequests > 99 ? "99+" : bookRequests) : undefined }} />
       <Tab.Screen name="Impostazioni" component={SettingsScreen} />
     </Tab.Navigator>
@@ -401,10 +405,9 @@ function Root() {
           <Stack.Screen name="Chat" component={ChatScreen} options={{ title: "Chat" }} />
           <Stack.Screen name="ChannelDetail" component={ChannelDetailScreen} options={{ title: "Gruppo" }} />
           <Stack.Screen name="Call" component={CallScreen} options={{ headerShown: false, presentation: "fullScreenModal", animation: "fade" }} />
-          <Stack.Screen name="Status" component={StatusScreen} options={{ headerShown: false }} />
           <Stack.Screen name="CallLog" component={CallLogScreen} options={{ headerShown: false }} />
           <Stack.Screen name="GroupCall" component={GroupCallScreen} options={{ headerShown: false, presentation: "fullScreenModal", animation: "fade" }} />
-          <Stack.Screen name="Legal" component={LegalScreen} options={({ route }) => ({ title: route.params?.title || "Documento" })} />
+          <Stack.Screen name="Legal" component={LegalScreen} options={{ title: "ULTRON" }} />
         </>
       )}
     </Stack.Navigator>

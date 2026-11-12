@@ -10,7 +10,7 @@ let prepared;
 let lastCheck = 0;
 
 export function checkAndPrepare({ force = false } = {}) {
-  if (pending) return pending;
+  if (pending) return force ? pending : pending.catch(() => prepared);
   if (!force && Date.now() - lastCheck < 15 * 60_000) return Promise.resolve(prepared);
   lastCheck = Date.now();
   pending = (async () => {
@@ -22,10 +22,9 @@ export function checkAndPrepare({ force = false } = {}) {
     return prepared;
   })().catch((error) => {
     lastCheck = Date.now() - 14 * 60_000;
-    if (force) throw error;
-    return prepared;
+    throw error;
   }).finally(() => { pending = null; });
-  return pending;
+  return force ? pending : pending.catch(() => prepared);
 }
 
 export function UpdateBanner() {

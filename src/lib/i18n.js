@@ -1,3 +1,4 @@
+import { ADDRESS_SEARCH_KEYS } from "./locales/addressSearch";
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { I18nManager } from "react-native";
 import * as SecureStore from "expo-secure-store";
@@ -416,7 +417,7 @@ const TR = {
 // Le cinque lingue aggiunte nella 2.3.0 vivono in file separati: il dizionario di questo
 // file resta leggibile. Le chiavi mancanti ricadono sull'italiano, non sulla chiave nuda.
 Object.assign(TR, EXTRA_LOCALES);
-for (const pack of [NEW_KEYS, NEW_KEYS_231, CHAT_MAP_KEYS, CANARY_KEYS, FULL_V250, CHAT12_280, SM12_A, SM12_B, SM12_C, UI12, REQ12, REQ12B]) {
+for (const pack of [NEW_KEYS, NEW_KEYS_231, CHAT_MAP_KEYS, CANARY_KEYS, FULL_V250, CHAT12_280, SM12_A, SM12_B, SM12_C, UI12, REQ12, REQ12B, ADDRESS_SEARCH_KEYS]) {
   for (const code of Object.keys(pack)) {
     TR[code] = Object.assign({}, TR[code] || {}, pack[code]);
   }

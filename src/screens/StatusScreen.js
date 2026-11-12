@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert, Image } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
@@ -15,11 +16,12 @@ import { theme } from "../theme";
 
 // Stato/Storie E2EE 24h — visibili a contatti + membri dei gruppi. Cifrate con chiave di gruppo
 // casuale, wrappata ML-KEM-768 per ogni destinatario. Scadenza automatica lato server (24h).
-export default function StatusScreen({ navigation }) {
+export default function StatusScreen() {
   const { user } = useAuth();
   const { lang } = useI18n();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [composing, setComposing] = useState(false);
   const [text, setText] = useState("");
   const [img, setImg] = useState(null); // {uri, base64, mime}
@@ -43,13 +45,14 @@ export default function StatusScreen({ navigation }) {
         out.push({ ...s, body });
       }
       setItems(out);
+      setLoadError(false);
       // Segna come "visto" gli stati altrui (read receipts per l'autore).
       out.filter((s) => !s.mine).forEach((s) => { api.statusSeen(s.status_id).catch(() => {}); });
-    } catch {}
+    } catch { setLoadError(true); }
     setLoading(false);
   }, [user]);
 
-  useEffect(() => { load(); }, [load]);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const loadImg = useCallback(async (s) => {
     if (imgCache[s.status_id] || !s.body?.img) return;
@@ -112,13 +115,15 @@ export default function StatusScreen({ navigation }) {
   const EMOJIS = ["👍", "❤️", "😮", "🎉"];
 
   return (
-    <SafeAreaView style={styles.root} edges={["top", "bottom"]}>
+    <SafeAreaView style={styles.root} edges={["top"]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={10} testID="status-back"><Ionicons name="chevron-back-outline" size={26} color={theme.text} /></TouchableOpacity>
         <Text style={styles.title}>{lang === "en" ? "Status" : "Stato"}</Text>
         <TouchableOpacity onPress={() => setComposing((v) => !v)} hitSlop={10} testID="status-compose-toggle"><Ionicons name={composing ? "close" : "add-circle"} size={26} color={theme.primary} /></TouchableOpacity>
       </View>
 
+      {loadError && <TouchableOpacity style={{ padding: 14 }} onPress={load} testID="status-retry">
+        <Text style={styles.hint}>{lang === "en" ? "Status unavailable on this server. Tap to retry." : "Stati non disponibili su questo server. Tocca per riprovare."}</Text>
+      </TouchableOpacity>}
       {composing && (
         <View style={styles.composer} testID="status-composer">
           <TextInput style={styles.input} placeholder={lang === "en" ? "Share an update (24h)…" : "Condividi un aggiornamento (24h)…"} placeholderTextColor={theme.textFaint}

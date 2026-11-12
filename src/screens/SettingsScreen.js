@@ -1,3 +1,4 @@
+import { LEGAL_DOCS, PRIVACY_SUMMARY, CONTACTS_SUMMARY, DATA_PROTECTION } from "../lib/legalDocuments";
 import { isOwner as canaryIsOwner } from "../lib/canary";
 import React, { useState, useEffect, useMemo } from "react";
 import {
@@ -43,17 +44,6 @@ import { getThreatLog, clearThreatLog, getThreatCount } from "../lib/threatLog";
 const PRIVACY_LNS = "";
 const HAS_TURN = ICE_SERVERS.some(({ urls }) => [urls].flat().some((url) => /^turns?:/i.test(url)));
 
-const LEGAL_DOCS = [
-  { key: "settings.privacy", path: "/privacy", icon: "shield-checkmark-outline" },
-  { key: "settings.terms", path: "/termini", icon: "document-text-outline" },
-  { key: "settings.cookie", path: "/cookie", icon: "cafe-outline" },
-  { key: "settings.dpa", path: "/dpa", icon: "server-outline" },
-  { key: "settings.eula", path: "/licenza", icon: "ribbon-outline" },
-  { key: "settings.aup", path: "/uso-accettabile", icon: "checkmark-done-outline" },
-  { key: "settings.sla", path: "/sla", icon: "speedometer-outline" },
-  { key: "settings.legalIndex", path: "/legale", icon: "library-outline" },
-];
-
 function fmtAgo(ts, lang, t) {
   const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
   const en = lang === "en";
@@ -63,26 +53,6 @@ function fmtAgo(ts, lang, t) {
   const d = Math.floor(h / 24); if (d < 7) return t("sm.ago.day", { n: d });
   try { return new Date(ts).toLocaleDateString(); } catch { return ""; }
 }
-
-const LEGAL_IT = `PRIVACY E REGOLE DELLE AREE PUBBLICHE
-
-I dettagli privati del profilo restano cifrati sul telefono. Pubblicando foto, informazioni o bio li rendi leggibili al server e agli utenti che accedono al profilo. Chi li vede può conservarne una copia.
-
-Il server gestisce identità e chiavi pubbliche, richieste, metadati di servizio, buste cifrate dove supportate e contenuti pubblicati. Il codice del gateway registra accessi con identità, orario e identificatore di sessione. Proxy, hosting e server personali possono avere log e tempi di conservazione diversi.
-
-Le chiavi private e il PIN non sono inclusi nelle richieste di autenticazione. Le esportazioni esplicite del file chiave e i backup sono sotto il controllo dell’utente. Se attivi traduzione, la funzione può inviare il testo selezionato al servizio. Le segnalazioni e le tracce diagnostiche possono inviare informazioni al gestore.
-
-Nelle aree pubbliche pubblica solo materiale che puoi condividere. Evita dati personali altrui, molestie, spam, truffe e file malevoli. Usa le funzioni di blocco e segnalazione dove disponibili. Consulta le regole, la conservazione e i recapiti pubblicati dal gestore del tuo server.`;
-
-const LEGAL_EN = `PRIVACY AND PUBLIC-AREA RULES
-
-Private profile details are encrypted on the phone. Publishing a photo, about text or bio makes it readable to the server and users who view the profile. Viewers can keep copies.
-
-The server processes identities and public keys, requests, service metadata, encrypted envelopes where supported, and published content. Gateway code logs sign-ins with identity, time and session ID. Proxies, hosting providers and personal servers can have different logging and retention practices.
-
-Authentication requests omit private keys and the PIN. Explicit key-file exports and backups are under the user's control. Translation can send selected text to the service when enabled. Reports and diagnostic traces can send information to the operator.
-
-Publish only material you can share. Avoid other people's private information, harassment, spam, scams and malicious files. Use blocking and reporting where available. Consult the rules, retention and contacts published by your server operator.`;
 
 function radioLabel(v, t) {
   const k = String(v || "off");
@@ -130,7 +100,7 @@ export default function SettingsScreen({ navigation }) {
       }
       suppressLock();
       await installUpdate(release.file);
-      setUpMsg(t("sm.006"));
+      setUpMsg(en ? "Android installer opened." : "Installazione affidata ad Android.");
     } catch (e) {
       setUpMsg(String((e && e.message) || (t("sm.007"))));
     } finally { setUpBusy(false); }
@@ -162,7 +132,6 @@ export default function SettingsScreen({ navigation }) {
   const [threatCount, setThreatCount] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [showLegal, setShowLegal] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [delText, setDelText] = useState("");
   const [genPdf, setGenPdf] = useState(false);
@@ -399,7 +368,7 @@ export default function SettingsScreen({ navigation }) {
     finally { setDeleting(false); }
   };
 
-  const openLegal = (doc) => navigation.navigate("Legal", { url: base + doc.path, title: t(doc.key) });
+  const openLegal = (id) => navigation.navigate("Legal", { id, server: base });
 
   const doCompliance = async () => {
     setGenPdf(true);
@@ -959,21 +928,15 @@ export default function SettingsScreen({ navigation }) {
 
       <View style={styles.shieldBox} testID="settings-privacy">
         <Text style={styles.shieldTitle}>{en ? "Privacy and transparency" : "Privacy e trasparenza"}</Text>
-        <Text style={styles.privHead}>{en ? "What stays on your device" : "Cosa resta sul dispositivo"}</Text>
-        <Text style={styles.shieldDesc}>{en
-          ? "Authentication sends signatures and public keys. Private profile fields and the app PIN stay local. An explicit key export or backup creates a separate copy under your control."
-          : "L’autenticazione invia firme e chiavi pubbliche. I campi privati del profilo e il PIN dell’app restano locali. Esportare una chiave o un backup crea una copia separata sotto il tuo controllo."}</Text>
-        <Text style={styles.privHead}>{en ? "What the server can process" : "Cosa può trattare il server"}</Text>
-        <Text style={styles.shieldDesc}>{en
-          ? "Account, public keys, public profile, encrypted envelopes where supported, delivery data and sign-in events. A server or proxy can see the IP and connection times. Retention and logs depend on its operator. Translation can send selected text to the service."
-          : "Account, chiavi pubbliche, profilo pubblico, buste cifrate dove supportate, dati di consegna ed eventi di accesso. Server e proxy possono vedere IP e orari. Log e conservazione dipendono dal gestore. La traduzione può inviare al servizio il testo selezionato."}</Text>
-        <Text style={styles.privHead}>{en ? "Public-area rules" : "Regole delle aree pubbliche"}</Text>
-        <Text style={styles.shieldDesc}>{en
-          ? "Share only material you are entitled to publish. Other people can read or copy published details. Avoid sharing private data, scams, harassment or malicious files."
-          : "Condividi solo ciò che hai diritto di pubblicare. Chi vede i dati pubblici può copiarli. Evita dati privati, truffe, molestie e file malevoli."}</Text>
-        <TouchableOpacity onPress={() => setShowLegal(true)} style={styles.legalLink} testID="settings-open-legal">
+        {PRIVACY_SUMMARY[en ? "en" : "it"].map((paragraph) => (
+          <Text key={paragraph} style={styles.shieldDesc}>{paragraph}</Text>
+        ))}
+        <TouchableOpacity onPress={() => openLegal("privacy")} style={styles.legalLink} testID="settings-open-legal">
           <Ionicons name="document-text-outline" size={16} color={tint} />
-          <Text style={styles.legalLinkTxt}>{en ? "Privacy details and public-area rules" : "Dettagli privacy e regole delle aree pubbliche"}</Text>
+          <Text style={styles.legalLinkTxt}>{t("settings.privacy")}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => openLegal("terms")} style={styles.legalLink} testID="settings-open-terms">
+          <Text style={styles.legalLinkTxt}>{t("settings.terms")}</Text>
         </TouchableOpacity>
       </View>
 
@@ -1019,9 +982,7 @@ export default function SettingsScreen({ navigation }) {
         <Ionicons name="lock-closed-outline" size={16} color={theme.accent} />
         <View style={{ flex: 1 }}>
           <Text style={styles.infoTitle}>{t("settings.dataInfoTitle")}</Text>
-          <Text style={styles.infoText}>{en
-            ? "Conversation envelopes and attachments can be encrypted on the device. Availability and metadata depend on the communication path. See Security and audit."
-            : "Buste delle conversazioni e allegati possono essere cifrati sul dispositivo. Disponibilità e metadati dipendono dal percorso di comunicazione. Vedi Sicurezza e audit."}</Text>
+          <Text style={styles.infoText}>{DATA_PROTECTION[en ? "en" : "it"]}</Text>
         </View>
       </View>
 
@@ -1030,7 +991,9 @@ export default function SettingsScreen({ navigation }) {
         <View style={{ flex: 1 }}>
           <Text style={styles.infoTitle}>{t("sm.101")}</Text>
           <Text style={styles.infoText} testID="settings-update-info">
-            {upMsg || (t("sm.102"))}
+            {upMsg || (updatesConfigured
+              ? (en ? "Checks the official release, its signature and the APK hash." : "Controlla la versione ufficiale, la firma e l’impronta dell’APK.")
+              : (en ? "Test build. Install a new test APK manually." : "Build di prova. Installa manualmente il nuovo APK di prova."))}
           </Text>
           <TouchableOpacity style={styles.updBtn} onPress={doCheckUpdate} disabled={upBusy} testID="settings-check-update">
             {upBusy ? <ActivityIndicator color={tint} /> : (
@@ -1045,7 +1008,7 @@ export default function SettingsScreen({ navigation }) {
         <View style={{ flex: 1 }}>
           <Text style={styles.infoTitle} testID="settings-contacts-info-title">{t("sm.104")}</Text>
           <Text style={styles.infoText} testID="settings-contacts-info">
-            {t("sm.105")}
+            {CONTACTS_SUMMARY[en ? "en" : "it"]}
           </Text>
         </View>
       </View>
@@ -1056,12 +1019,14 @@ export default function SettingsScreen({ navigation }) {
         {LEGAL_DOCS.map((d, i) => (
           <View key={d.path}>
             {i > 0 && <View style={styles.divider} />}
-            <Row icon={d.icon} label={t(d.key)} onPress={() => openLegal(d)} right={<Ionicons name="open-outline" size={17} color={theme.textFaint} />} testID={`settings-legal-${d.path}`} />
+            <Row icon={d.icon} label={t(d.key)} onPress={() => openLegal(d.id)} right={<Ionicons name="open-outline" size={17} color={theme.textFaint} />} testID={`settings-legal-${d.path}`} />
           </View>
         ))}
       </View>
       <View style={styles.card}>
-        <Row icon="business-outline" label={t("settings.controller")} hint={t("settings.controllerName")} testID="settings-controller" />
+        <Row icon="business-outline" label={en ? "Service operator" : "Gestore del servizio"}
+          hint={en ? "See the official privacy notice for this server." : "Consulta l’informativa ufficiale di questo server."}
+          onPress={() => openLegal("privacy")} testID="settings-controller" />
         {!!PRIVACY_LNS && <>
           <View style={styles.divider} />
           <Row icon="chatbubble-ellipses-outline" label={t("settings.contact")} hint={PRIVACY_LNS} onPress={() => navigation.navigate("Chat", { conv_id: null, others: [PRIVACY_LNS], title: "Contatto privacy", title_lns: PRIVACY_LNS })}
@@ -1139,20 +1104,6 @@ export default function SettingsScreen({ navigation }) {
                 {deleting ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.modalDeleteTxt}>{t("delete.confirmBtn")}</Text>}
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal visible={showLegal} transparent animationType="slide" onRequestClose={() => setShowLegal(false)}>
-        <View style={styles.legalWrap}>
-          <View style={styles.legalCard}>
-            <View style={styles.legalHead}>
-              <Text style={styles.legalTitle}>{lang !== "en" ? "Privacy e regole delle aree pubbliche" : "Privacy and public-area rules"}</Text>
-              <TouchableOpacity onPress={() => setShowLegal(false)} testID="settings-legal-close"><Ionicons name="close-outline" size={24} color={theme.text} /></TouchableOpacity>
-            </View>
-            <ScrollView style={{ maxHeight: "82%" }} contentContainerStyle={{ paddingBottom: 24 }}>
-              <Text style={styles.legalBody}>{lang !== "en" ? LEGAL_IT : LEGAL_EN}</Text>
-            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1242,7 +1193,6 @@ const makeStyles = (tint) => StyleSheet.create({
   legalCard: { backgroundColor: theme.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 18, maxHeight: "90%" },
   legalHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
   legalTitle: { color: theme.text, fontSize: 18, fontWeight: "800" },
-  legalBody: { color: theme.text, fontSize: 12.5, lineHeight: 19 },
   trSearch: { backgroundColor: "transparent", borderWidth: 1, borderColor: theme.border, borderRadius: 10, color: theme.text, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, marginBottom: 8 },
   trItem: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 13, paddingHorizontal: 4, borderBottomWidth: 1, borderBottomColor: theme.border },
   trItemTxt: { color: theme.text, fontSize: 15, flex: 1 },

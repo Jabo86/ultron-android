@@ -1,3 +1,4 @@
+import { contactAddress, matchesContact } from "../lib/contactAddress";
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl,
@@ -165,14 +166,16 @@ export default function ConversationsScreen({ navigation }) {
     finally { if (mounted.current) setLoadingContacts(false); }
   }, []);
 
+  const visibleContacts = contacts.filter((contact) => matchesContact(contact, lns));
+
   const startWithContact = (c) => {
     setShowNew(false); setLns("");
     navigation.navigate("Chat", { conv_id: null, others: [c.lns], title: c.display_name || c.lns.split("@")[0], title_lns: c.lns });
   };
 
   const startChat = async () => {
-    const target = api.normalizeLns(lns);
-    if (!target || !target.includes("@")) { setAddErr(t("conv.new.invalid")); return; }
+    const target = contactAddress(lns);
+    if (!target) { setAddErr(t("conv.new.invalid")); return; }
     setAdding(true); setAddErr("");
     try {
       const r = await api.addContact(target);
@@ -288,9 +291,6 @@ export default function ConversationsScreen({ navigation }) {
               </View>
             )}
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate("Status")} testID="status-btn" hitSlop={8}>
-            <Ionicons name="aperture-outline" size={22} color={tint} />
-          </TouchableOpacity>
           <TouchableOpacity onPress={() => navigation.navigate("GlobalSearch")} testID="global-search-btn" hitSlop={8}>
             <Ionicons name="search-outline" size={22} color={tint} />
           </TouchableOpacity>
@@ -339,14 +339,28 @@ export default function ConversationsScreen({ navigation }) {
           <View style={[styles.modal, { paddingBottom: Math.max(insets.bottom, 14) + 14 }]}>
             <Text style={styles.modalTitle}>{t("conv.new.title")}</Text>
 
-            <Text style={styles.sectionLabel}>{t("conv.new.colleagues")}</Text>
+            <TextInput
+              style={styles.input}
+              placeholder={t("conv.new.search")}
+              placeholderTextColor={theme.textFaint}
+              value={lns}
+              onChangeText={(value) => { setLns(value); setAddErr(""); }}
+              selectionColor={tint}
+              cursorColor={theme.text}
+              keyboardAppearance="dark"
+              underlineColorAndroid="transparent"
+              autoCapitalize="none"
+              autoCorrect={false}
+              testID="new-chat-address"
+            />
+            <Text style={styles.sectionLabel}>{t("conv.new.contacts")}</Text>
             {loadingContacts ? (
               <SkeletonList count={5} testID="contacts-skeleton" />
-            ) : contacts.length === 0 ? (
-              <Text style={styles.contactsEmpty}>{t("conv.new.noColleagues")}</Text>
+            ) : visibleContacts.length === 0 ? (
+              <Text style={styles.contactsEmpty}>{t("conv.new.noMatch")}</Text>
             ) : (
               <FlatList
-                data={contacts}
+                data={visibleContacts}
                 keyExtractor={(c) => c.lns}
                 style={styles.contactsList}
                 keyboardShouldPersistTaps="handled"
@@ -362,21 +376,7 @@ export default function ConversationsScreen({ navigation }) {
               />
             )}
 
-            <Text style={styles.sectionLabel}>{t("conv.new.orExternal")}</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="mario@azienda.lns"
-              placeholderTextColor={theme.textFaint}
-              value={lns}
-              onChangeText={setLns}
-              selectionColor={tint}
-              cursorColor={theme.text}
-              keyboardAppearance="dark"
-              underlineColorAndroid="transparent"
-              autoCapitalize="none"
-              autoCorrect={false}
-              testID="new-chat-lns"
-            />
+            <Text style={styles.contactLns}>{t("conv.new.sub")}</Text>
             {!!addErr && <Text style={styles.modalErr} testID="new-chat-error">{addErr}</Text>}
             <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
               <TouchableOpacity style={styles.modalCancel} onPress={() => setShowNew(false)}>
