@@ -1,153 +1,160 @@
-import React, { useEffect, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Image, ActivityIndicator, Alert, Share, StyleSheet } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import React, { useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Image, Pressable, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { pickAvatarDataUrl } from "../lib/avatar";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../lib/i18n";
-import { UI_LANGS } from "../lib/locales";
 import * as api from "../lib/api";
+import { getBlob, setBlob } from "../lib/lock";
+import { PROFILE_LIMITS, profileDraft, publicProfile, validAvatar } from "../lib/profilePrivacy";
 import { theme } from "../theme";
 
-export default function ProfileScreen() {
-  const insets = useSafeAreaInsets();
-  const { signOut } = useAuth();
-  const { t, lang, setLang } = useI18n();
-  const [p, setP] = useState(null);
+function ContactProfile({ peer, it }) {
+  const [state, setState] = useState(null);
+  useEffect(() => {
+    let active = true;
+    setState(null);
+    api.contactProfile(peer).then((profile) => {
+      if (active) setState(profile?.lns === peer && profile?.is_public === true ? profile : {});
+    }).catch(() => { if (active) setState({ unavailable: true }); });
+    return () => { active = false; };
+  }, [peer]);
+  return <ScrollView contentContainerStyle={s.content}>
+    <Text style={s.name}>{peer}</Text>
+    {!state ? <ActivityIndicator color={theme.primary} /> : <>
+      {validAvatar(state.avatar) && <Image style={s.avatar} source={{ uri: state.avatar }} />}
+      {!!state.headline && <Text style={s.text}>{state.headline}</Text>}
+      {!!state.bio && <Text style={s.text}>{state.bio}</Text>}
+      {!state.headline && !state.bio && !validAvatar(state.avatar) && <Text style={s.hint}>
+        {state.unavailable
+          ? (it ? "Profilo non disponibile su questo server." : "Profile unavailable on this server.")
+          : (it ? "Nessun dettaglio pubblico." : "No public details.")}
+      </Text>}
+    </>}
+  </ScrollView>;
+}
+
+function EditProfile({ user, it }) {
+  const key = `profile-v1:${user.server || api.getServerUrl()}:${user.lns}`;
+  const [draft, setDraft] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [message, setMessage] = useState("");
+  const edited = useRef(false);
+  useEffect(() => {
+    let active = true;
+    getBlob(key).catch(() => null).then(async (local) => {
+      if (!active) return;
+      setDraft((previous) => previous || profileDraft(local));
+      try {
+        const remote = await api.myProfile();
+        if (active && !local && !edited.current) setDraft(profileDraft(null, remote));
+      } catch {
+        if (active && !edited.current) setMessage(it ? "Profilo locale disponibile. La pubblicazione richiede il supporto del server." : "Local profile available. Publishing requires server support.");
+      }
+    });
+    return () => { active = false; };
+  }, [key, it]);
 
-  useEffect(() => { api.myProfile().then(setP).catch(() => {}); }, []);
-
-  // La foto viene salvata SUBITO dopo la scelta: se l'app si riblocca o si chiude prima
-  // che l'utente prema SALVA, la foto non va persa.
-  const pickAvatar = async () => {
-    const { denied, dataUrl, error } = await pickAvatarDataUrl();
-    if (denied) { Alert.alert(t("profile.avatar.denied"), t("profile.avatar.deniedText")); return; }
-    if (error) { Alert.alert(t("att.error"), lang === "en" ? "Could not read the photo." : "Non riesco a leggere la foto."); return; }
-    if (!dataUrl) return;
-    setP((x) => ({ ...x, avatar: dataUrl }));
-    await save({ avatar: dataUrl });
+  const change = (field, value) => {
+    edited.current = true;
+    setDraft((previous) => ({ ...previous, [field]: value }));
   };
-
-  const save = async (over) => {
+  const pick = async () => {
     setBusy(true);
     try {
-      await api.saveProfile({ headline: p.headline || "", bio: p.bio || "", avatar: p.avatar || "", is_public: !!p.is_public, ...(over || {}) });
-      if (p.personal) { try { await api.personalDiscoverable(!!p.discoverable); } catch { /* opzionale */ } }
-      setSaved(true); setTimeout(() => setSaved(false), 1800);
-    } catch (e) { Alert.alert(t("att.error"), api.apiErr(e)); }
-    finally { setBusy(false); }
+      const result = await pickAvatarDataUrl({ allowOriginal: false });
+      if (result.denied || result.error || (result.dataUrl && !validAvatar(result.dataUrl))) {
+        setMessage(it ? "Foto non disponibile. Controlla i permessi o scegli un’immagine più piccola." : "Photo unavailable. Check permissions or choose a smaller image.");
+      } else if (result.dataUrl) change("avatar", result.dataUrl);
+    } catch {
+      setMessage(it ? "Impossibile leggere la foto." : "Could not read the photo.");
+    } finally { setBusy(false); }
   };
 
-  // Condivide il biglietto da visita pubblico (card.html): chi lo apre può scriverti.
-  const shareProfile = async () => {
-    const me = String(p?.lns || "");
-    const url = `${api.getServerUrl()}/card.html?u=${encodeURIComponent(me)}`;
+  const save = async () => {
+    setBusy(true);
+    setMessage("");
     try {
-      await Share.share({
-        message: (lang === "en" ? "Contact me in end-to-end encrypted chat on ULTRON:\n" : "Contattami in chat cifrata end-to-end su ULTRON:\n") + url,
-        url,
-      });
-    } catch (e) { /* annullato */ }
+      await setBlob(key, draft);
+    } catch {
+      setMessage(it ? "Salvataggio locale non riuscito." : "Could not save locally.");
+      setBusy(false);
+      return;
+    }
+    try {
+      const published = publicProfile(draft);
+      await api.saveProfile(published);
+      const actual = await api.myProfile();
+      if (actual?.is_public !== published.is_public ||
+          ["headline", "bio", "avatar"].some((field) => (actual[field] || "") !== published[field])) {
+        throw new Error("Visibility not confirmed");
+      }
+      setMessage(it ? "Profilo salvato. Visibilità confermata dal server." : "Profile saved. Visibility confirmed by the server.");
+    } catch {
+      setMessage(it
+        ? "Profilo salvato sul telefono. Il server non ha confermato la visibilità: una versione pubblicata in precedenza potrebbe essere ancora visibile."
+        : "Profile saved on this phone. The server did not confirm visibility. Previously published details may still be visible.");
+    } finally { setBusy(false); }
   };
 
-  if (!p) return <View style={s.loading}><ActivityIndicator color={theme.primary} /></View>;
-  const roleLabel = t(`role.${p.role || "member"}`);
+  if (!draft) return <ActivityIndicator style={s.loading} color={theme.primary} />;
+  const visibility = (field, title) => <View style={s.row}>
+    <Text style={s.text}>{title} · {draft.visibility[field] ? (it ? "Pubblica" : "Public") : (it ? "Privata" : "Private")}</Text>
+    <Switch accessibilityLabel={title} value={draft.visibility[field]} disabled={busy}
+      onValueChange={(value) => {
+        edited.current = true;
+        setDraft((previous) => ({ ...previous, visibility: { ...previous.visibility, [field]: value } }));
+      }}
+      testID={`profile-visibility-${field}`} />
+  </View>;
+  return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}>
+    <Text style={s.name}>{user.lns}</Text>
+    <Text style={s.hint}>{it
+      ? "I dettagli privati restano cifrati su questo telefono. I dettagli pubblici possono essere letti dal server e dagli utenti che conoscono il tuo indirizzo."
+      : "Private details stay encrypted on this phone. The server and users who know your address can read public details."}</Text>
+    {draft.avatar ? <Image source={{ uri: draft.avatar }} style={s.avatar} /> : null}
+    <Pressable accessibilityRole="button" disabled={busy} onPress={pick} testID="profile-avatar-btn">
+      <Text style={s.link}>{it ? "Scegli foto" : "Choose photo"}</Text>
+    </Pressable>
+    {!!draft.avatar && <Pressable accessibilityRole="button" disabled={busy} onPress={() => change("avatar", "")}>
+      <Text style={s.link}>{it ? "Rimuovi foto" : "Remove photo"}</Text>
+    </Pressable>}
+    {visibility("avatar", it ? "Foto" : "Photo")}
+    {visibility("headline", it ? "Informazioni" : "About")}
+    <TextInput style={s.input} editable={!busy} value={draft.headline} onChangeText={(value) => change("headline", value)}
+      maxLength={PROFILE_LIMITS.headline} placeholder={it ? "Informazioni" : "About"} placeholderTextColor={theme.textDim}
+      testID="profile-headline" />
+    {visibility("bio", "Bio")}
+    <TextInput style={[s.input, s.bio]} editable={!busy} value={draft.bio} onChangeText={(value) => change("bio", value)}
+      maxLength={PROFILE_LIMITS.bio} multiline placeholder="Bio" placeholderTextColor={theme.textDim} testID="profile-bio" />
+    <Pressable accessibilityRole="button" disabled={busy} style={s.save} onPress={save} testID="profile-save">
+      <Text style={s.text}>{busy ? (it ? "Attendi…" : "Please wait…") : (it ? "Salva profilo" : "Save profile")}</Text>
+    </Pressable>
+    {!!message && <Text accessibilityLiveRegion="polite" style={s.hint}>{message}</Text>}
+    <Pressable accessibilityRole="button" onPress={() => Share.share({ message: user.lns }).catch(() => {})}>
+      <Text style={s.link}>{it ? "Condividi il mio indirizzo" : "Share my address"}</Text>
+    </Pressable>
+  </ScrollView>;
+}
 
-  return (
-    <ScrollView style={{ flex: 1, backgroundColor: "transparent" }} contentContainerStyle={{ padding: 20, paddingTop: 16, paddingBottom: 40 }}>
-      <View style={s.headRow}>
-        <TouchableOpacity onPress={pickAvatar} style={s.avatarBtn} testID="profile-avatar-btn">
-          {p.avatar ? <Image source={{ uri: p.avatar }} style={s.avatarImg} /> : <Text style={s.avatarLetter}>{(p.display_name?.[0] || "?").toUpperCase()}</Text>}
-          <Text style={s.avatarEdit}>{lang === "en" ? "CHANGE" : "CAMBIA"}</Text>
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={s.name}>{p.display_name}</Text>
-          <Text style={s.lns}>{p.lns}</Text>
-          <Text style={s.role}>{roleLabel}</Text>
-        </View>
-      </View>
-
-      <Text style={s.label}>{t("profile.language")}</Text>
-      <View style={s.langRow}>
-        {UI_LANGS.map((l) => (
-          <TouchableOpacity key={l.code} onPress={() => setLang(l.code)} style={[s.langBtn, lang === l.code && s.langBtnActive]} testID={`lang-${l.code}`}>
-            <Text style={[s.langText, lang === l.code && s.langTextActive]}>{l.flag + "  " + l.native}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <Text style={s.label}>{t("profile.headline")}</Text>
-      <TextInput value={p.headline || ""} onChangeText={(v) => setP({ ...p, headline: v })} placeholder={t("profile.headline.ph")} placeholderTextColor={theme.textFaint} style={s.input} testID="profile-headline" />
-
-      <Text style={s.label}>{t("profile.bio")}</Text>
-      <TextInput value={p.bio || ""} onChangeText={(v) => setP({ ...p, bio: v })} placeholder={t("profile.bio.ph")} placeholderTextColor={theme.textFaint} style={[s.input, { height: 100, textAlignVertical: "top" }]} multiline testID="profile-bio" />
-
-      <TouchableOpacity onPress={() => setP({ ...p, is_public: !p.is_public })} style={[s.visBtn, { borderColor: p.is_public ? "#50C878" : "#ff9100" }]} testID="profile-visibility">
-        <Text style={{ color: p.is_public ? "#50C878" : "#ffb958", fontWeight: "700", fontSize: 13 }}>
-          {p.is_public ? t("profile.visible") : t("profile.hidden")}
-        </Text>
-      </TouchableOpacity>
-      <Text style={s.hint}>{p.is_public ? t("profile.visible.hint") : t("profile.hidden.hint")}</Text>
-
-      {!!p.personal && (
-        <>
-          <Text style={s.label}>{lang === "en" ? "PUBLIC DIRECTORY" : "DIRECTORY PUBBLICA"}</Text>
-          <TouchableOpacity onPress={() => setP({ ...p, discoverable: !p.discoverable })}
-            style={[s.visBtn, { borderColor: p.discoverable ? "#50C878" : "#ff9100" }]} testID="profile-discoverable">
-            <Text style={{ color: p.discoverable ? "#50C878" : "#ffb958", fontWeight: "700", fontSize: 13 }}>
-              {p.discoverable
-                ? (lang === "en" ? "FINDABLE BY USERNAME" : "TROVABILE DAL NOME UTENTE")
-                : (lang === "en" ? "HIDDEN FROM SEARCH" : "NASCOSTO DALLE RICERCHE")}
-            </Text>
-          </TouchableOpacity>
-          <Text style={s.hint}>
-            {p.discoverable
-              ? (lang === "en" ? "Others can find you in the ULTRON directory and add you as a contact." : "Gli altri possono trovarti nella directory ULTRON e aggiungerti ai contatti.")
-              : (lang === "en" ? "You can only be contacted by those who already know your ULTRON address." : "Puoi essere contattato solo da chi conosce già il tuo indirizzo ULTRON.")}
-          </Text>
-        </>
-      )}
-
-      <TouchableOpacity onPress={() => save()} disabled={busy} style={[s.saveBtn, busy && { opacity: 0.6 }]} testID="profile-save">
-        {busy ? <ActivityIndicator color="#fff" /> : <Text style={s.saveText}>{saved ? t("profile.saved") : t("profile.save")}</Text>}
-      </TouchableOpacity>
-
-      <TouchableOpacity onPress={shareProfile} style={s.shareBtn} testID="profile-share">
-        <Text style={s.shareText}>{lang === "en" ? "SHARE MY PROFILE" : "CONDIVIDI IL MIO PROFILO"}</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity onPress={signOut} style={s.signout} testID="profile-signout">
-        <Text style={s.signoutText}>{t("signout")}</Text>
-      </TouchableOpacity>
-    </ScrollView>
-  );
+export default function ProfileScreen({ route }) {
+  const { user } = useAuth();
+  const { lang } = useI18n();
+  const peer = route?.params?.peer;
+  if (!user) return null;
+  return peer && peer !== user.lns ? <ContactProfile peer={peer} it={lang !== "en"} />
+    : <EditProfile key={`${user.server}:${user.lns}`} user={user} it={lang !== "en"} />;
 }
 
 const s = StyleSheet.create({
-  loading: { flex: 1, backgroundColor: "transparent", alignItems: "center", justifyContent: "center" },
-  h1: { color: theme.text, fontSize: 24, fontWeight: "900", marginBottom: 18 },
-  headRow: { flexDirection: "row", alignItems: "center", gap: 16 },
-  avatarBtn: { width: 92, height: 92, borderRadius: 46, overflow: "hidden", backgroundColor: "rgba(80,200,120,0.15)", borderWidth: 1, borderColor: theme.border, alignItems: "center", justifyContent: "center" },
-  avatarImg: { width: "100%", height: "100%" },
-  avatarLetter: { color: theme.primary, fontSize: 34, fontWeight: "800" },
-  avatarEdit: { position: "absolute", bottom: 0, left: 0, right: 0, textAlign: "center", backgroundColor: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 9, paddingVertical: 3, letterSpacing: 1 },
+  content: { padding: 20, paddingBottom: 40, gap: 12 },
   name: { color: theme.text, fontSize: 20, fontWeight: "800" },
-  lns: { color: "#50C878", fontSize: 12, marginTop: 2 },
-  role: { color: theme.textFaint, fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginTop: 3 },
-  label: { color: theme.textFaint, fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginTop: 20, marginBottom: 6 },
-  input: { backgroundColor: theme.surfaceAlt, borderWidth: 1, borderColor: theme.border, borderRadius: 10, color: theme.text, paddingHorizontal: 14, paddingVertical: 11, fontSize: 15 },
-  langRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  langBtn: { flexGrow: 1, flexBasis: "44%", borderWidth: 1, borderColor: theme.border, borderRadius: 10, paddingVertical: 11, alignItems: "center", backgroundColor: theme.surfaceAlt },
-  langBtnActive: { borderColor: theme.primary, backgroundColor: "rgba(80,200,120,0.15)" },
-  langText: { color: theme.textDim, fontWeight: "700", fontSize: 14 },
-  langTextActive: { color: theme.text },
-  visBtn: { marginTop: 20, borderWidth: 1, borderRadius: 10, paddingVertical: 12, alignItems: "center" },
-  hint: { color: theme.textFaint, fontSize: 12, marginTop: 6 },
-  saveBtn: { marginTop: 24, backgroundColor: theme.primary, borderRadius: 12, paddingVertical: 15, alignItems: "center" },
-  saveText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  signout: { marginTop: 18, alignItems: "center" },
-  shareBtn: { marginTop: 12, borderWidth: 1, borderColor: theme.primary, borderRadius: 12, paddingVertical: 14, alignItems: "center" },
-  shareText: { color: theme.primary, fontSize: 13, fontWeight: "800", letterSpacing: 0.5 },
-  signoutText: { color: theme.textFaint, fontSize: 13, fontWeight: "600" },
+  text: { color: theme.text, fontSize: 15 },
+  hint: { color: theme.textDim, fontSize: 13, lineHeight: 20 },
+  link: { color: theme.primary, fontSize: 15, paddingVertical: 4 },
+  loading: { marginTop: 25 },
+  avatar: { width: 100, height: 100, borderRadius: 50 },
+  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  input: { backgroundColor: theme.surfaceAlt, color: theme.text, borderWidth: 1, borderColor: theme.border, borderRadius: 10, padding: 12 },
+  bio: { minHeight: 90, textAlignVertical: "top" },
+  save: { alignItems: "center", backgroundColor: theme.surfaceAlt, borderColor: theme.primary, borderWidth: 1, padding: 14, borderRadius: 10 },
 });

@@ -379,6 +379,11 @@ export default function AddressBookScreen({ navigation, route }) {
             <Pressable style={styles.sheet} testID="rubrica-menu">
               <Text style={styles.sheetTitle} numberOfLines={1}>{menuFor.display_name || menuFor.lns}</Text>
               <Text style={styles.sheetSub} numberOfLines={1}>{menuFor.lns}</Text>
+              <TouchableOpacity style={styles.sheetItem} testID="rubrica-menu-profile"
+                onPress={() => { const peer = menuFor.lns; setMenuFor(null); navigation.navigate("Profilo", { peer }); }}>
+                <Ionicons name="person-circle-outline" size={19} color={theme.text} />
+                <Text style={styles.sheetItemTxt}>{lang === "en" ? "View profile" : "Vedi profilo"}</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 style={styles.sheetItem}
                 testID="rubrica-menu-verify"

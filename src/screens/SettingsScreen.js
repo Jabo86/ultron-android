@@ -26,6 +26,8 @@ import { isDeviceSecure, authenticate } from "../lib/biometrics";
 import { registerForPush, scheduleDailyQuizReminder, loadReminderTimes } from "../lib/notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as cover from "../lib/cover";
+import { ICE_SERVERS } from "../config";
+import { threatListSize } from "../lib/threatEngine";
 import * as tunnel from "../lib/tunnel";
 import * as meshNode from "../lib/mesh";
 import MeshConstellation from "../components/MeshConstellation";
@@ -39,6 +41,7 @@ import { TRANSLATE_LANGS, langName } from "../lib/langs";
 import { getThreatLog, clearThreatLog, getThreatCount } from "../lib/threatLog";
 
 const PRIVACY_LNS = "";
+const HAS_TURN = ICE_SERVERS.some(({ urls }) => [urls].flat().some((url) => /^turns?:/i.test(url)));
 
 const LEGAL_DOCS = [
   { key: "settings.privacy", path: "/privacy", icon: "shield-checkmark-outline" },
@@ -51,7 +54,7 @@ const LEGAL_DOCS = [
   { key: "settings.legalIndex", path: "/legale", icon: "library-outline" },
 ];
 
-function fmtAgo(ts, lang) {
+function fmtAgo(ts, lang, t) {
   const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
   const en = lang === "en";
   if (s < 60) return t("sm.001");
@@ -61,88 +64,26 @@ function fmtAgo(ts, lang) {
   try { return new Date(ts).toLocaleDateString(); } catch { return ""; }
 }
 
-const LEGAL_IT = `INFORMATIVA SULLA PRIVACY E TERMINI DI SERVIZIO
-Ultimo aggiornamento: giugno 2026
+const LEGAL_IT = `PRIVACY E REGOLE DELLE AREE PUBBLICHE
 
-1. TITOLARE DEL TRATTAMENTO
-Il servizio ULTRON è gestito dall'organizzazione che lo ospita (self-hosted). Per esercitare i tuoi diritti contatta l'amministratore della tua azienda o il DPO indicato dalla tua organizzazione.
+I dettagli privati del profilo restano cifrati sul telefono. Pubblicando foto, informazioni o bio li rendi leggibili al server e agli utenti che accedono al profilo. Chi li vede può conservarne una copia.
 
-2. PRINCIPIO: CIFRATURA END-TO-END
-Messaggi, allegati, note vocali, chiamate/videochiamate e stati sono cifrati end-to-end con crittografia post-quantistica (ML-KEM-768 per lo scambio chiavi, ML-DSA-65 per le firme). Le chiavi private restano solo sul tuo dispositivo, protette dal tuo PIN. Il gestore del servizio NON può leggere i tuoi contenuti.
+Il server gestisce identità e chiavi pubbliche, richieste, metadati di servizio, buste cifrate dove supportate e contenuti pubblicati. Il codice del gateway registra accessi con identità, orario e identificatore di sessione. Proxy, hosting e server personali possono avere log e tempi di conservazione diversi.
 
-3. DATI CHE TRATTIAMO (base giuridica: esecuzione del contratto/servizio, art. 6.1.b GDPR)
-- Identità di rete (LNS) e appartenenza aziendale, per instradare i messaggi.
-- Buste crittografate e metadati minimi di consegna (mittente/destinatario, orario) necessari alla consegna.
-- Chiavi pubbliche (ML-KEM, ML-DSA, X25519) per abilitare cifratura, firma e signaling anonimo.
-- Servizio notifiche proprietario ULTRON per avvisarti di nuovi messaggi/chiamate.
-- Indirizzo IP di rete delle richieste (log tecnici standard), non collegato al contenuto.
+Le chiavi private e il PIN non sono inclusi nelle richieste di autenticazione. Le esportazioni esplicite del file chiave e i backup sono sotto il controllo dell’utente. Se attivi traduzione, la funzione può inviare il testo selezionato al servizio. Le segnalazioni e le tracce diagnostiche possono inviare informazioni al gestore.
 
-4. COSA NON RACCOGLIAMO / NON VEDIAMO
-- Il contenuto in chiaro delle comunicazioni.
-- Per le chiamate: chi chiama chi e quando (usiamo un "blind rendezvous" anonimo: solo identificatori casuali temporanei); l'IP tra i peer è nascosto perché l'audio/video passa solo da un relay cifrato.
-- Il tuo PIN e le tue chiavi private.
+Nelle aree pubbliche pubblica solo materiale che puoi condividere. Evita dati personali altrui, molestie, spam, truffe e file malevoli. Usa le funzioni di blocco e segnalazione dove disponibili. Consulta le regole, la conservazione e i recapiti pubblicati dal gestore del tuo server.`;
 
-5. CONSERVAZIONE (data retention)
-- I dati di signaling delle chiamate scadono automaticamente entro 120 secondi.
-- SDP e candidati di rete vengono rimossi al termine della chiamata.
-- I messaggi seguono i tempi/impostazioni di conservazione della tua organizzazione (inclusi i messaggi a scadenza, se attivi).
+const LEGAL_EN = `PRIVACY AND PUBLIC-AREA RULES
 
-6. I TUOI DIRITTI (GDPR artt. 15-22)
-Hai diritto di accesso, rettifica, cancellazione, limitazione, portabilità e opposizione. Puoi eliminare il tuo account dall'app (Impostazioni). Per richieste rivolgiti all'amministratore/DPO della tua organizzazione.
+Private profile details are encrypted on the phone. Publishing a photo, about text or bio makes it readable to the server and users who view the profile. Viewers can keep copies.
 
-7. SICUREZZA
-Crittografia post-quantistica end-to-end, verifica anti-intercettazione (emoji SAS da confrontare a voce durante la chiamata), protezione anti-screenshot, blocco con PIN.
+The server processes identities and public keys, requests, service metadata, encrypted envelopes where supported, and published content. Gateway code logs sign-ins with identity, time and session ID. Proxies, hosting providers and personal servers can have different logging and retention practices.
 
-8. USO LECITO
-Il servizio è destinato a comunicazioni professionali legittime. La crittografia tutela la tua riservatezza nel rispetto delle leggi vigenti. Sei responsabile di un utilizzo conforme alla legge; è vietato ogni uso illecito.
+Authentication requests omit private keys and the PIN. Explicit key-file exports and backups are under the user's control. Translation can send selected text to the service when enabled. Reports and diagnostic traces can send information to the operator.
 
-9. LIMITAZIONI
-Nessun sistema garantisce sicurezza assoluta. Consigliamo di verificare le emoji di sicurezza nelle chiamate sensibili. Il gestore non risponde di usi contrari alla legge da parte degli utenti.
+Publish only material you can share. Avoid other people's private information, harassment, spam, scams and malicious files. Use blocking and reporting where available. Consult the rules, retention and contacts published by your server operator.`;
 
-Contatto: l'amministratore della tua organizzazione.`;
-
-const LEGAL_EN = `PRIVACY POLICY AND TERMS OF SERVICE
-Last updated: June 2026
-
-1. DATA CONTROLLER
-ULTRON is operated by the organization hosting it (self-hosted). To exercise your rights, contact your company administrator or the DPO designated by your organization.
-
-2. PRINCIPLE: END-TO-END ENCRYPTION
-Messages, attachments, voice notes, calls/video calls and status are end-to-end encrypted with post-quantum cryptography (ML-KEM-768 for key exchange, ML-DSA-65 for signatures). Private keys stay only on your device, protected by your PIN. The service operator CANNOT read your content.
-
-3. DATA WE PROCESS (legal basis: performance of the contract/service, art. 6.1.b GDPR)
-- Network identity (LNS) and company membership, to route messages.
-- Encrypted envelopes and minimal delivery metadata (sender/recipient, time) needed for delivery.
-- Public keys (ML-KEM, ML-DSA, X25519) to enable encryption, signing and anonymous signaling.
-- ULTRON server notifications to alert you of new messages/calls.
-- Network IP address of requests (standard technical logs), not linked to content.
-
-4. WHAT WE DO NOT COLLECT / CANNOT SEE
-- The plaintext content of communications.
-- For calls: who calls whom and when (we use an anonymous "blind rendezvous": only temporary random identifiers); peer IPs are hidden because audio/video only flows through an encrypted relay.
-- Your PIN and private keys.
-
-5. DATA RETENTION
-- Call signaling data auto-expires within 120 seconds.
-- SDP and network candidates are removed when the call ends.
-- Messages follow your organization's retention settings (including disappearing messages, if enabled).
-
-6. YOUR RIGHTS (GDPR arts. 15-22)
-You have the right to access, rectification, erasure, restriction, portability and objection. You can delete your account from the app (Settings). For requests, contact your organization's administrator/DPO.
-
-7. SECURITY
-Post-quantum end-to-end encryption, anti-interception verification (SAS emojis to compare aloud during a call), anti-screenshot protection, PIN lock.
-
-8. LAWFUL USE
-The service is intended for legitimate professional communications. Encryption protects your privacy in compliance with applicable laws. You are responsible for lawful use; any unlawful use is prohibited.
-
-9. LIMITATIONS
-No system guarantees absolute security. We recommend verifying the security emojis on sensitive calls. The operator is not liable for unlawful use by users.
-
-Contact: your organization's administrator.`;
-
-
-// Stato della radio in parole, non in sigle.
 function radioLabel(v, t) {
   const k = String(v || "off");
   const known = ["off", "perm", "on", "group", "bt-off", "adv+scan", "near"];
@@ -466,7 +407,7 @@ export default function SettingsScreen({ navigation }) {
       const it = lang !== "en";
       const now = new Date().toLocaleString(it ? "it-IT" : "en-US");
       const d = new Date();
-      const protocol = `LN-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${Math.random().toString(16).slice(2, 8).toUpperCase()}`;
+      const protocol = `ULTRON-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${Math.random().toString(16).slice(2, 8).toUpperCase()}`;
       let logo = "";
       try {
         const asset = Asset.fromModule(require("../../assets/ultron-logo.png"));
@@ -477,42 +418,37 @@ export default function SettingsScreen({ navigation }) {
         }
       } catch {}
       const L = it
-        ? { title: "Ricevuta di conformità", sub: "Sicurezza & Privacy · Lattice",
-            issued: "Rilasciata il", proto: "Protocollo n.", subject: "Identità", controller: "Titolare del trattamento",
-            secTitle: "Misure di sicurezza tecniche", privTitle: "Protezione dei dati e GDPR",
+        ? { title: "Ricevuta informativa", sub: "Sicurezza e privacy · ULTRON",
+            issued: "Generata il", proto: "Riferimento", subject: "Identità", controller: "Server configurato",
+            secTitle: "Funzioni del client", privTitle: "Limiti e trattamento dati",
             sec: [
-              "Cifratura end-to-end di messaggi e allegati sul dispositivo (AES-256-GCM).",
-              "Firma digitale post-quantum ML-DSA-65 (resistente ai computer quantistici).",
-              "Scambio chiavi post-quantum ML-KEM-768 per ogni destinatario.",
-              "Chiave privata custodita solo sul dispositivo dell'utente: mai trasmessa al server.",
-              "Notarizzazione delle mail certificate con ancoraggio su blockchain (hash + firma verificabili).",
-              "Blocco applicazione con biometria / PIN.",
+              "Il client include cifratura di buste e allegati e autenticazione a firma ML-DSA.",
+              "Il backup viene cifrato sul telefono prima del salvataggio o della condivisione.",
+              "La verifica dei contatti e i controlli locali sono accessibili nell’app.",
             ],
             priv: [
-              "Consenso esplicito raccolto al primo utilizzo (privacy e termini) e registrato lato server.",
-              "Diritto di accesso e portabilità dei dati (esportazione in JSON) — GDPR art. 15 e 20.",
-              "Diritto all'oblio: eliminazione definitiva di identità e dati dall'app — GDPR art. 17.",
-              "Contenuti illeggibili al fornitore grazie alla cifratura end-to-end (data minimization).",
+              "I dettagli pubblici del profilo sono leggibili dal server.",
+              "Metadati, log e conservazione dipendono dal servizio e dal gestore.",
+              "Lo stato delle funzioni e delle prove disponibili è riportato in Sicurezza e audit.",
             ],
-            footer: "Documento generato automaticamente dall'app ULTRON a fini informativi." }
-        : { title: "Compliance certificate", sub: "Security & Privacy · Lattice",
-            issued: "Issued on", proto: "Protocol no.", subject: "Identity", controller: "Data controller",
-            secTitle: "Technical security measures", privTitle: "Data protection & GDPR",
+            footer: "Documento informativo generato dall’app ULTRON. Non costituisce una certificazione di conformità." }
+        : { title: "Informational receipt", sub: "Security and privacy · ULTRON",
+            issued: "Generated", proto: "Reference", subject: "Identity", controller: "Configured server",
+            secTitle: "Client features", privTitle: "Limits and data processing",
             sec: [
-              "End-to-end encryption of messages and attachments on device (AES-256-GCM).",
-              "Post-quantum digital signature ML-DSA-65 (quantum-resistant).",
-              "Post-quantum key exchange ML-KEM-768 per recipient.",
-              "Private key kept only on the user's device: never sent to the server.",
-              "Notarised mail notarization anchored on blockchain (verifiable hash + signature).",
-              "App lock with biometrics / PIN.",
+              "The client includes envelope and attachment encryption and ML-DSA authentication.",
+              "Backups are encrypted on the phone before saving or sharing.",
+              "Contact verification and local checks are available in the app.",
             ],
             priv: [
-              "Explicit consent collected on first use (privacy & terms) and recorded server-side.",
-              "Right of access and data portability (JSON export) — GDPR art. 15 & 20.",
-              "Right to erasure: permanent deletion of identity and data from the app — GDPR art. 17.",
-              "Content unreadable to the provider thanks to end-to-end encryption (data minimization).",
+              "Public profile details are readable by the server.",
+              "Metadata, logs and retention depend on the service and its operator.",
+              "Security and audit describes feature status and available tests.",
             ],
-            footer: "Document automatically generated by the ULTRON app for informational purposes." };
+            footer: "Informational document generated by ULTRON. It is not a compliance certification." };
+      const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+      })[c]);
       const li = (arr) => arr.map((x) => `<li>${x}</li>`).join("");
       const html = `<html><head><meta charset="utf-8"><style>
         body{font-family:Georgia,serif;color:#111;padding:44px;max-width:720px;margin:auto}
@@ -530,19 +466,19 @@ export default function SettingsScreen({ navigation }) {
       </style></head><body>
         <div class="hdr">${logo ? `<img src="${logo}"/>` : ""}<div class="brand">ULTRON</div></div>
         <h1>${L.title}</h1>
-        <div class="sub">${L.sub} &nbsp; <span class="badge">GDPR-READY · POST-QUANTUM E2EE</span></div>
+        <div class="sub">${L.sub}</div>
         <div class="meta">
           <div><b>${L.proto}</b> ${protocol}</div>
           <div><b>${L.issued}:</b> ${now}</div>
-          <div><b>${L.subject}:</b> ${user?.lns || "—"}</div>
-          <div><b>${L.controller}:</b> ${t("settings.controllerName")}${PRIVACY_LNS ? " · " + PRIVACY_LNS : ""}</div>
+          <div><b>${L.subject}:</b> ${escapeHtml(user?.lns || "—")}</div>
+          <div><b>${L.controller}:</b> ${escapeHtml(base)}</div>
         </div>
         <h2>${L.secTitle}</h2><ul>${li(L.sec)}</ul>
         <h2>${L.privTitle}</h2><ul>${li(L.priv)}</ul>
         <div class="ft">${L.footer}</div>
       </body></html>`;
       const { uri } = await Print.printToFileAsync({ html });
-      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: t("settings.compliance") });
+      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: L.title });
     } catch (e) { Alert.alert(t("settings.compliance"), api.apiErr(e)); }
     finally { setGenPdf(false); }
   };
@@ -707,9 +643,9 @@ export default function SettingsScreen({ navigation }) {
       <Text style={styles.section}>{t("settings.section.security")}</Text>
       <View style={styles.privStatus} testID="settings-privacy-status">
         {[
-          { on: chaff, label: t("sm.031"), tid: "privstat-noise" },
+          { on: chaff, label: (en ? "Cover traffic requested" : "Rumore configurato"), tid: "privstat-noise" },
           { on: darkMesh, label: "Dark Mesh", tid: "privstat-mesh" },
-          { on: !callDirect, label: t("sm.032"), tid: "privstat-relay" },
+          { on: !callDirect && HAS_TURN, label: HAS_TURN ? t("sm.032") : (en ? "TURN unavailable" : "TURN non configurato"), tid: "privstat-relay" },
           ...(sovereign ? [{ on: netHealth ? netHealth.key !== "isolated" : false, tid: "privstat-mesh-health",
             label: (t("sm.033")) + meshNode.healthLabel(netHealth ? netHealth.key : "isolated", en) }] : []),
         ].map((it) => (
@@ -734,26 +670,23 @@ export default function SettingsScreen({ navigation }) {
         <View style={styles.divider} />
         <Row icon="git-network-outline"
           label={t("sm.037")}
-          hint={callDirect
-            ? (t("sm.038"))
-            : (t("sm.039"))}
+          hint={callDirect ? t("sm.038") : HAS_TURN ? t("sm.039")
+            : (en ? "Relay-only calls need a TURN server." : "Le chiamate solo relay richiedono un server TURN.")}
           right={<Switch value={callDirect} onValueChange={async (v) => { setCallDirect(v); await saveAllowDirect(v); }} trackColor={{ true: "#50C878", false: theme.border }} thumbColor="#fff" testID="settings-call-direct" />} />
         <View style={styles.divider} />
         <Row icon="pulse-outline"
           label={t("sm.040")}
-          hint={chaff
-            ? (t("sm.041"))
-            : (t("sm.042"))}
+          hint={en ? "Runs while Android keeps the service active. 24/7 operation is unverified."
+            : "Funziona quando Android mantiene il servizio attivo. La continuità H24 è da verificare."}
           right={<Switch value={chaff} onValueChange={async (v) => { setChaff(v); await cover.setEnabled(v); }} trackColor={{ true: tint, false: theme.border }} thumbColor="#fff" testID="settings-chaff" />} />
         <View style={styles.divider} />
         <Row icon="eye-off-outline"
           label={t("sm.043")}
-          hint={darkMesh
-            ? (t("sm.044"))
-            : (t("sm.045"))}
+          hint={tunnel.available() ? (darkMesh ? t("sm.044") : t("sm.045"))
+            : (en ? "No tunnel profile configured." : "Profilo del tunnel assente in questa build.")}
           right={meshBusy
             ? <ActivityIndicator color={tint} />
-            : <Switch value={darkMesh} onValueChange={toggleMesh} trackColor={{ true: tint, false: theme.border }} thumbColor="#fff" testID="settings-darkmesh" />} />
+            : <Switch value={darkMesh} disabled={!tunnel.available()} onValueChange={toggleMesh} trackColor={{ true: tint, false: theme.border }} thumbColor="#fff" testID="settings-darkmesh" />} />
         <View style={styles.divider} />
         <View style={styles.modeBox} testID="mesh-mode">
           <Text style={styles.modeTitle}>{t("sm.046")}</Text>
@@ -976,11 +909,11 @@ export default function SettingsScreen({ navigation }) {
         <View style={styles.shieldHead}>
           <Ionicons name="shield-checkmark-outline" size={18} color={tint} />
           <Text style={styles.shieldTitle}>{lang !== "en" ? "Scudo Anti-Minacce" : "Threat Shield"}</Text>
-          <View style={styles.shieldBadge}><Text style={styles.shieldBadgeTxt}>{lang !== "en" ? "SEMPRE ATTIVO · GRATIS" : "ALWAYS ON · FREE"}</Text></View>
+          <View style={styles.shieldBadge}><Text style={styles.shieldBadgeTxt}>{lang !== "en" ? "CONTROLLI LOCALI" : "LOCAL CHECKS"}</Text></View>
         </View>
         <View style={styles.counterBox} testID="settings-threat-counter">
           <Text style={styles.counterNum}>{threatCount}</Text>
-          <Text style={styles.counterLbl}>{lang !== "en" ? "minacce bloccate dallo Scudo" : "threats blocked by the Shield"}</Text>
+          <Text style={styles.counterLbl}>{lang !== "en" ? "rilevamenti registrati" : "logged detections"}</Text>
         </View>
         <View style={styles.weekChart} testID="settings-threat-week">
           <Text style={styles.weekTitle}>{lang !== "en" ? "Ultimi 7 giorni" : "Last 7 days"}</Text>
@@ -1003,17 +936,17 @@ export default function SettingsScreen({ navigation }) {
         </Text>
         {(lang !== "en"
           ? [
-              "Phishing e truffe nei messaggi e nelle mail certificate (finti login, premi, frodi IBAN/cripto, richieste OTP).",
+              "Euristiche per phishing e truffe nei messaggi (finti login, premi, frodi IBAN/cripto, richieste OTP).",
               "Link malevoli: imitazione marchi, cloni punycode, host solo-IP, accorciatori, domini a rischio, senza HTTPS.",
               "Allegati: eseguibili, doppie estensioni mascherate, macro Office, false immagini, firma magic-bytes.",
-              "Blacklist minacce aggiornata ogni 6 ore (feed gratuito URLhaus); euristiche attive anche offline.",
+              `Domini caricati in memoria: ${threatListSize()}. La lista remota dipende dalla disponibilità del server.`,
               "Rilevamento firma di test antivirus EICAR.",
             ]
           : [
-              "Phishing & scams in messages and notarised mail (fake logins, prizes, IBAN/crypto fraud, OTP requests).",
+              "Phishing and scam heuristics in messages (fake logins, prizes, IBAN/crypto fraud, OTP requests).",
               "Malicious links: brand impersonation, punycode clones, IP-only hosts, shorteners, risky domains, non-HTTPS.",
               "Attachments: executables, disguised double extensions, Office macros, fake images, magic-byte signature.",
-              "Threat blacklist auto-updated every 6h (free URLhaus feed); heuristics active even offline.",
+              `Domains loaded in memory: ${threatListSize()}. The remote list depends on server availability.`,
               "EICAR antivirus test signature detection.",
             ]
         ).map((line, i) => (
@@ -1024,83 +957,25 @@ export default function SettingsScreen({ navigation }) {
         ))}
       </View>
 
-      {/* PRIVACY & TRASPARENZA */}
       <View style={styles.shieldBox} testID="settings-privacy">
-        <View style={styles.shieldHead}>
-          <Ionicons name="eye-off-outline" size={18} color={tint} />
-          <Text style={styles.shieldTitle}>{lang !== "en" ? "Privacy & Trasparenza" : "Privacy & Transparency"}</Text>
-          <View style={styles.shieldBadge}><Text style={styles.shieldBadgeTxt}>E2EE · POST-QUANTUM</Text></View>
-        </View>
-        <Text style={styles.shieldDesc}>
-          {lang !== "en"
-            ? "Esattamente cosa resta privato e cosa il server tratta. Nessuna sorpresa."
-            : "Exactly what stays private and what the server processes. No surprises."}
-        </Text>
-
-        <Text style={styles.privHead}>{lang !== "en" ? "🔒 Il server NON può MAI vedere:" : "🔒 The server can NEVER see:"}</Text>
-        {(lang !== "en"
-          ? [
-              "Il CONTENUTO di messaggi, allegati, chiamate e stati: cifrato end-to-end (ML-KEM-768 + ML-DSA-65). Nemmeno noi possiamo leggerlo.",
-              "CHI chiama CHI e QUANDO: le chiamate usano un rendez-vous anonimo, il server vede solo identificatori casuali temporanei.",
-              "L'IP dell'altra persona in chiamata: audio/video passano solo dal relay cifrato, nessuna connessione diretta tra voi.",
-              "La CRONOLOGIA PASSATA, anche se ottenesse la tua chiave d'identità: ogni messaggio viaggia in una chiave ML-KEM usa-e-getta, consumata e buttata (forward secrecy).",
-              "QUANTO È LUNGO un messaggio: la lunghezza è uniformata a blocchi di 512 byte, un \"ok\" e una foto sono indistinguibili.",
-              "QUANDO scrivi o chiami: con il Traffico di Rumore l'app invia finto traffico casuale 24 ore su 24 (anche a schermo spento), così i momenti reali si perdono nel rumore.",
-              "CHE stai usando ULTRON: con Dark Mesh (XTLS-Reality) il traffico si traveste da normale navigazione su grandi siti (Apple, Cloudflare, Microsoft) e cambia vestito da solo se uno è bloccato.",
-              "Il FUTURO: la cifratura è a prova di computer quantistici (ML-KEM-768 + ML-DSA-65), resiste anche agli attacchi \"raccogli ora, decifra domani\".",
-              "Il tuo INDIRIZZO IP: il web server non scrive log di accesso e il server delle chiamate non scrive log. Dove serve un contatore anti-abuso, l'IP diventa uno pseudonimo giornaliero non reversibile.",
-              "Il tuo PIN e le tue chiavi private: restano solo sul tuo dispositivo, cifrate con una chiave derivata dal PIN.",
-            ]
-          : [
-              "The CONTENT of messages, attachments, calls and status: end-to-end encrypted (ML-KEM-768 + ML-DSA-65). Not even we can read it.",
-              "WHO calls WHOM and WHEN: calls use an anonymous rendezvous, the server only sees temporary random identifiers.",
-              "The other person's IP during a call: audio/video only flow through the encrypted relay, no direct connection between you.",
-              "PAST HISTORY, even with your identity key: every message travels inside a single-use ML-KEM key that is consumed and thrown away (forward secrecy).",
-              "HOW LONG a message is: length is padded to 512-byte blocks, an \"ok\" and a photo look identical.",
-              "WHEN you write or call: with Invisible Traffic the app sends constant random noise 24/7 (even with the screen off), so real moments hide in the noise.",
-              "THAT you are using ULTRON: with Dark Mesh (XTLS-Reality) your traffic is disguised as ordinary browsing of big sites (Apple, Cloudflare, Microsoft) and switches disguise by itself if one is blocked.",
-              "The FUTURE: encryption is quantum-computer resistant (ML-KEM-768 + ML-DSA-65), safe even against \"harvest now, decrypt later\" attacks.",
-              "Your IP ADDRESS: the web server writes no access log and the call server writes no log; where an anti-abuse counter is needed the IP becomes a non-reversible daily pseudonym.",
-              "Your PIN and private keys: they never leave your device, encrypted with a key derived from the PIN.",
-            ]
-        ).map((line, i) => (
-          <View key={"p" + i} style={styles.shieldItem}><View style={styles.shieldDot} /><Text style={styles.shieldItemTxt}>{line}</Text></View>
-        ))}
-
-        <Text style={styles.privHead}>{lang !== "en" ? "ℹ️ Cosa il server tratta (necessario al servizio):" : "ℹ️ What the server processes (needed to run the service):"}</Text>
-        {(lang !== "en"
-          ? [
-              "Il tuo account (LNS) e l'azienda di appartenenza, per consegnarti i messaggi.",
-              "Buste cifrate e metadati minimi di consegna dei messaggi, conservati il minimo indispensabile.",
-              "Le buste già ritirate vengono cancellate dopo 7 giorni, quelle mai ritirate dopo 30: passata quella data non esistono più per nessuno.",
-              "I dati di signaling delle chiamate scadono automaticamente entro 120 secondi; il registro chiamate lato server viene cancellato entro 24 ore.",
-              "Per farti squillare il telefono usiamo una notifica push: il servizio di notifica sa che c'è una chiamata o un messaggio per te, mai il contenuto.",
-              "Quali dispositivi hai attivi (telefono, browser) e le loro chiavi pubbliche usa-e-getta, per consegnare una busta a ciascuno.",
-            ]
-          : [
-              "Your account (LNS) and your company, to deliver your messages.",
-              "Encrypted envelopes and minimal message-delivery metadata, kept to the strict minimum.",
-              "Delivered envelopes are deleted after 7 days, never-delivered ones after 30: past that date they exist for nobody.",
-              "Call signaling data auto-expires within 120 seconds; server-side call records are deleted within 24 hours.",
-              "To ring your phone we use a push notification: the notification service knows there is a call or message for you, never its content.",
-              "Which devices you have active (phone, browser) and their one-time public keys, to deliver one envelope to each.",
-            ]
-        ).map((line, i) => (
-          <View key={"q" + i} style={styles.shieldItem}><View style={[styles.shieldDot, { backgroundColor: theme.textDim }]} /><Text style={styles.shieldItemTxt}>{line}</Text></View>
-        ))}
-
-        <Text style={styles.privLegal}>
-          {lang !== "en"
-            ? "Verifica le chiamate confrontando a voce le emoji di sicurezza mostrate durante la chiamata. Uso lecito: questo servizio è destinato a comunicazioni professionali legittime; la cifratura protegge la tua privacy nel rispetto delle leggi vigenti (incl. GDPR). Sei responsabile di un uso conforme alla legge."
-            : "Verify calls by reading aloud the security emojis shown during the call. Lawful use: this service is intended for legitimate professional communications; encryption protects your privacy in compliance with applicable laws (incl. GDPR). You are responsible for lawful use."}
-        </Text>
+        <Text style={styles.shieldTitle}>{en ? "Privacy and transparency" : "Privacy e trasparenza"}</Text>
+        <Text style={styles.privHead}>{en ? "What stays on your device" : "Cosa resta sul dispositivo"}</Text>
+        <Text style={styles.shieldDesc}>{en
+          ? "Authentication sends signatures and public keys. Private profile fields and the app PIN stay local. An explicit key export or backup creates a separate copy under your control."
+          : "L’autenticazione invia firme e chiavi pubbliche. I campi privati del profilo e il PIN dell’app restano locali. Esportare una chiave o un backup crea una copia separata sotto il tuo controllo."}</Text>
+        <Text style={styles.privHead}>{en ? "What the server can process" : "Cosa può trattare il server"}</Text>
+        <Text style={styles.shieldDesc}>{en
+          ? "Account, public keys, public profile, encrypted envelopes where supported, delivery data and sign-in events. A server or proxy can see the IP and connection times. Retention and logs depend on its operator. Translation can send selected text to the service."
+          : "Account, chiavi pubbliche, profilo pubblico, buste cifrate dove supportate, dati di consegna ed eventi di accesso. Server e proxy possono vedere IP e orari. Log e conservazione dipendono dal gestore. La traduzione può inviare al servizio il testo selezionato."}</Text>
+        <Text style={styles.privHead}>{en ? "Public-area rules" : "Regole delle aree pubbliche"}</Text>
+        <Text style={styles.shieldDesc}>{en
+          ? "Share only material you are entitled to publish. Other people can read or copy published details. Avoid sharing private data, scams, harassment or malicious files."
+          : "Condividi solo ciò che hai diritto di pubblicare. Chi vede i dati pubblici può copiarli. Evita dati privati, truffe, molestie e file malevoli."}</Text>
         <TouchableOpacity onPress={() => setShowLegal(true)} style={styles.legalLink} testID="settings-open-legal">
           <Ionicons name="document-text-outline" size={16} color={tint} />
-          <Text style={styles.legalLinkTxt}>{lang !== "en" ? "Informativa Privacy & Termini completa (GDPR)" : "Full Privacy Policy & Terms (GDPR)"}</Text>
-          <Ionicons name="chevron-forward-outline" size={16} color={theme.textDim} />
+          <Text style={styles.legalLinkTxt}>{en ? "Privacy details and public-area rules" : "Dettagli privacy e regole delle aree pubbliche"}</Text>
         </TouchableOpacity>
       </View>
-
 
       {/* THREAT LOG */}
       <View style={styles.shieldBox} testID="settings-threat-log">
@@ -1122,7 +997,7 @@ export default function SettingsScreen({ navigation }) {
               <View style={{ flex: 1 }}>
                 <View style={styles.threatRow}>
                   <Text style={styles.threatCtx}>{e.context}</Text>
-                  <Text style={styles.threatTime}>{fmtAgo(e.at, lang)}</Text>
+                  <Text style={styles.threatTime}>{fmtAgo(e.at, lang, t)}</Text>
                 </View>
                 <Text style={styles.threatReason} numberOfLines={2}>{e.reasons && e.reasons[0]}</Text>
               </View>
@@ -1219,7 +1094,7 @@ export default function SettingsScreen({ navigation }) {
           right={<Ionicons name="share-social-outline" size={18} color={tint} />} testID="settings-invite" />
         <View style={styles.divider} />
         <View style={styles.divider} />
-        <Row icon="ribbon-outline" label={t("settings.compliance")} hint={t("settings.compliance.hint")} onPress={genPdf ? null : doCompliance}
+        <Row icon="ribbon-outline" label={en ? "Informational receipt" : "Ricevuta informativa"} hint={en ? "Security and privacy summary (PDF)" : "Riepilogo di sicurezza e privacy (PDF)"} onPress={genPdf ? null : doCompliance}
           right={genPdf ? <ActivityIndicator size="small" color={tint} /> : <Ionicons name="download-outline" size={18} color={theme.textFaint} />} testID="settings-compliance" />
       </View>
 
@@ -1270,7 +1145,7 @@ export default function SettingsScreen({ navigation }) {
         <View style={styles.legalWrap}>
           <View style={styles.legalCard}>
             <View style={styles.legalHead}>
-              <Text style={styles.legalTitle}>{lang !== "en" ? "Informativa Privacy & Termini" : "Privacy Policy & Terms"}</Text>
+              <Text style={styles.legalTitle}>{lang !== "en" ? "Privacy e regole delle aree pubbliche" : "Privacy and public-area rules"}</Text>
               <TouchableOpacity onPress={() => setShowLegal(false)} testID="settings-legal-close"><Ionicons name="close-outline" size={24} color={theme.text} /></TouchableOpacity>
             </View>
             <ScrollView style={{ maxHeight: "82%" }} contentContainerStyle={{ paddingBottom: 24 }}>

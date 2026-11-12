@@ -514,7 +514,9 @@ export const blobDownload = (id) =>
 export const markRead = (conv_id) =>
   withAuth((a) => client.post("/public/pulse/read", { conv_id }, a).then((r) => r.data));
 export const myProfile = () =>
-  withAuth((a) => client.get("/public/pulse/profile", a).then((r) => r.data));
+  withAuth((a) => client.get("/public/pulse/profile", { ...a, timeout: 7000 }).then((r) => r.data));
+export const contactProfile = (lns) =>
+  withAuth((a) => client.get("/public/pulse/profile", { ...a, params: { lns }, timeout: 7000 }).then((r) => r.data));
 export const saveProfile = (payload) =>
   withAuth((a) => client.post("/public/pulse/profile", payload, a).then((r) => r.data));
 export const hubFeed = () =>
