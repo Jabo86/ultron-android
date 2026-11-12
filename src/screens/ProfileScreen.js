@@ -45,7 +45,7 @@ export default function ProfileScreen() {
     const url = `${api.getServerUrl()}/card.html?u=${encodeURIComponent(me)}`;
     try {
       await Share.share({
-        message: (lang === "en" ? "Contact me in end-to-end encrypted chat on Lattice Network:\n" : "Contattami in chat cifrata end-to-end su Lattice Network:\n") + url,
+        message: (lang === "en" ? "Contact me in end-to-end encrypted chat on ULTRON:\n" : "Contattami in chat cifrata end-to-end su ULTRON:\n") + url,
         url,
       });
     } catch (e) { /* annullato */ }
@@ -103,8 +103,8 @@ export default function ProfileScreen() {
           </TouchableOpacity>
           <Text style={s.hint}>
             {p.discoverable
-              ? (lang === "en" ? "Others can find you in the Lattice directory and add you as a contact." : "Gli altri possono trovarti nella directory Lattice e aggiungerti ai contatti.")
-              : (lang === "en" ? "You can only be contacted by those who already know your Lattice address." : "Puoi essere contattato solo da chi conosce già il tuo indirizzo Lattice.")}
+              ? (lang === "en" ? "Others can find you in the ULTRON directory and add you as a contact." : "Gli altri possono trovarti nella directory ULTRON e aggiungerti ai contatti.")
+              : (lang === "en" ? "You can only be contacted by those who already know your ULTRON address." : "Puoi essere contattato solo da chi conosce già il tuo indirizzo ULTRON.")}
           </Text>
         </>
       )}

@@ -5,10 +5,15 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: ultron-android-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   android-apk:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,14 +39,28 @@ jobs:
         run: node tools/verify-ultron-notifications.cjs
       - name: Build native Xray AAR from checked-in source
         run: bash tools/build-libv2ray.sh "$GITHUB_WORKSPACE/third_party/libxray" "$GITHUB_WORKSPACE/android/app/libs/libv2ray.aar"
-      - name: Generate temporary debug key (never a production signing key)
+      - name: Configure Android signing
+        env:
+          ULTRON_KEYSTORE: ${{ secrets.ULTRON_ANDROID_KEYSTORE_B64 }}
+          ULTRON_KEYSTORE_PASSWORD: ${{ secrets.ULTRON_ANDROID_KEYSTORE_PASSWORD }}
+          ULTRON_MANIFEST_SEED: ${{ secrets.ULTRON_MANIFEST_SEED }}
         run: |
-          keytool -genkeypair -v -keystore android/app/debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 365 -storepass android -keypass android -dname "CN=ULTRON debug,O=Development,C=IT"
-      - name: Compile standalone Android verification APK
+          set -euo pipefail
+          echo "EXPO_PUBLIC_ULTRON_VERSION_CODE=$((183 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          if [[ "$GITHUB_REF" == refs/heads/main && -n "$ULTRON_KEYSTORE" && -n "$ULTRON_KEYSTORE_PASSWORD" && -n "$ULTRON_MANIFEST_SEED" ]]; then
+            [[ "$ULTRON_KEYSTORE_PASSWORD" =~ ^[A-Za-z0-9]+$ ]]
+            umask 077
+            printf '%s' "$ULTRON_KEYSTORE" | base64 --decode > "$RUNNER_TEMP/ultron-release.p12"
+            printf 'ULTRON_STORE_FILE=%s\nULTRON_STORE_PASSWORD=%s\nULTRON_KEY_ALIAS=ultron\nULTRON_KEY_PASSWORD=%s\n' \
+              "$RUNNER_TEMP/ultron-release.p12" "$ULTRON_KEYSTORE_PASSWORD" "$ULTRON_KEYSTORE_PASSWORD" > android/keystore.properties
+            echo "EXPO_PUBLIC_ULTRON_UPDATE_KEY=$(node tools/sign-ultron-update.mjs --public-key)" >> "$GITHUB_ENV"
+            echo "ULTRON_RELEASE=true" >> "$GITHUB_ENV"
+          else
+            keytool -genkeypair -keystore android/app/debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 365 -storepass android -keypass android -dname "CN=ULTRON debug,O=Development,C=IT"
+          fi
+      - name: Compile standalone Android APK
         working-directory: android
-        run: |
-          test ! -e keystore.properties
-          ./gradlew :app:assembleRelease --no-daemon --stacktrace
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
       - name: Verify app ID, embedded JavaScript and APK signature
         run: |
           set -euo pipefail
@@ -51,6 +70,7 @@ jobs:
           unzip -t "$apk" | tail -1
           unzip -Z1 "$apk" | awk '$0 == "assets/index.android.bundle" { found=1 } END { exit !found }'
           test "$("$tools/aapt" dump badging "$apk" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")" = com.ultron.messenger
+          test "$("$tools/aapt" dump badging "$apk" | sed -n "s/^package: .*versionCode='\([^']*\)'.*/\1/p")" = "$EXPO_PUBLIC_ULTRON_VERSION_CODE"
           "$tools/apksigner" verify "$apk"
           mkdir -p dist
           cp "$apk" dist/ULTRON-Android-verification.apk
@@ -60,3 +80,15 @@ jobs:
           name: ULTRON-Android-verification
           path: dist/ULTRON-Android-verification.apk
           if-no-files-found: error
+      - name: Publish signed Android release
+        if: env.ULTRON_RELEASE == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ULTRON_MANIFEST_SEED: ${{ secrets.ULTRON_MANIFEST_SEED }}
+        run: |
+          set -euo pipefail
+          cp dist/ULTRON-Android-verification.apk dist/ULTRON-Messaggi.apk
+          version=$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging dist/ULTRON-Messaggi.apk | sed -n "s/^package: .*versionName='\([^']*\)'.*/\1/p")
+          node tools/sign-ultron-update.mjs dist/ULTRON-Messaggi.apk "$version" "$EXPO_PUBLIC_ULTRON_VERSION_CODE"
+          gh release create "android-$EXPO_PUBLIC_ULTRON_VERSION_CODE" dist/ULTRON-Messaggi.apk dist/latest.json \
+            --target "$GITHUB_SHA" --latest --title "ULTRON Messaggi $version ($EXPO_PUBLIC_ULTRON_VERSION_CODE)" --generate-notes

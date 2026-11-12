@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../theme";
 import { useI18n } from "../lib/i18n";
 
-// Changelog completo di Lattice Pulse (più recente in alto). Bilingue IT/EN.
+// Changelog completo di ULTRON Messaggi (più recente in alto). Bilingue IT/EN.
 const CHANGELOG = [
   {
     v: "2.3.1",
@@ -177,13 +177,13 @@ const CHANGELOG = [
     v: "1.7.0",
     date: "2026-06",
     it: [
-      "Ponte Internet. Il tuo telefono senza rete pu\u00f2 spedire attraverso un telefono Lattice vicino che ha internet: la busta, gi\u00e0 cifrata per il destinatario, viaggia sulla mesh come cipolla a 4 salti e il vicino la spinge al server senza poterla aprire.",
+      "Ponte Internet. Il tuo telefono senza rete pu\u00f2 spedire attraverso un telefono ULTRON vicino che ha internet: la busta, gi\u00e0 cifrata per il destinatario, viaggia sulla mesh come cipolla a 4 salti e il vicino la spinge al server senza poterla aprire.",
       "Chat sulla mesh, radio Wi-Fi Direct e BLE per trovarsi senza infrastruttura, mixnet anti-timing e barometro visivo per vedere da dove \u00e8 passato l'ultimo messaggio.",
       "Doppio ratchet: catena di auto-guarigione che recupera da sola le sessioni desincronizzate, invece di lasciare messaggi illeggibili.",
       "Manutenzione automatica: i dispositivi non pi\u00f9 usati e le chiavi orfane vengono ripuliti da soli, sul telefono e sul server.",
     ],
     en: [
-      "Internet Bridge. Your phone with no connection can send through a nearby Lattice phone that has internet: the envelope, already encrypted for the recipient, travels the mesh as a 4-hop onion and the neighbour pushes it to the server without being able to open it.",
+      "Internet Bridge. Your phone with no connection can send through a nearby ULTRON phone that has internet: the envelope, already encrypted for the recipient, travels the mesh as a 4-hop onion and the neighbour pushes it to the server without being able to open it.",
       "Chat over the mesh, Wi-Fi Direct and BLE radios to find each other without infrastructure, anti-timing mixnet and a visual barometer showing where the last message went through.",
       "Double ratchet: a self-healing chain that recovers desynchronised sessions on its own instead of leaving messages unreadable.",
       "Automatic maintenance: unused devices and orphaned keys are cleaned up by themselves, on the phone and on the server.",
@@ -225,7 +225,7 @@ const CHANGELOG = [
     v: "1.6.0",
     date: "2026-06",
     it: [
-      "LATTICE SOVEREIGNTY (prima fase). In Impostazioni → Sicurezza puoi scegliere fra Modalità Standard e Nodo Sovrano: il tuo telefono diventa un nodo che può trasportare buste cifrate di altri utenti.",
+      "ULTRON (prima fase). In Impostazioni → Sicurezza puoi scegliere fra Modalità Standard e Nodo Sovrano: il tuo telefono diventa un nodo che può trasportare buste cifrate di altri utenti.",
       "Inoltro cieco (Blind Relay): ogni nodo apre solo il proprio strato e conosce due sole cose, il salto precedente e quello successivo. Mittente e destinatario non sono scritti da nessuna parte nella cipolla.",
       "Ogni pacchetto ha sempre la stessa dimensione e cambia completamente byte a ogni salto: due nodi complici non possono collegare le tratte. Chiavi ML-KEM-768 per ogni salto, quindi al riparo anche da futuri computer quantistici.",
       "Barometro della Privacy: ti dice quanto è viva la rete intorno a te (Isolata / Debole / Discreta / Robusta) contando SOLO i flussi cifrati, senza mai identificare un dispositivo.",
@@ -234,7 +234,7 @@ const CHANGELOG = [
       "Wi-Fi Direct e Bluetooth arriveranno nella fase successiva, dopo il collaudo su dispositivi reali: preferiamo dirtelo invece di promettere qualcosa di non verificato.",
     ],
     en: [
-      "LATTICE SOVEREIGNTY (first phase). In Settings → Security you can choose between Standard mode and Sovereign Node: your phone becomes a node that can carry other users' encrypted envelopes.",
+      "ULTRON (first phase). In Settings → Security you can choose between Standard mode and Sovereign Node: your phone becomes a node that can carry other users' encrypted envelopes.",
       "Blind Relay: every node opens only its own layer and knows just two things, the previous hop and the next one. Sender and recipient are written nowhere in the onion.",
       "Every packet always has the same size and its bytes change completely at each hop: two colluding nodes cannot link the legs. ML-KEM-768 keys per hop, so it is safe even against future quantum computers.",
       "Privacy Barometer: tells you how alive the network around you is (Isolated / Weak / Fair / Robust) by counting ONLY encrypted flows, never identifying a device.",
@@ -263,13 +263,13 @@ const CHANGELOG = [
     v: "1.5.4",
     date: "2026-06",
     it: [
-      "Mimetizza il traffico (Dark Mesh): nuova opzione in Impostazioni → Sicurezza. Quando è attiva, il traffico dell'app viaggia in un tunnel e per chi osserva la rete sembra una normale navigazione su un grande sito pubblico — così non si vede nemmeno CHE stai usando Lattice.",
-      "Non è una VPN di sistema: nessun permesso VPN, nessuna icona VPN fissa, passa solo il traffico di Lattice. Spento di default: lo accendi tu quando vuoi.",
+      "Mimetizza il traffico (Dark Mesh): nuova opzione in Impostazioni → Sicurezza. Quando è attiva, il traffico dell'app viaggia in un tunnel e per chi osserva la rete sembra una normale navigazione su un grande sito pubblico — così non si vede nemmeno CHE stai usando ULTRON.",
+      "Non è una VPN di sistema: nessun permesso VPN, nessuna icona VPN fissa, passa solo il traffico di ULTRON. Spento di default: lo accendi tu quando vuoi.",
       "Se il tunnel non parte, resti connesso normalmente: la protezione non ti lascia mai offline.",
     ],
     en: [
-      "Camouflage traffic (Dark Mesh): new option in Settings → Security. When on, the app's traffic goes through a tunnel and, to anyone watching the network, looks like ordinary browsing of a big public site — so they cannot even see THAT you are using Lattice.",
-      "It is not a system VPN: no VPN permission, no permanent VPN icon, only Lattice traffic goes through it. Off by default: you turn it on when you want.",
+      "Camouflage traffic (Dark Mesh): new option in Settings → Security. When on, the app's traffic goes through a tunnel and, to anyone watching the network, looks like ordinary browsing of a big public site — so they cannot even see THAT you are using ULTRON.",
+      "It is not a system VPN: no VPN permission, no permanent VPN icon, only ULTRON traffic goes through it. Off by default: you turn it on when you want.",
       "If the tunnel fails to start you stay connected normally: the protection never leaves you offline.",
     ],
   },
@@ -519,13 +519,13 @@ const CHANGELOG = [
     it: [
       "Notifiche riparate: il telefono registra le notifiche push a ogni avvio (prima serviva toccare l'interruttore nelle Impostazioni, e chi non l'aveva fatto non riceveva nulla).",
       "Nelle Impostazioni c'è la riga «Push su questo dispositivo» che ti dice se le notifiche sono attive, con tasto per riattivarle subito.",
-      "Il «Contatto privacy» nelle Impostazioni ora apre una chat Lattice con fabioastorino@latticenetwork.lns invece di una email.",
+      "Il «Contatto privacy» nelle Impostazioni ora apre una chat ULTRON con fabioastorino@latticenetwork.lns invece di una email.",
       "Sul sito web la barra Cerca della Rubrica mostra anche i gruppi pubblici con il tasto «Chiedi di entrare».",
     ],
     en: [
       "Notifications fixed: the phone registers push notifications on every launch (previously you had to flip the switch in Settings, so devices that never did received nothing).",
       "Settings now shows a \"Push on this device\" row telling you whether notifications are active, with a button to enable them.",
-      "\"Privacy contact\" in Settings now opens a Lattice chat with fabioastorino@latticenetwork.lns instead of an email.",
+      "\"Privacy contact\" in Settings now opens a ULTRON chat with fabioastorino@latticenetwork.lns instead of an email.",
       "On the website, the Address Book search bar also shows public groups with an \"Ask to join\" button.",
     ],
   },
@@ -605,14 +605,14 @@ const CHANGELOG = [
     v: "1.0.79",
     date: "2026-08",
     it: [
-      "Account personali: chiunque può creare la propria identità Lattice (nomeutente@lattice.lns) dal login, con le chiavi generate sul telefono.",
+      "Account personali: chiunque può creare la propria identità ULTRON (nomeutente@ultron.uns) dal login, con le chiavi generate sul telefono.",
       "Foto e bio in registrazione + directory pubblica: cerca altri utenti dalla Rubrica e aggiungili con un tocco.",
       "Invita un amico: in Impostazioni trovi il tuo link personale; chi si registra da lì diventa subito un tuo contatto.",
       "Scudo: bloccati i link di invito a gruppi di altri social (WhatsApp, Telegram, Discord, Facebook, Signal).",
       "Promemoria quiz più puntuale (controllo ogni 15 secondi) e, toccando la notifica, si apre direttamente il Ripasso.",
     ],
     en: [
-      "Personal accounts: anyone can create their own Lattice identity (username@lattice.lns) from the login screen, with keys generated on the device.",
+      "Personal accounts: anyone can create their own ULTRON identity (username@ultron.uns) from the login screen, with keys generated on the device.",
       "Photo and bio at signup + public directory: search other users from the Address book and add them with one tap.",
       "Invite a friend: find your personal link in Settings; whoever signs up from it becomes your contact right away.",
       "Shield: invite links to groups on other social networks (WhatsApp, Telegram, Discord, Facebook, Signal) are now blocked.",
@@ -743,7 +743,7 @@ export default function WhatsNewScreen({ navigation }) {
             ))}
           </View>
         ))}
-        <Text style={styles.footer}>{en ? "Thanks for using Lattice Pulse." : "Grazie per usare Lattice Pulse."}</Text>
+        <Text style={styles.footer}>{en ? "Thanks for using ULTRON Messaggi." : "Grazie per usare ULTRON Messaggi."}</Text>
       </ScrollView>
     </SafeAreaView>
   );

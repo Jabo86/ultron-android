@@ -77,7 +77,7 @@ export default function TamperGate() {
         <Ionicons name="warning-outline" size={54} color="#50C878" />
         <Text style={s.h1} testID="tamper-title">{titolo}</Text>
         <Text style={s.p}>
-          Questo telefono e' in una condizione in cui i dati di Lattice possono essere letti
+          Questo telefono e' in una condizione in cui i dati di ULTRON possono essere letti
           da fuori dall'app. Vuoi eliminare tutto istantaneamente?
         </Text>
 

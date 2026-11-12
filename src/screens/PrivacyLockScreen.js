@@ -218,7 +218,7 @@ export default function PrivacyLockScreen({ navigation }) {
           <Text style={styles.p}>
             Tre PIN errati (con avviso a schermo pieno al secondo) cancellano definitivamente: chiavi,
             messaggi, chiamate, rubrica, gruppi e metadati, su questo telefono E sul server, compreso
-            l'indirizzo Lattice. Alla fine si apre la schermata di disinstallazione.
+            l'indirizzo ULTRON. Alla fine si apre la schermata di disinstallazione.
           </Text>
           <TouchableOpacity style={styles.btnDanger} onPress={() => setWipeAsk(true)} testID="wipe-now-btn">
             <Ionicons name="nuclear-outline" size={18} color="#fff" />

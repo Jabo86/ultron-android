@@ -114,7 +114,7 @@ export default function VerifyContactScreen({ route, navigation }) {
     const parsed = parseQr(raw);
     if (!parsed) {
       Alert.alert(en ? "Unknown code" : "Codice non riconosciuto",
-        en ? "This is not a Lattice verification code." : "Questo non è un codice di verifica Lattice.");
+        en ? "This is not a ULTRON verification code." : "Questo non è un codice di verifica ULTRON.");
       return;
     }
     if ((parsed.lns || "").toLowerCase() !== String(peer).toLowerCase()) {
@@ -152,7 +152,7 @@ export default function VerifyContactScreen({ route, navigation }) {
 
   const shareNumber = () => {
     Share.share({
-      message: (en ? "Lattice safety number with " : "Numero di sicurezza Lattice con ") + peerName + ":\n" + digitGroups(sas).join(" "),
+      message: (en ? "ULTRON safety number with " : "Numero di sicurezza ULTRON con ") + peerName + ":\n" + digitGroups(sas).join(" "),
     }).catch(() => {});
   };
   const shareMyCode = () => {
@@ -334,14 +334,14 @@ export default function VerifyContactScreen({ route, navigation }) {
           <View style={styles.modalCard}>
             <Text style={styles.cardTitle}>{en ? "Their code" : "Il codice dell'altro"}</Text>
             <Text style={styles.cardHint}>
-              {en ? "Paste the text that starts with LATTICE1: — it comes from their Verify contact screen."
-                  : "Incolla il testo che comincia con LATTICE1: — lo trovi nella sua schermata Verifica contatto."}
+              {en ? "Paste the code from their Verify contact screen."
+                  : "Incolla il codice dalla loro schermata Verifica contatto."}
             </Text>
             <TextInput
               style={styles.input}
               value={pasted}
               onChangeText={setPasted}
-              placeholder="LATTICE1:nome@lattice.lns:…"
+              placeholder="Codice di verifica"
               placeholderTextColor={theme.textFaint}
               selectionColor={tint}
               autoCapitalize="none"

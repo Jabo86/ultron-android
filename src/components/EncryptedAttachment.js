@@ -200,8 +200,8 @@ export default function EncryptedAttachment({ att }) {
     Alert.alert(
       en ? "⚠️ Dangerous file blocked" : "⚠️ File pericoloso bloccato",
       (threat.reasons.join("\n• ")) + (en
-        ? "\n\nLattice blocked this file for your safety. Open only if you are 100% sure."
-        : "\n\nLattice ha bloccato questo file per la tua sicurezza. Aprilo solo se sei sicuro al 100%."),
+        ? "\n\nULTRON blocked this file for your safety. Open only if you are 100% sure."
+        : "\n\nULTRON ha bloccato questo file per la tua sicurezza. Aprilo solo se sei sicuro al 100%."),
       [
         { text: en ? "Keep me safe" : "Proteggimi", style: "cancel" },
         { text: en ? "Open anyway (at my own risk)" : "Apri comunque (a mio rischio)", style: "destructive", onPress: fn },

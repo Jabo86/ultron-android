@@ -1,10 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
-import { Platform, AppState } from "react-native";
+import { AppState } from "react-native";
 import { parseKeyfile, deriveKemKeypair, deriveKem1024Keypair, deriveDhKeypair, bytesToHex } from "../lib/crypto";
 import * as api from "../lib/api";
 import * as msgCache from "../lib/msgCache";
 import { saveKeyfile, loadKeyfile, clearStoredKeyfile, saveServer, loadServer, loadAppLock } from "../lib/store";
-import { registerForPush, scheduleDailyQuizReminder, cancelDailyQuizReminder } from "../lib/notifications";
+import { scheduleDailyQuizReminder, cancelDailyQuizReminder } from "../lib/notifications";
 import * as guard from "../lib/guard";
 import { isDeviceSecure } from "../lib/biometrics";
 import * as lock from "../lib/lock";
@@ -66,15 +66,6 @@ export function AuthProvider({ children }) {
       // Promemoria del canarino: parte SOLO se questo account è l'owner del server.
       require("../lib/canary").remindOwner({ lns: kf.lns }, true).catch(() => {});
     } catch { /* idempotent */ }
-    try {
-      const t = await registerForPush();
-      if (t) {
-        await api.registerPushToken(t, Platform.OS);
-        // NOTIFICHE ANONIME: lo stesso token viene registrato anche sulla cassetta, che
-        // non è collegata all'identità: così i messaggi anonimi svegliano il telefono.
-        try { const m = require("../lib/mailbox"); await m.registerPush(t, Platform.OS); } catch { /* modalità anonima spenta */ }
-      }
-    } catch { /* push optional */ }
     // Il promemoria quiz giornaliero riguarda SOLO il gruppo TUTTO OSS → solo profili @tuttooss.lns.
     if ((kf.lns || "").endsWith("@tuttooss.lns")) scheduleDailyQuizReminder().catch(() => {});
     else cancelDailyQuizReminder().catch(() => {});
@@ -184,6 +175,7 @@ export function AuthProvider({ children }) {
   }, [signIn, wipeNow]);
 
   const signOut = useCallback(async () => {
+    try { await require("../lib/wake").disable(); } catch { /* best effort */ }
     try { await api.logout(); } catch { /* best-effort: revoca lato server */ }
     await clearStoredKeyfile();
     api.clearAuth();

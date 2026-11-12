@@ -77,9 +77,9 @@ export default function AddressBookScreen({ navigation, route }) {
     : base), [base, sq]);
 
   const candidate = api.normalizeLns(q);
-  const canAdd = candidate.includes("@") && candidate.endsWith(".lns") && !contacts.some((c) => c.lns === candidate);
+  const canAdd = candidate.includes("@") && /\.(lns|uns)$/.test(candidate) && !contacts.some((c) => c.lns === candidate);
 
-  // Directory pubblica: cerca gli utenti personali @lattice.lns che si sono resi ricercabili.
+  // Directory pubblica: cerca gli utenti personali @ultron.uns che si sono resi ricercabili.
   useEffect(() => {
     const term = sq.replace(/[^a-z0-9._-]/g, "");
     if (term.length < 2) { setDirResults([]); return; }

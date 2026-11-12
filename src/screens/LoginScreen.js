@@ -100,7 +100,7 @@ export default function LoginScreen({ navigation }) {
           <Text style={styles.secondaryBtnText}>{lang === "en" ? "Create a personal account" : "Crea un account personale"}</Text>
         </TouchableOpacity>
         <Text style={styles.personalHint}>
-          {lang === "en" ? "username@lattice.lns · keys generated on this device" : "username@lattice.lns · chiavi generate su questo dispositivo"}
+          {lang === "en" ? "username@ultron.uns · keys generated on this device" : "nome@ultron.uns · chiavi generate su questo dispositivo"}
         </Text>
 
         <TouchableOpacity style={styles.secondaryBtn} onPress={() => navigation.navigate("Backup")} disabled={busy} testID="login-restore-backup">

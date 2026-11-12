@@ -67,6 +67,7 @@ import * as cover from "./src/lib/cover";
 import * as tunnel from "./src/lib/tunnel";
 import { initNotificationHandler } from "./src/lib/notifications";
 import SettingsScreen from "./src/screens/SettingsScreen";
+import { UpdateBanner } from "./src/components/UpdateBanner";
 
 import NotificationsScreen from "./src/screens/NotificationsScreen";
 import LegalScreen from "./src/screens/LegalScreen";
@@ -76,7 +77,6 @@ import { useLook } from "./src/lib/appearance";
 import { alpha } from "./src/components/Surface";
 import { loadConsent, saveConsent, CONSENT_VERSION, loadConsentSynced, saveConsentSynced } from "./src/lib/store";
 import * as api from "./src/lib/api";
-import { registerForPush } from "./src/lib/notifications";
 import ErrorBoundary from "./src/components/ErrorBoundary";
 import { I18nProvider, useI18n } from "./src/lib/i18n";
 import { loadThreatList } from "./src/lib/threatList";
@@ -110,7 +110,7 @@ function MainTabs() {
   const glassEdge = alpha(look.tint, 0.3);
   const tint = useTint();
   const { t } = useI18n();
-  const { chatUnread, expiringLicenses, bookRequests } = useUnread();
+  const { chatUnread, bookRequests } = useUnread();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -137,7 +137,7 @@ function MainTabs() {
     >
       <Tab.Screen name="Conversazioni" component={ConversationsScreen} options={{ tabBarBadge: chatUnread > 0 ? (chatUnread > 99 ? "99+" : chatUnread) : undefined }} />
       <Tab.Screen name="Rubrica" component={AddressBookScreen} options={{ tabBarBadge: bookRequests > 0 ? (bookRequests > 99 ? "99+" : bookRequests) : undefined }} />
-      <Tab.Screen name="Impostazioni" component={SettingsScreen} options={{ tabBarBadge: expiringLicenses > 0 ? (expiringLicenses > 99 ? "99+" : expiringLicenses) : undefined }} />
+      <Tab.Screen name="Impostazioni" component={SettingsScreen} />
     </Tab.Navigator>
   );
 }
@@ -180,16 +180,14 @@ function Root() {
   useEffect(() => { userRef.current = user; }, [user]);
   // ULTRON: solo permessi notifiche locali e connessione diretta WakeService.
   useEffect(() => {
-    if (!user?.lns) return;
-    const register = async () => {
-      try { const ok = await registerForPush(); if (ok) await wake.enable(); } catch (_) {}
-    };
+    if (!user?.lns || locked) return;
+    const register = () => wake.refresh().catch(() => {});
     register();
     const sub = RNAppState.addEventListener("change", (st) => {
       if (st === "active") register();
     });
     return () => { try { sub.remove(); } catch (_) {} };
-  }, [user?.lns]);
+  }, [user?.lns, locked]);
   const pendingNotif = useRef(null);
   const routeFromData = (data) => {
     if (!data) return null;
@@ -356,6 +354,8 @@ function Root() {
     return <LockScreen />;
   }
   return (
+    <View style={{ flex: 1 }}>
+      <UpdateBanner />
     <Stack.Navigator
       screenOptions={{
         headerStyle: { backgroundColor: theme.surface },
@@ -402,6 +402,7 @@ function Root() {
         </>
       )}
     </Stack.Navigator>
+    </View>
   );
 }
 
@@ -425,7 +426,6 @@ export default function App() {
     // L'impostazione "notifiche fantasma" va letta PRIMA che arrivi la prima notifica.
     require("./src/lib/ghost").loadGhost().catch(() => {});
     try { initNotificationHandler(); } catch (e) { /* notifiche non disponibili */ }
-    wake.refresh().catch(() => {});
     reportPendingCrash(false).catch(() => {});
     // App in secondo piano: i salvataggi accorpati finiscono su disco immediatamente.
     const sub = RNAppState.addEventListener("change", (s) => { if (s !== "active") flushBlobs().catch(() => {}); });

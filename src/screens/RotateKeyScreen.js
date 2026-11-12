@@ -13,11 +13,11 @@ export default function RotateKeyScreen() {
   const [phase, setPhase] = useState("intro"); // intro | done
   const [busy, setBusy] = useState(false);
   const [newKf, setNewKf] = useState(null);
-  const [fname, setFname] = useState("lattice-key.json");
+  const [fname, setFname] = useState("ultron-key.json");
 
   const saveKeyFile = async (kf, filename) => {
     try {
-      const path = FileSystem.cacheDirectory + (filename || "lattice-key.json").replace(/[^\w.\-]/g, "_");
+      const path = FileSystem.cacheDirectory + (filename || "ultron-key.json").replace(/[^\w.\-]/g, "_");
       await FileSystem.writeAsStringAsync(path, JSON.stringify(kf, null, 2), { encoding: FileSystem.EncodingType.UTF8 });
       if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(path, { mimeType: "application/json", dialogTitle: "Salva la tua nuova chiave" });
       return true;
@@ -32,7 +32,7 @@ export default function RotateKeyScreen() {
     try {
       const r = await rotateKey();
       setNewKf(r.keyfile);
-      setFname(r.keyfile_filename || "lattice-key.json");
+      setFname(r.keyfile_filename || "ultron-key.json");
       setPhase("done");
       await saveKeyFile(r.keyfile, r.keyfile_filename);
     } catch (e) {

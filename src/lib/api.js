@@ -541,7 +541,7 @@ export const certifyStats = () =>
   withAuth((a) => client.get("/public/certify/stats", a).then((r) => r.data));
 export const certifyContacts = () =>
   withAuth((a) => client.get("/public/certify/contacts", a).then((r) => r.data));
-// ── Account personali (username@lattice.lns) ──
+// ── Account personali (username@ultron.uns) ──
 export const personalCheck = (username) =>
   client.get("/public/personal/check", { params: { username } }).then((r) => r.data);
 export const personalSignup = (payload) =>
@@ -677,6 +677,7 @@ export function normalizeLns(v) {
   const at = s.indexOf("@");
   if (at <= 0 || at === s.length - 1) return s;
   const local = s.slice(0, at);
+  if (s.slice(at + 1).endsWith(".uns")) return s;
   const token = s.slice(at + 1).split(".")[0];
   if (!token) return s;
   return `${local}@${token}.lns`;

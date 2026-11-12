@@ -58,7 +58,7 @@ export default function MembersScreen({ navigation }) {
   const shareKeyfile = async () => {
     if (!created?.keyfile) return;
     try {
-      const fn = (created.keyfile_filename || `lattice-key-${created.lns_name}.json`).replace(/[^\w.\-]/g, "_");
+      const fn = (created.keyfile_filename || `ultron-key-${created.lns_name}.json`).replace(/[^\w.\-]/g, "_");
       const uri = FileSystem.cacheDirectory + fn;
       await FileSystem.writeAsStringAsync(uri, JSON.stringify(created.keyfile, null, 2), { encoding: FileSystem.EncodingType.UTF8 });
       if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: "application/json", dialogTitle: it ? "Consegna il file chiave" : "Deliver the keyfile" });

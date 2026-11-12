@@ -226,7 +226,7 @@ export default function CallScreen({ route, navigation }) {
         if (!okPerm) { if (mounted) { setErrMsg(lang === "en" ? "Microphone/camera permission denied" : "Permesso microfono/fotocamera negato"); setStatus("error"); setTimeout(() => hangup(), 6000); } return; }
         // La chiamata viene DICHIARATA al sistema prima di aprire il microfono: da qui in
         // poi, per Android, e' una telefonata vera e non gliela si puo togliere di mano.
-        try { await telecom.declare(incoming ? "in" : "out", peerName || "lattice"); } catch { /* si prosegue senza telecom */ }
+        try { await telecom.declare(incoming ? "in" : "out", peerName || "ULTRON"); } catch { /* si prosegue senza telecom */ }
         let stream;
         try {
           stream = await mediaDevices.getUserMedia(MEDIA_CONSTRAINTS);

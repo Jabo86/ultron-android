@@ -1,22 +1,21 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator,
-  ScrollView, Switch, Alert, KeyboardAvoidingView, Platform, Image, Share,
+  ScrollView, Switch, Alert, KeyboardAvoidingView, Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
-import { pickAvatarDataUrl } from "../lib/avatar";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../lib/i18n";
 import * as api from "../lib/api";
-import { keygen, signMessage, deriveKemKeypair, deriveDhKeypair, bytesToHex } from "../lib/crypto";
+import { keygen, signMessage } from "../lib/crypto";
 import { saveAppLock } from "../lib/store";
 import { isDeviceSecure } from "../lib/biometrics";
 import { theme } from "../theme";
 
-const DOMAIN = "lattice.lns";
+const DOMAIN = "ultron.uns";
 const normUser = (v) => (v || "").toLowerCase().replace(/[^a-z0-9._-]/g, "");
 
 export default function SignupScreen({ navigation }) {
@@ -25,11 +24,6 @@ export default function SignupScreen({ navigation }) {
   const { lang } = useI18n();
   const it = lang !== "en";
   const [username, setUsername] = useState("");
-  const [display, setDisplay] = useState("");
-  const [bio, setBio] = useState("");
-  const [avatar, setAvatar] = useState("");
-  const [invite, setInvite] = useState("");
-  const [discoverable, setDiscoverable] = useState(true);
   const [useLock, setUseLock] = useState(false);
   const [secure, setSecure] = useState(false);
   const [avail, setAvail] = useState(null); // null | true | false
@@ -44,16 +38,18 @@ export default function SignupScreen({ navigation }) {
 
   useEffect(() => {
     const u = normUser(username);
+    let active = true;
     setAvail(null);
+    setChecking(false);
     if (u.length < 3) return;
     if (tRef.current) clearTimeout(tRef.current);
     tRef.current = setTimeout(async () => {
       setChecking(true);
-      try { const r = await api.personalCheck(u); setAvail(!!r?.available); }
-      catch { setAvail(null); }
-      finally { setChecking(false); }
+      try { const r = await api.personalCheck(u); if (active) setAvail(r?.available === true); }
+      catch { if (active) setAvail(null); }
+      finally { if (active) setChecking(false); }
     }, 450);
-    return () => tRef.current && clearTimeout(tRef.current);
+    return () => { active = false; clearTimeout(tRef.current); };
   }, [username]);
 
   const doSignup = async () => {
@@ -64,19 +60,9 @@ export default function SignupScreen({ navigation }) {
       // 1) chiavi generate SUL DISPOSITIVO: la privata non viene mai inviata al server
       const kp = keygen();
       const lns = `${u}@${DOMAIN}`;
-      const signature_hex = signMessage(`lattice-personal-signup-v1:${lns}`, kp.secretKeyHex);
-      const kem = deriveKemKeypair(kp.secretKeyHex);
-      const dh = deriveDhKeypair(kp.secretKeyHex);
-      const r = await api.personalSignup({
-        username: u,
-        display_name: display.trim(),
-        public_key_hex: kp.publicKeyHex,
-        signature_hex,
-        kem_pk_hex: bytesToHex(kem.publicKey),
-        dh_pk_hex: bytesToHex(dh.publicKey),
-        discoverable,
-        ref: invite.trim() ? (invite.trim().includes("@") ? invite.trim().toLowerCase() : `${normUser(invite)}@${DOMAIN}`) : "",
-      });
+      const signature_hex = signMessage(`ultron-personal-signup-v1:${lns}`, kp.secretKeyHex);
+      const r = await api.personalSignup({ username: u, public_key_hex: kp.publicKeyHex, signature_hex });
+      if (r.lns_name !== lns) throw new Error(it ? "Indirizzo inatteso dal server." : "Unexpected account address.");
       const keyfile = {
         version: 1, algorithm: "ML-DSA-65", lns_name: r.lns_name, tenant_id: r.tenant_id,
         did: r.did, public_key_hex: kp.publicKeyHex, secret_key_hex: kp.secretKeyHex,
@@ -90,21 +76,16 @@ export default function SignupScreen({ navigation }) {
 
   const shareKeyfile = async () => {
     if (!created) return;
+    let uri;
     try {
-      const fn = `lattice-key-${created.lns_name.replace(/[^\w.\-]/g, "_")}.json`;
-      const uri = FileSystem.cacheDirectory + fn;
+      const fn = `ultron-key-${created.lns_name.replace(/[^\w.\-]/g, "_")}.json`;
+      uri = FileSystem.cacheDirectory + fn;
       await FileSystem.writeAsStringAsync(uri, JSON.stringify(created.keyfile, null, 2), { encoding: FileSystem.EncodingType.UTF8 });
       if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: "application/json", dialogTitle: it ? "Salva il tuo file chiave" : "Save your keyfile" });
-      else Alert.alert(it ? "File salvato" : "File saved", uri);
+      else throw new Error(it ? "Salvataggio non disponibile su questo dispositivo." : "Saving is unavailable on this device.");
       setSaved(true);
-    } catch (e) { Alert.alert("Keyfile", String((e && e.message) || e)); }
-  };
-
-  const pickPhoto = async () => {
-    try {
-      const { dataUrl } = await pickAvatarDataUrl();
-      if (dataUrl) setAvatar(dataUrl);
-    } catch { /* opzionale */ }
+    } catch (e) { Alert.alert(it ? "File chiave" : "Key file", e.message); }
+    finally { if (uri) await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {}); }
   };
 
   const enter = async () => {
@@ -113,9 +94,6 @@ export default function SignupScreen({ navigation }) {
     try {
       if (useLock && secure) await saveAppLock(true);
       await signIn(created.keyfile, { persist: true });
-      if (avatar || bio.trim()) {
-        try { await api.saveProfile({ headline: "", bio: bio.trim(), avatar, is_public: true }); } catch { /* si può completare dal Profilo */ }
-      }
     } catch (e) { setErr(api.apiErr(e)); }
     finally { setBusy(false); }
   };
@@ -136,21 +114,6 @@ export default function SignupScreen({ navigation }) {
         <TouchableOpacity style={styles.primaryBtn} onPress={shareKeyfile} testID="signup-save-keyfile">
           <Text style={styles.primaryBtnTxt}>{it ? "Salva il file chiave" : "Save the keyfile"}</Text>
         </TouchableOpacity>
-        {/* AZIENDE: la regola detta dove si legge, non sepolta in un documento. Un
-            account privato sta sulla rete pubblica; un'organizzazione no. */}
-        <View style={styles.noteBox} testID="signup-company-note">
-          <Text style={styles.noteTitle}>{it ? "Registri un'azienda?" : "Registering a company?"}</Text>
-          <Text style={styles.noteTxt}>
-            {it
-              ? "Un'organizzazione non si appoggia al nostro server: apre il PROPRIO nodo sui propri server, e da lì crea le identità dei colleghi. Il nodo si installa con un comando (49.12.242.0) e database, chiavi e messaggi restano sul vostro hardware. Dati aziendali su un'infrastruttura che l'azienda non controlla non sono sovranità."
-              : "An organisation does not rely on our server: it opens its OWN node on its own servers, and creates colleagues' identities from there. The node installs with one command (49.12.242.0) and database, keys and messages stay on your hardware. Company data on infrastructure the company does not control is not sovereignty."}
-          </Text>
-          <Text style={styles.noteTxt}>
-            {it
-              ? "Esiste anche un client web con le stesse funzioni di questa app, e la stessa crittografia. Non ha però lo stesso modello di fiducia: il programma arriva dal server a ogni caricamento e non esiste un chip di sicurezza in cui tenere la chiave. Per situazioni a rischio elevato, usa questa app."
-              : "There is also a web client with the same features as this app, and the same cryptography. It does not have the same trust model: the program arrives from the server on every load and there is no secure element to hold the key. For high-risk situations, use this app."}
-          </Text>
-        </View>
         {secure && (
           <View style={styles.switchRow}>
             <View style={{ flex: 1 }}>
@@ -163,18 +126,10 @@ export default function SignupScreen({ navigation }) {
         )}
         {!!err && <Text style={styles.err} testID="signup-error">{err}</Text>}
         <TouchableOpacity style={[styles.primaryBtn, !saved && styles.btnDim]} onPress={enter} disabled={!saved || busy} testID="signup-enter">
-          {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnTxt}>{it ? "Entra in Lattice" : "Enter Lattice"}</Text>}
+          {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnTxt}>{it ? "Entra in ULTRON" : "Enter ULTRON"}</Text>}
         </TouchableOpacity>
         {!saved && <Text style={styles.hintCenter}>{it ? "Salva prima il file chiave per continuare." : "Save the keyfile first to continue."}</Text>}
 
-        <View style={styles.inviteRow}>
-          <Text style={styles.inviteTxt} numberOfLines={2}>
-            {(it ? "Il tuo link invito: " : "Your invite link: ") + `${api.getServerUrl()}/signup.html?ref=${encodeURIComponent(created.lns_name)}`}
-          </Text>
-          <TouchableOpacity onPress={() => Share.share({ message: (it ? "Ti invito su Lattice, la messaggistica sovrana cifrata: " : "Join me on Lattice, sovereign encrypted messaging: ") + `${api.getServerUrl()}/signup.html?ref=${encodeURIComponent(created.lns_name)}` })} testID="signup-invite-share">
-            <Ionicons name="share-social-outline" size={20} color={theme.primary} />
-          </TouchableOpacity>
-        </View>
       </ScrollView>
     );
   }
@@ -189,8 +144,8 @@ export default function SignupScreen({ navigation }) {
 
         <Text style={styles.title}>{it ? "Crea il tuo account personale" : "Create your personal account"}</Text>
         <Text style={styles.sub}>
-          {it ? "Scegli un nome utente: sarà il tuo indirizzo Lattice. Le chiavi vengono generate su questo dispositivo."
-              : "Pick a username: it becomes your Lattice address. Keys are generated on this device."}
+          {it ? "Scegli un nome utente: sarà il tuo indirizzo ULTRON. Le chiavi vengono generate su questo dispositivo."
+              : "Pick a username: it becomes your ULTRON address. Keys are generated on this device."}
         </Text>
 
         <Text style={styles.label}>{it ? "Nome utente" : "Username"}</Text>
@@ -198,7 +153,7 @@ export default function SignupScreen({ navigation }) {
           <TextInput
             style={styles.input} value={username} onChangeText={(v) => setUsername(normUser(v))}
             placeholder="mario.rossi" placeholderTextColor={theme.textFaint}
-            autoCapitalize="none" autoCorrect={false} testID="signup-username"
+            autoCapitalize="none" autoCorrect={false} maxLength={32} testID="signup-username"
           />
           <Text style={styles.domain}>@{DOMAIN}</Text>
         </View>
@@ -209,37 +164,10 @@ export default function SignupScreen({ navigation }) {
             : <Text style={styles.hint}>{it ? "Minimo 3 caratteri: a-z, 0-9, . _ -" : "At least 3 chars: a-z, 0-9, . _ -"}</Text>}
         </View>
 
-        <Text style={styles.label}>{it ? "Nome visualizzato (opzionale)" : "Display name (optional)"}</Text>
-        <TextInput style={styles.input} value={display} onChangeText={setDisplay}
-          placeholder={it ? "Mario Rossi" : "John Doe"} placeholderTextColor={theme.textFaint} testID="signup-display" />
-
-        <Text style={styles.label}>{it ? "Foto e bio (opzionali)" : "Photo and bio (optional)"}</Text>
-        <View style={styles.photoRow}>
-          <TouchableOpacity style={styles.avatarBtn} onPress={pickPhoto} testID="signup-photo">
-            {avatar ? <Image source={{ uri: avatar }} style={styles.avatarImg} />
-              : <Ionicons name="camera-outline" size={24} color={theme.primary} />}
-          </TouchableOpacity>
-          <TextInput style={[styles.input, { flex: 1 }]} value={bio} onChangeText={setBio} maxLength={160}
-            placeholder={it ? "Due parole su di te" : "A couple of words about you"} placeholderTextColor={theme.textFaint} testID="signup-bio" />
-        </View>
-
-        <Text style={styles.label}>{it ? "Codice invito (opzionale)" : "Invite code (optional)"}</Text>
-        <TextInput style={styles.input} value={invite} onChangeText={setInvite} autoCapitalize="none" autoCorrect={false}
-          placeholder={it ? "chi ti ha invitato, es. mario.rossi" : "who invited you, e.g. john.doe"} placeholderTextColor={theme.textFaint} testID="signup-invite" />
-
-        <View style={styles.switchRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.switchLabel}>{it ? "Compari nella directory pubblica" : "Appear in the public directory"}</Text>
-            <Text style={styles.hint}>{it ? "Altri utenti possono trovarti cercando il tuo nome utente." : "Other users can find you by searching your username."}</Text>
-          </View>
-          <Switch value={discoverable} onValueChange={setDiscoverable} testID="signup-discoverable"
-            trackColor={{ true: theme.primary, false: theme.border }} thumbColor="#fff" />
-        </View>
-
         <View style={styles.infoBox}>
           <Text style={styles.infoTxt}>
-            {it ? "🔒 Il server riceve solo la tua chiave pubblica. I gruppi aziendali restano privati e su invito."
-                : "🔒 The server only receives your public key. Company groups stay private and invite-only."}
+            {it ? "La chiave privata rimane sul dispositivo."
+                : "Your private key stays on this device."}
           </Text>
         </View>
 
@@ -276,18 +204,10 @@ const styles = StyleSheet.create({
   infoTxt: { color: theme.textDim, fontSize: 13, lineHeight: 19 },
   warnBox: { marginTop: 18, borderRadius: 12, borderWidth: 1, borderColor: "#50C87866", backgroundColor: "#2A2210", padding: 14 },
   warnTxt: { color: "#F7DFA0", fontSize: 13, lineHeight: 19 },
-  noteBox: { borderWidth: 1, borderColor: "#25342B", borderRadius: 12, padding: 14, marginTop: 16, gap: 8, width: "100%" },
-  noteTitle: { color: "#50C878", fontSize: 12, fontWeight: "800", letterSpacing: 0.4 },
-  noteTxt: { color: "#8A9C91", fontSize: 12, lineHeight: 18 },
   err: { color: "#FFB3BD", fontSize: 13, marginTop: 16 },
   primaryBtn: { backgroundColor: theme.primary, borderRadius: 14, paddingVertical: 16, alignItems: "center", marginTop: 24 },
   primaryBtnTxt: { color: "#fff", fontSize: 16, fontWeight: "800" },
   btnDim: { opacity: 0.45 },
   okBadge: { alignSelf: "center", width: 62, height: 62, borderRadius: 31, alignItems: "center", justifyContent: "center", backgroundColor: theme.surface, borderColor: theme.accent, borderWidth: 1, marginBottom: 18 },
   lnsBig: { color: theme.primary, fontSize: 18, fontWeight: "800", marginBottom: 4 },
-  photoRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  avatarBtn: { width: 58, height: 58, borderRadius: 29, overflow: "hidden", alignItems: "center", justifyContent: "center", backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 },
-  avatarImg: { width: "100%", height: "100%" },
-  inviteRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 16, backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1, borderRadius: 12, padding: 12 },
-  inviteTxt: { flex: 1, color: theme.textDim, fontSize: 12 },
 });
