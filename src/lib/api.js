@@ -48,40 +48,77 @@ export async function coverPing() {
 }
 let client = makeClient(_base);
 
-export function setServerUrl(url) {
-  _base = normalizeServer(url);
-  client = makeClient(_base);
+let _kf = null;
+let _token = null;
+let session = new AbortController();
+let sessionPending = null;
+
+function invalidateSession() {
+  session.abort();
+  session = new AbortController();
+  sessionPending = null;
   _token = null;
+}
+
+export function setServerUrl(url) {
+  const next = normalizeServer(url);
+  if (next === _base) return;
+  invalidateSession();
+  _base = next;
+  client = makeClient(_base);
 }
 export function getServerUrl() { return _base; }
 
-let _kf = null; // { lns, sk, pk }
-let _token = null; // sidecar session JWT
+export function setKeyfile(kf) { invalidateSession(); _kf = kf; }
+export function clearAuth() { setKeyfile(null); }
 
-export function setKeyfile(kf) { _kf = kf; _token = null; }
-export function clearAuth() { _kf = null; _token = null; }
+function checkSession(signal) {
+  if (signal.aborted) throw new Error("La sessione ULTRON è cambiata.");
+}
 
 async function ensureSession() {
   if (_token) return _token;
   if (!_kf) throw new Error("Sessione non disponibile: importa il tuo file chiave.");
-  const { data: c } = await client.post("/public/sign-challenge", { lns_name: _kf.lns });
-  const signature_hex = signChallenge(c.nonce_hex, _kf.sk);
-  const { data: r } = await client.post("/public/session/verify", {
-    lns_name: _kf.lns, nonce_id: c.nonce_id, signature_hex,
-  });
-  _token = r.token;
-  return _token;
+  if (sessionPending) return sessionPending;
+  const { signal } = session;
+  const key = _kf;
+  const transport = client;
+  const pending = (async () => {
+    const { data: c } = await transport.post("/public/sign-challenge", { lns_name: key.lns }, { signal });
+    checkSession(signal);
+    const signature_hex = signChallenge(c.nonce_hex, key.sk);
+    const { data: r } = await transport.post("/public/session/verify", {
+      lns_name: key.lns, nonce_id: c.nonce_id, signature_hex,
+    }, { signal });
+    checkSession(signal);
+    if (typeof r?.token !== "string" || !r.token) throw new Error("Il gateway non ha restituito una sessione valida.");
+    _token = r.token;
+    return _token;
+  })();
+  sessionPending = pending;
+  try { return await pending; }
+  finally { if (sessionPending === pending) sessionPending = null; }
 }
 
 async function withAuth(fn) {
+  const { signal } = session;
+  const transport = client;
+  const options = (token) => ({ headers: { Authorization: `Bearer ${token}` }, signal });
+  const token = await ensureSession();
+  checkSession(signal);
   try {
-    return await fn({ headers: { Authorization: `Bearer ${await ensureSession()}` } });
+    const result = await fn(options(token), transport);
+    checkSession(signal);
+    return result;
   } catch (e) {
-    if (e?.response?.status === 401) {
-      _token = null;
-      return await fn({ headers: { Authorization: `Bearer ${await ensureSession()}` } });
-    }
-    throw e;
+    checkSession(signal);
+    if (e?.response?.status !== 401) throw e;
+    if (_token === token) _token = null;
+    const fresh = await ensureSession();
+    checkSession(signal);
+    const result = await fn(options(fresh), transport);
+    checkSession(signal);
+    return result;
   }
 }
 
@@ -473,14 +510,15 @@ export const linkPreview = (url) =>
 // ── E2EE blob storage (chunked upload of opaque ciphertext) ──
 const BLOB_CHUNK = 3 * 1024 * 1024; // 3MB
 export const blobUpload = (ciphertext, onProgress, allowed) =>
-  withAuth(async (a) => {
-    const { upload_id } = (await client.post("/public/blob/init", {}, { ...a, timeout: 30000 })).data;
+  withAuth(async (a, transport) => {
+    const { upload_id } = (await transport.post("/public/blob/init", {}, { ...a, timeout: 30000 })).data;
     const total = Math.max(1, Math.ceil(ciphertext.length / BLOB_CHUNK));
     for (let i = 0; i < total; i++) {
       const chunk = ciphertext.subarray(i * BLOB_CHUNK, (i + 1) * BLOB_CHUNK);
       const body = chunk.slice().buffer;
-      await client.post("/public/blob/chunk", body, {
+      await transport.post("/public/blob/chunk", body, {
         params: { upload_id, index: i },
+        signal: a.signal,
         headers: { ...a.headers, "Content-Type": "application/octet-stream" },
         timeout: 120000,
         onUploadProgress: (e) => {
@@ -490,7 +528,7 @@ export const blobUpload = (ciphertext, onProgress, allowed) =>
       });
       onProgress?.((i + 1) / total);
     }
-    return (await client.post("/public/blob/finalize", { upload_id, allowed: allowed || [] }, { ...a, timeout: 60000 })).data;
+    return (await transport.post("/public/blob/finalize", { upload_id, allowed: allowed || [] }, { ...a, timeout: 60000 })).data;
   });
 // ── logout: revoca la sessione lato server (SEC-002) ──
 export const logout = () =>
@@ -504,6 +542,7 @@ export const blobInit = () =>
 export const blobPutChunk = (upload_id, index, bytes) =>
   withAuth((a) => client.post("/public/blob/chunk", bytes.slice().buffer, {
     params: { upload_id, index },
+    signal: a.signal,
     headers: { ...a.headers, "Content-Type": "application/octet-stream" },
     timeout: 300000,
   }).then((r) => r.data));

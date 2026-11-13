@@ -529,7 +529,7 @@ export default function ChatScreen({ route, navigation }) {
     // Chiave statica del contatto in cassaforte: così la catena che si rigenera parte anche
     // se domani la richiesta al server non riesce.
     try { require("../lib/maintenance").warmStaticKeys(others); } catch { /* */ }
-    if (others.length === 1) {
+    if (others.length === 1 && api.getServerUrl() !== DEFAULT_SERVER) {
       mbx.publishTo(others[0], user).catch(() => {});
     }
     return () => { mounted.current = false; };
@@ -538,16 +538,25 @@ export default function ChatScreen({ route, navigation }) {
   // Aggiornamenti: solo con l'app in primo piano e questa chat davanti agli occhi.
   // Passata leggera: i messaggi già decifrati arrivano dalla memoria, i nuovi si decifrano
   // per la loro strada. Niente tentativi a tentoni qui: quelli vanno in sottofondo.
+  const hostedChat = api.getServerUrl() === DEFAULT_SERVER;
   const [live, setLive] = useState(false);
   useFocusEffect(useCallback(() => {
     if (!convId || !serverHasMessages || api.getServerUrl() !== DEFAULT_SERVER) return;
     let controller;
-    const start = async (state) => {
+    let retry;
+    let stopped = false;
+    const stop = () => {
       controller?.abort();
+      clearTimeout(retry);
+    };
+    const start = async (state) => {
+      stop();
+      if (stopped) return;
       setLive(false);
       if (state !== "active" || serverCursor.current.cid !== convId) return;
       const request = new AbortController();
       controller = request;
+      let supported = true;
       try {
         while (!request.signal.aborted) {
           const before = serverCursor.current;
@@ -555,16 +564,22 @@ export default function ChatScreen({ route, navigation }) {
           const result = await api.messageEvents(convId, before.id, request.signal);
           if (request.signal.aborted) break;
           setLive(true);
-          // Refresh also on idle responses for delivery and read receipts.
+          // Refresh on idle responses too, to pick up delivery and read receipts.
           await load(convId, winRef.current, false);
           if (result.changed && serverCursor.current.id === before.id) break;
         }
-      } catch { /* fall back to polling when a gateway has no events route */ }
-      finally { if (!request.signal.aborted) setLive(false); }
+      } catch (error) {
+        supported = ![404, 405].includes(error?.response?.status);
+      } finally {
+        if (!stopped && !request.signal.aborted) {
+          setLive(false);
+          if (supported) retry = setTimeout(() => start(AppState.currentState), 3000);
+        }
+      }
     };
     const sub = AppState.addEventListener("change", start);
     start(AppState.currentState);
-    return () => { controller?.abort(); sub.remove(); };
+    return () => { stopped = true; stop(); sub.remove(); };
   }, [convId, load, serverHasMessages]));
 
   usePoll(async () => {
@@ -574,13 +589,13 @@ export default function ChatScreen({ route, navigation }) {
   usePoll(async () => {
     try { const r = await api.pulseTypingGet(convId); if (mounted.current) setTypers(Array.isArray(r?.typing) ? r.typing : []); } catch { /* */ }
     try { await api.presencePing(); } catch { /* */ }
-  }, 4000, { runOnFocus: false, active: !!convId });
+  }, 4000, { runOnFocus: false, active: !!convId && !hostedChat });
   usePoll(async () => {
     if (await mbx.pickup(user) && mounted.current) {
       anonRef.current.dirty = true;
       await load(convId, winRef.current, false);
     }
-  }, 15000, { runOnFocus: false, active: !!convId });
+  }, 15000, { runOnFocus: false, active: !!convId && !hostedChat });
 
   const onSend = async (override) => {
     atBottomRef.current = true; // dopo un invio è giusto tornare in fondo
