@@ -170,19 +170,6 @@ export const anonGet = (rid, ice_c_from = 0, ice_e_from = 0) =>
 export const anonPoll = (rids) => anonPost("/public/anon/poll", { rids });
 export const callTurn = () =>
   withAuth((a) => client.get("/public/pulse/turn", { ...a, timeout: 8000 }).then((r) => r.data));
-// `ghost`: se non viene passato si legge l'impostazione del telefono, così TUTTI i punti
-// che registrano il token (login, impostazioni, cassette anonime) mandano il valore giusto
-// senza doverlo sapere. Il server sceglie il canale Android in base a questo contrassegno.
-export const registerPushToken = async (token, platform, ghost) => {
-  let g = ghost;
-  if (g === undefined) {
-    try { g = await require("./ghost").isGhost(); } catch (e) { g = false; }
-  }
-  // FASCIA DI SILENZIO: lo scostamento dall'UTC lo dichiara il telefono, così il server
-  // può tacere fra le 23:00 e le 07:00 ORA LOCALE senza sapere dove sei.
-  const tz_offset = -new Date().getTimezoneOffset();
-  return withAuth((a) => client.post("/public/pulse/push-token", { token, platform, ghost: !!g, tz_offset, quiet: true }, a).then((r) => r.data));
-};
 export const saveQuizReminder = (times, tzOffsetMin) =>
   withAuth((a) => client.post("/public/pulse/quiz-reminder", { times, tz_offset_min: tzOffsetMin }, a).then((r) => r.data));
 export const disableQuizReminder = () =>
@@ -249,22 +236,6 @@ export const mailboxDrop = (ticket, envelope) =>
   client.post("/public/mailbox/drop", { ticket, envelope }).then((r) => r.data);
 export const mailboxPickup = (mailbox_id, proof) =>
   client.post("/public/mailbox/pickup", { mailbox_id, proof }).then((r) => r.data);
-export const mailboxNotify = (mailbox_id, proof, token, platform) =>
-  client.post("/public/mailbox/notify", { mailbox_id, proof, token, platform }).then((r) => r.data);
-export const mailboxClose = (mailbox_id, proof) =>
-  client.post("/public/mailbox/close", { mailbox_id, proof }).then((r) => r.data);
-
-// Dichiarazione pubblica dei tempi di conservazione (usata nella schermata Sicurezza & Audit).
-export const privacyRetention = () => client.get("/public/privacy/retention").then((r) => r.data);
-// NB: nessuna sessione richiesta — vale il token di autodistruzione.
-export const panicWipe = (token) =>
-  client.post("/public/pulse/panic/wipe", { token }).then((r) => r.data);
-// ── RUBRICA CIECA ──
-// `contactsRaw` è la vecchia lettura dal server (serve solo alla migrazione una volta sola).
-// `contacts()` unisce i colleghi d'azienda (che il server conosce per forza) con la rubrica
-// CIFRATA SUL TELEFONO: gli indirizzi dei contatti personali non tornano più dal server.
-export const contactsRaw = () =>
-  withAuth((a) => client.get("/public/pulse/contacts", a).then((r) => r.data));
 export const publishBlindContacts = (rids, blocked) =>
   withAuth((a) => client.post("/public/pulse/contacts/blind", { rids, blocked }, a).then((r) => r.data));
 export const prunePlainContacts = (lns) =>
@@ -508,28 +479,21 @@ export const linkPreview = (url) =>
   withAuth((a) => client.get(`/public/pulse/link-preview`, { params: { url }, ...a }).then((r) => r.data));
 
 // ── E2EE blob storage (chunked upload of opaque ciphertext) ──
-const BLOB_CHUNK = 3 * 1024 * 1024; // 3MB
-export const blobUpload = (ciphertext, onProgress, allowed) =>
-  withAuth(async (a, transport) => {
-    const { upload_id } = (await transport.post("/public/blob/init", {}, { ...a, timeout: 30000 })).data;
-    const total = Math.max(1, Math.ceil(ciphertext.length / BLOB_CHUNK));
-    for (let i = 0; i < total; i++) {
-      const chunk = ciphertext.subarray(i * BLOB_CHUNK, (i + 1) * BLOB_CHUNK);
-      const body = chunk.slice().buffer;
-      await transport.post("/public/blob/chunk", body, {
-        params: { upload_id, index: i },
-        signal: a.signal,
-        headers: { ...a.headers, "Content-Type": "application/octet-stream" },
-        timeout: 120000,
-        onUploadProgress: (e) => {
-          const inner = e && e.total ? e.loaded / e.total : 1;
-          onProgress?.(Math.min(1, (i + inner) / total));
-        },
-      });
-      onProgress?.((i + 1) / total);
-    }
-    return (await transport.post("/public/blob/finalize", { upload_id, allowed: allowed || [] }, { ...a, timeout: 60000 })).data;
-  });
+const BLOB_CHUNK = 3 * 1024 * 1024;
+
+export async function blobUpload(ciphertext, onProgress, allowed) {
+  const { signal } = session;
+  const { upload_id } = await blobInit();
+  checkSession(signal);
+  const total = Math.max(1, Math.ceil(ciphertext.length / BLOB_CHUNK));
+  for (let i = 0; i < total; i++) {
+    checkSession(signal);
+    const chunk = ciphertext.subarray(i * BLOB_CHUNK, (i + 1) * BLOB_CHUNK);
+    await blobPutChunk(upload_id, i, chunk, (fraction) => onProgress?.((i + fraction) / total));
+  }
+  checkSession(signal);
+  return blobFinalize(upload_id, allowed);
+}
 // ── logout: revoca la sessione lato server (SEC-002) ──
 export const logout = () =>
   withAuth((a) => client.post("/public/logout", {}, a).then((r) => r.data)).catch(() => {});
@@ -538,16 +502,45 @@ export const logout = () =>
 // Ogni pezzo del file cifrato diventa un pezzo del blob: il telefono non tiene mai in
 // memoria più di 4 MB, e il server continua a vedere soltanto byte opachi.
 export const blobInit = () =>
-  withAuth((a) => client.post("/public/blob/init", {}, { ...a, timeout: 30000 }).then((r) => r.data));
-export const blobPutChunk = (upload_id, index, bytes) =>
-  withAuth((a) => client.post("/public/blob/chunk", bytes.slice().buffer, {
-    params: { upload_id, index },
-    signal: a.signal,
-    headers: { ...a.headers, "Content-Type": "application/octet-stream" },
-    timeout: 300000,
-  }).then((r) => r.data));
+  blobRequest("apertura", () => withAuth((a, transport) =>
+    transport.post("/public/blob/init", {}, { ...a, timeout: 15000 }).then(({ data }) => {
+      if (!data?.upload_id) throw new Error("Il server non ha aperto il caricamento.");
+      return data;
+    })));
+async function blobRequest(stage, action) {
+  try { return await action(); }
+  catch (error) {
+    const status = error?.response?.status;
+    const hint = status === 404 ? "Controlla che il gateway supporti gli allegati." : apiErr(error);
+    throw new Error(`Allegato · ${stage}${status ? " (HTTP " + status + ")" : ""}: ${hint}`);
+  }
+}
+
+export const blobPutChunk = (upload_id, index, bytes, onProgress) =>
+  blobRequest("trasferimento", () => withAuth((a, transport) =>
+    transport.post("/public/blob/chunk", bytes.slice().buffer, {
+      // React Native XHR sends ArrayBuffer as an explicit binary request body.
+      adapter: "xhr",
+      params: { upload_id, index },
+      signal: a.signal,
+      headers: { ...a.headers, "Content-Type": "application/octet-stream" },
+      timeout: 120000,
+      onUploadProgress: ({ loaded, total }) => {
+        if (total > 0) onProgress?.(Math.min(1, loaded / total));
+      },
+    }).then(({ data }) => {
+      if (data?.ok !== true) throw new Error("Il server non ha confermato il blocco.");
+      onProgress?.(1);
+      return data;
+    })));
+
 export const blobFinalize = (upload_id, allowed) =>
-  withAuth((a) => client.post("/public/blob/finalize", { upload_id, allowed: allowed || [] }, { ...a, timeout: 120000 }).then((r) => r.data));
+  blobRequest("finalizzazione", () => withAuth((a, transport) =>
+    transport.post("/public/blob/finalize", { upload_id, allowed: allowed || [] }, { ...a, timeout: 60000 })
+      .then(({ data }) => {
+        if (!data?.id) throw new Error("Il server non ha restituito l’identificativo del file.");
+        return data;
+      })));
 // Indirizzo diretto del blob: lo scarico di un allegato grande va su FILE, non in memoria.
 export const blobUrl = (id) => `${_base}/api/public/blob/${encodeURIComponent(id)}`;
 export const authHeaders = async () => ({ Authorization: `Bearer ${await ensureSession()}` });

@@ -26,15 +26,6 @@ const scans = new Map(); // att.id -> esito della scansione antivirus/euristica
 const DIR_KEY = "lat.savedir";   // cartella scelta dall'utente per i salvataggi
 let savedDir = null;
 
-function report(where, e) {
-  try {
-    fetch(api.getServerUrl() + "/api/public/crash", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ v: "save", android: where, trace: String((e && (e.message || e.code)) || e).slice(0, 500) }),
-    }).catch(() => {});
-  } catch (x) { /* */ }
-}
-
 const EXT = {
   "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png", "image/webp": ".webp",
   "image/gif": ".gif", "image/heic": ".heic", "video/mp4": ".mp4", "video/quicktime": ".mov",
@@ -70,7 +61,7 @@ export default function EncryptedAttachment({ att }) {
       try {
         const path = FileSystem.cacheDirectory + "att_" + String(att.id) + "_" + fileNameFor(att);
         const info = await FileSystem.getInfoAsync(path);
-        if (info?.exists && info.size > 0) {
+        if (info?.exists && info.size > 0 && (!att.size || info.size === att.size)) {
           if (!alive.current) return;
           setUri(path); setReady(true);
           if (scans.has(att.id)) setThreat(scans.get(att.id));
@@ -91,6 +82,7 @@ export default function EncryptedAttachment({ att }) {
         }
         const ct = await api.blobDownload(att.id);
         const bytes = decryptFileBytes(ct, att.key, att.iv);
+        if (att.size && bytes.length !== att.size) throw new Error("Allegato incompleto.");
         const scan = analyzeAttachment({ name: att.name, mime: att.mime, bytes }, lang);
         scans.set(att.id, scan);
         await FileSystem.writeAsStringAsync(path, bytesToBase64(bytes), { encoding: FileSystem.EncodingType.Base64 });
@@ -116,7 +108,7 @@ export default function EncryptedAttachment({ att }) {
       let perm = await MediaLibrary.getPermissionsAsync(true);
       if (!perm?.granted) perm = await MediaLibrary.requestPermissionsAsync(true);
       if (!perm?.granted) {
-        report("perm", "granted=false");
+
         Alert.alert(
           en ? "Gallery permission denied" : "Permesso galleria negato",
           en ? "Save it in a folder of your phone instead (e.g. Download)." : "Salvalo in una cartella del telefono (per esempio Download).",
@@ -127,19 +119,19 @@ export default function EncryptedAttachment({ att }) {
       try {
         await MediaLibrary.saveToLibraryAsync(uri);
       } catch (e1) {
-        report("saveToLibrary", e1);
+
         try {
           // Seconda via classica.
           await MediaLibrary.createAssetAsync(uri);
         } catch (e2) {
-          report("createAssetLegacy", e2);
+
           // Terza via: API nuova a classi della SDK 57.
           await MLAsset.create(uri);
         }
       }
       Alert.alert(en ? "Saved" : "Salvato", en ? "Saved to your gallery." : "Salvato nella galleria del telefono.");
     } catch (e) {
-      report("createAsset", e);
+
       Alert.alert(
         en ? "Gallery refused" : "La galleria ha rifiutato",
         String((e && e.message) || e) + (en ? "\n\nSave it in a folder instead." : "\n\nSalvalo in una cartella del telefono."),
@@ -183,7 +175,7 @@ export default function EncryptedAttachment({ att }) {
       }
       Alert.alert(en ? "Saved" : "Salvato", (en ? "Saved as " : "Salvato come ") + name);
     } catch (e) {
-      report("folder", e);
+
       Alert.alert(en ? "Could not save" : "Non riesco a salvare", String((e && e.message) || e));
     } finally { setSaving(false); }
   };

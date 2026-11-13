@@ -9,13 +9,13 @@ const path = require("node:path");
 const files = [
   "App.js", "index.js", "package.json", "package-lock.json", "app.json",
   "src/config.js", "src/lib/config.js", "src/lib/notifications.js",
-  "src/lib/wake.js", "src/lib/backup.js", "src/lib/canary.js", "src/screens/SettingsScreen.js",
+  "src/lib/wake.js", "src/lib/api.js", "src/lib/mailbox.js", "src/lib/locales/sm12_a.js", "src/lib/backup.js", "src/lib/canary.js", "src/screens/SettingsScreen.js",
   "android/app/build.gradle", "android/build.gradle",
   "android/app/src/main/AndroidManifest.xml"
 ];
 const forbidden = [
   /@react-native-firebase/i, /expo-notifications/i, /getDevicePushTokenAsync/,
-  /googleServicesFile/, /com\.google\.gms\.google-services/,
+  /googleServicesFile/, /Google (?:only as a fallback|solo come ripiego)/i, /\/pulse\/push-token/, /com\.google\.gms\.google-services/,
   /com\.google\.firebase/, /ExpoFirebaseMessagingService/,
   /firebase_messaging_notification_delegation_enabled/, /com\.latticenetwork\.(pulse|disguise)/,
 ];

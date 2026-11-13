@@ -5,7 +5,7 @@ import { createAudioPlayer } from "expo-audio";
 import { saveRingtone, loadRingtone, saveRingVolume, loadRingVolume, saveVibMode, loadVibMode } from "../lib/store";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useI18n } from "../lib/i18n";
-import { registerForPush } from "../lib/notifications";
+import { requestNotificationPermission } from "../lib/notifications";
 import { testNotify } from "../lib/api";
 import * as wake from "../lib/wake";
 import { theme } from "../theme";
@@ -51,7 +51,7 @@ export default function NotificationsScreen({ navigation }) {
     setStatus("");
     try {
       if (value) {
-        if (!(await registerForPush())) {
+        if (!(await requestNotificationPermission())) {
           Alert.alert(label("Permesso notifiche", "Notification permission"),
             label("Consenti le notifiche nelle impostazioni Android.", "Allow notifications in Android settings."),
             [{ text: label("Chiudi", "Close") }, { text: label("Apri impostazioni", "Open settings"), onPress: () => Linking.openSettings() }]);
@@ -70,6 +70,11 @@ export default function NotificationsScreen({ navigation }) {
   const test = async () => {
     setBusy(true);
     try {
+      if (!(await wake.isOn()) || !(await requestNotificationPermission({ askPermission: false }))) {
+        setStatus(label("Attiva le notifiche ULTRON e consenti il permesso Android.", "Enable ULTRON notifications and allow them in Android."));
+        return;
+      }
+      await wake.refresh();
       const result = await testNotify();
       if (!result?.wake?.queued) throw new Error();
       setStatus(label("Avviso accodato. Verifica che arrivi sul telefono.", "Test queued. Check that it arrives on your phone."));

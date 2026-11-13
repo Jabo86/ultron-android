@@ -14,8 +14,7 @@ class WakeControlModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModu
     @ReactMethod
     fun start(promise: Promise) {
         try {
-            WakeService.start(reactApplicationContext)
-            promise.resolve(WakeService.shouldRun(reactApplicationContext))
+            promise.resolve(WakeService.start(reactApplicationContext))
         } catch (e: Exception) {
             promise.reject("WAKE_START", e)
         }

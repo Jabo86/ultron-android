@@ -43,7 +43,7 @@ export async function scheduleDailyQuizReminder(arg) {
 export async function cancelDailyQuizReminder() {
   try { await api.disableQuizReminder(); } catch (_) {}
 }
-export async function registerForPush({ askPermission = true } = {}) {
+export async function requestNotificationPermission({ askPermission = true } = {}) {
   if (Platform.OS !== "android") return false;
   await notifee.createChannel({id:"messages",name:"Messaggi ULTRON",importance:AndroidImportance.HIGH});
   await notifee.createChannel({id:GHOST_CHANNEL,name:"Silenzioso",importance:AndroidImportance.MIN});

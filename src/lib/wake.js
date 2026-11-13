@@ -41,6 +41,7 @@ async function writeChaff() {
 
 async function register() {
   if (!api.getServerUrl().startsWith("https://")) throw new Error("ULTRON richiede HTTPS per le notifiche.");
+  if (!NativeModules.WakeControl?.start) throw new Error("Servizio notifiche ULTRON non disponibile.");
   let rid = await AsyncStorage.getItem(RID_KEY);
   if (!rid || rid.length < 32) {
     rid = randomHex(24); // 48 caratteri esadecimali
@@ -48,8 +49,13 @@ async function register() {
   }
   await api.wakeRegister(rid);
   await writeConfig(true, rid);
-  await AsyncStorage.setItem(ON_KEY, "1");
-  if (NativeModules.WakeControl?.start) await NativeModules.WakeControl.start();
+  try {
+    if (!(await NativeModules.WakeControl.start())) throw new Error("Android non ha avviato il servizio ULTRON.");
+    await AsyncStorage.setItem(ON_KEY, "1");
+  } catch (error) {
+    await writeConfig(false, rid);
+    throw error;
+  }
   return rid;
 }
 
@@ -66,10 +72,17 @@ async function revoke() {
 /// All'avvio dell'app: se la sveglia è attiva riallinea server e file di configurazione
 /// (per esempio dopo un cambio di server o un ripristino da backup).
 async function renew() {
-  if (!(await isOn())) return false;
+  const preference = await AsyncStorage.getItem(ON_KEY);
+  if (preference === "0") return false;
+  if (preference === null) {
+    const { requestNotificationPermission } = require("./notifications");
+    if (!(await requestNotificationPermission({ askPermission: false }))) return false;
+    await register();
+    return true;
+  }
   const rid = await AsyncStorage.getItem(RID_KEY);
-  if (!rid) return false;
-  try { await api.wakeRegister(rid); } catch { /* riprova al prossimo avvio */ }
+  if (!rid) { await register(); return true; }
+  await api.wakeRegister(rid);
   await writeConfig(true, rid);
   if (NativeModules.WakeControl?.start) await NativeModules.WakeControl.start();
   return true;

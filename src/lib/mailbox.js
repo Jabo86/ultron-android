@@ -32,14 +32,7 @@ export async function isOn() {
 }
 export async function setOn(v) {
   await AsyncStorage.setItem(FLAG, v ? "1" : "0");
-  if (v) {
-    await ensure();
-    try {
-      const { registerForPush } = require("./notifications");
-      const t = await registerForPush();
-      if (t) await registerPush(t, "android");
-    } catch { /* niente permesso notifiche */ }
-  }
+  if (v) await ensure();
 }
 
 async function load() {
@@ -216,19 +209,7 @@ export async function localForConv(cid) {
   }));
 }
 
-/// Collega il token di notifica alla CASSETTA e non all'identità Lattice: il server
-/// può svegliare il telefono senza sapere di chi sia l'account.
-export async function registerPush(token, platform) {
-  if (!token || !(await isOn())) return false;
-  const st = await ensure();
-  if (!st) return false;
-  try {
-    await api.mailboxNotify(st.id, proofOf(st), String(token), platform || "android");
-    return true;
-  } catch {
-    return false;
-  }
-}
+
 
 /// Stato leggibile per la schermata Impostazioni.
 export async function status() {

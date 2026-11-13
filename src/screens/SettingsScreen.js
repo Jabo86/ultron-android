@@ -24,7 +24,7 @@ import * as wake from "../lib/wake";
 import * as api from "../lib/api";
 import { DEFAULT_SERVER } from "../config";
 import { isDeviceSecure, authenticate } from "../lib/biometrics";
-import { registerForPush, scheduleDailyQuizReminder, loadReminderTimes } from "../lib/notifications";
+import { requestNotificationPermission, scheduleDailyQuizReminder, loadReminderTimes } from "../lib/notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as cover from "../lib/cover";
 import { ICE_SERVERS } from "../config";
@@ -133,7 +133,7 @@ export default function SettingsScreen({ navigation }) {
     setWakeBusy(true);
     try {
       if (v) {
-        if (!(await registerForPush())) throw new Error(en ? "Allow notifications in Android settings." : "Consenti le notifiche nelle impostazioni Android.");
+        if (!(await requestNotificationPermission())) throw new Error(en ? "Allow notifications in Android settings." : "Consenti le notifiche nelle impostazioni Android.");
         await wake.enable();
         setWakeOn(true);
         Alert.alert(
@@ -252,8 +252,9 @@ export default function SettingsScreen({ navigation }) {
   const checkPush = async (askPermission = false) => {
     setPushBusy(true);
     try {
+      const allowed = await requestNotificationPermission({ askPermission });
+      if (askPermission && allowed) await wake.refresh();
       const active = await wake.isOn();
-      const allowed = await registerForPush({ askPermission });
       setWakeOn(active);
       setPushOk(allowed && active);
     } catch { setPushOk(false); }

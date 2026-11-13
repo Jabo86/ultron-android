@@ -53,7 +53,7 @@ export async function uploadFileChunked({ uri, name, mime, size, allowed, onProg
   try {
     for (let i = 0; i < n; i++) {
       const plain = h.readBytes(ATT_CHUNK);
-      if (!plain || plain.length === 0) break;
+      if (plain?.length !== Math.min(ATT_CHUNK, total - i * ATT_CHUNK)) throw new Error("Il file è incompleto o è cambiato durante la lettura.");
       await api.blobPutChunk(upload_id, i, gcm(key, attNonce(iv, i)).encrypt(plain));
       onProgress?.((i + 1) / n);
     }
@@ -71,34 +71,41 @@ export async function uploadFileChunked({ uri, name, mime, size, allowed, onProg
 export async function decryptToFile(att, destUri, onProgress) {
   const tmp = new File(destUri + ".ct");
   try { if (tmp.exists) tmp.delete(); } catch { /* niente */ }
-  await File.downloadFileAsync(api.blobUrl(att.id), tmp, {
-    headers: await api.authHeaders(),
-    idempotent: true,
-  });
-
-  const out = new File(destUri);
-  try { if (out.exists) out.delete(); } catch { /* niente */ }
-  out.create({ overwrite: true });
-
-  const key = hexToBytes(att.key);
-  const iv = hexToBytes(att.iv);
-  const step = att.cs + TAG;
-  const rh = tmp.open(FileMode.ReadOnly);
-  const wh = out.open(FileMode.Truncate);
+  const out = new File(destUri + ".part");
   let first = null;
   try {
-    for (let i = 0; i < att.n; i++) {
-      const ct = rh.readBytes(step);
-      if (!ct || ct.length === 0) break;
-      const plain = gcm(key, attNonce(iv, i)).decrypt(ct);
-      if (i === 0) first = plain;
-      wh.writeBytes(plain);
-      onProgress?.((i + 1) / att.n);
-    }
+    await File.downloadFileAsync(api.blobUrl(att.id), tmp, {
+      headers: await api.authHeaders(),
+      idempotent: true,
+    });
+    if (!Number.isSafeInteger(att.size) || att.size < 1 || att.size > MAX_ATT ||
+        att.cs !== ATT_CHUNK || att.n !== Math.ceil(att.size / att.cs) ||
+        tmp.size !== att.size + att.n * TAG) throw new Error("Allegato cifrato incompleto.");
+    out.create({ overwrite: true });
+    const key = hexToBytes(att.key);
+    const iv = hexToBytes(att.iv);
+    const rh = tmp.open(FileMode.ReadOnly);
+    try {
+      const wh = out.open(FileMode.Truncate);
+      try {
+        for (let i = 0; i < att.n; i++) {
+          const size = Math.min(att.cs, att.size - i * att.cs) + TAG;
+          const ct = rh.readBytes(size);
+          if (ct.length !== size) throw new Error("Allegato cifrato incompleto.");
+          const plain = gcm(key, attNonce(iv, i)).decrypt(ct);
+          if (i === 0) first = plain;
+          wh.writeBytes(plain);
+          onProgress?.((i + 1) / att.n);
+        }
+      } finally { wh.close(); }
+    } finally { rh.close(); }
+    const dest = new File(destUri);
+    if (dest.exists) dest.delete();
+    out.move(dest);
   } finally {
-    try { rh.close(); } catch { /* niente */ }
-    try { wh.close(); } catch { /* niente */ }
-    try { tmp.delete(); } catch { /* niente */ }
+    try { if (tmp.exists) tmp.delete(); } catch { /* cleanup */ }
+    // File.move updates the source URI, so only delete the original temporary path.
+    try { const partial = new File(destUri + ".part"); if (partial.exists) partial.delete(); } catch { /* cleanup */ }
   }
   return first;
 }

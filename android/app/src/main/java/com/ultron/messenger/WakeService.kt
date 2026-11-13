@@ -48,12 +48,13 @@ class WakeService : Service() {
     // Il servizio si avvia se serve la sveglia OPPURE il rumore in background.
     fun shouldRun(ctx: Context): Boolean = wakeOn(ctx) || chaffOn(ctx)
 
-    fun start(ctx: Context) {
-      if (!shouldRun(ctx)) return
+    fun start(ctx: Context): Boolean {
+      if (!shouldRun(ctx)) return false
       try {
         val i = Intent(ctx, WakeService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ctx.startForegroundService(i) else ctx.startService(i)
-      } catch (e: Exception) { /* il sistema può rifiutare da background: riprova al prossimo avvio */ }
+        return true
+      } catch (e: Exception) { return false }
     }
   }
 
@@ -160,7 +161,8 @@ class WakeService : Service() {
           if (n > 0) Thread.sleep(1000)
         } else {
           c.disconnect()
-          if (code == 404) { stopSelf(); return } // gettone revocato
+          // The configured token can be renewed while this connection is in flight.
+          if (code == 404 && !wakeOn(this) && !chaffOn(this)) { stopSelf(); return }
           Thread.sleep(backoff)
           backoff = minOf(backoff * 2, 120000L)
         }

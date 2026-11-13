@@ -651,6 +651,7 @@ export default function ChatScreen({ route, navigation }) {
       // impiegava un'eternità a partire e ad aprirsi; la cifratura non cambia di una virgola.
       const info = isVid ? await FileSystem.getInfoAsync(asset.uri) : null;
       const size = asset.fileSize || info?.size || 0;
+      if (size > bigatt.MAX_ATT) throw new Error("File troppo grande (max 100 MB).");
       if (isVid && size > bigatt.ATT_CHUNK) {
         setUploadPct(0);
         const att = await bigatt.uploadFileChunked({
@@ -755,10 +756,11 @@ export default function ChatScreen({ route, navigation }) {
     if (others.length === 0 || !user?.kem) { setErr(t("chat.attach.noconv")); return; }
     suppressLock();
     try {
-      const res = await DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true });
+      const res = await withSystemActivity(() => DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true }));
       if (res.canceled || !res.assets?.[0]) return;
       const a = res.assets[0];
-      if (a.size && a.size > bigatt.MAX_ATT) { setErr(lang === "en" ? "File too large (max 100MB)" : "File troppo grande (max 100MB)"); return; }
+      const size = a.size ?? (await FileSystem.getInfoAsync(a.uri)).size ?? 0;
+      if (size > bigatt.MAX_ATT) { setErr(lang === "en" ? "File too large (max 100MB)" : "File troppo grande (max 100MB)"); return; }
       setSending(true); setErr("");
       setUploadPct(0);
       const name = a.name || `file_${Date.now()}`;
@@ -767,8 +769,8 @@ export default function ChatScreen({ route, navigation }) {
       // Oltre i 4 MB si passa al formato a pezzi: si legge dal disco, si cifra e si
       // spedisce un pezzo alla volta, senza mai tenere il file intero in memoria.
       let att;
-      if ((a.size || 0) > bigatt.ATT_CHUNK) {
-        att = await bigatt.uploadFileChunked({ uri: a.uri, name, mime, size: a.size, allowed: others, onProgress: onP });
+      if (size > bigatt.ATT_CHUNK) {
+        att = await bigatt.uploadFileChunked({ uri: a.uri, name, mime, size, allowed: others, onProgress: onP });
       } else {
         const b64 = await FileSystem.readAsStringAsync(a.uri, { encoding: FileSystem.EncodingType.Base64 });
         const bytes = base64ToBytes(b64);
