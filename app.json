@@ -3,7 +3,7 @@
     "name": "ULTRON",
     "slug": "ultron-messenger",
     "scheme": "ultron",
-    "version": "3.5.15",
+    "version": "3.5.16",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",

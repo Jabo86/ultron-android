@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Vibration, Alert } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Vibration, Alert, AppState } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription, mediaDevices } from "react-native-webrtc";
 import { useAudioPlayer } from "expo-audio";
@@ -60,7 +60,8 @@ export default function CallScreen({ route, navigation }) {
   const peerLns = (to || route.params?.from || "").toLowerCase();
 
   const pc = useRef(null);
-  const poll = useRef(null);
+  const streamRef = useRef(null);
+  const setupComplete = useRef(false);
   const remoteSet = useRef(false);
   const ended = useRef(false);
   const pushResolved = useRef(false);
@@ -68,7 +69,6 @@ export default function CallScreen({ route, navigation }) {
   // Signaling anonimo
   const chan = useRef(route.params?.chan || null);
   const localIce = useRef(incoming ? "ice_e" : "ice_c");
-  const remoteIce = useRef(incoming ? "ice_c" : "ice_e");
   const iceCFrom = useRef(0);
   const iceEFrom = useRef(0);
   const peerKem = useRef(route.params?.from_kem || null); // KEM pk dell'altro (per cifrare l'answer)
@@ -94,6 +94,7 @@ export default function CallScreen({ route, navigation }) {
     let alive = true;
     (async () => {
       try { await setAudioModeAsync({ playsInSilentMode: true }); } catch {}
+      if (!alive || ended.current) return;
       try { if (!systemRing) { ring.loop = true; ring.seekTo(0); ring.play(); } } catch {}
     })();
     try { if (vibMode !== "off") Vibration.vibrate(VIB_PATTERNS[vibMode] || VIB_PATTERNS.standard, true); } catch {}
@@ -119,21 +120,44 @@ export default function CallScreen({ route, navigation }) {
   }, [incoming, status]);
 
   const cleanup = useCallback(() => {
+    if (ended.current) return;
     ended.current = true;
-    if (poll.current) { clearInterval(poll.current); poll.current = null; }
-    try { pc.current && pc.current.close(); } catch {}
-    try { localStream && localStream.getTracks().forEach((t) => t.stop()); } catch {}
-  }, [localStream]);
+    try { pc.current?.close(); } catch {}
+    pc.current = null;
+    for (const track of streamRef.current?.getTracks() || []) {
+      try { track.stop(); } catch {}
+    }
+    streamRef.current = null;
+    telecom.end();
+  }, []);
 
-  const bye = useCallback(async () => { if (chan.current) { try { await api.anonPut(chan.current, "bye", { t: Date.now() }); } catch {} } }, []);
+  const finish = useCallback((sendBye = true) => {
+    if (ended.current) return;
+    const channel = chan.current;
+    stopRing();
+    try { ringback.pause(); } catch {}
+    cleanup();
+    if (sendBye && channel) {
+      const send = () => api.anonPut(channel, "bye", { t: Date.now() }, { timeout: 3000 });
+      send().catch(() => send()).catch(() => {});
+    }
+    if (navigation.isFocused()) navigation.goBack();
+  }, [cleanup, navigation, ringback, stopRing]);
 
-  const accept = useCallback(() => { suppressLock(); stopRing(); setAccepted(true); }, [stopRing]);
-  const dismiss = useCallback(async () => { stopRing(); await bye(); cleanup(); navigation.goBack(); }, [stopRing, bye, cleanup, navigation]);
-  const reject = useCallback(async () => { stopRing(); try { if (chan.current) await api.callReject(chan.current); } catch {} await bye(); cleanup(); navigation.goBack(); }, [stopRing, bye, cleanup, navigation]);
-  const hangup = useCallback(async () => {
-    try { if (chan.current) await api.callEnded(chan.current); } catch {}
-    await bye(); cleanup(); navigation.goBack();
-  }, [bye, cleanup, navigation]);
+  useEffect(() => () => {
+    if (ended.current) return;
+    const channel = chan.current;
+    cleanup();
+    if (channel) api.anonPut(channel, "bye", { t: Date.now() }, { timeout: 3000 }).catch(() => {});
+  }, [cleanup]);
+
+  const accept = useCallback(() => {
+    if (ended.current) return;
+    suppressLock(); stopRing(); setAccepted(true);
+  }, [stopRing]);
+  const dismiss = finish;
+  const reject = finish;
+  const hangup = finish;
 
   // Aperta dal PUSH: recupera l'offerta E2EE reale dal rendezvous anonimo (il push non la trasporta).
   useEffect(() => {
@@ -229,7 +253,7 @@ export default function CallScreen({ route, navigation }) {
     (async () => {
       try {
         const direct = !hosted && !!(await loadAllowDirect().catch(() => false));
-        if (!mounted) return;
+        if (!mounted || ended.current) return;
         setDirectAllowed(direct);
         let config = iceConfig(direct);
         if (hosted) {
@@ -240,7 +264,7 @@ export default function CallScreen({ route, navigation }) {
           config = { iceTransportPolicy: "relay", bundlePolicy: "max-bundle",
             iceServers: [{ urls: relay.urls, username: relay.username, credential: relay.credential }] };
         }
-        if (!mounted) return;
+        if (!mounted || ended.current) return;
         suppressLock();
         // Se l'offer del chiamante contiene un flusso video, la chiamata è una
         // videochiamata anche se il flag della push dice il contrario.
@@ -257,7 +281,8 @@ export default function CallScreen({ route, navigation }) {
           // Secondo tentativo senza vincoli: alcuni telefoni rifiutano `sampleRate`.
           stream = await mediaDevices.getUserMedia({ audio: true, video: false });
         }
-        if (!mounted) { stream.getTracks().forEach((t) => t.stop()); return; }
+        if (!mounted || ended.current) { stream.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = stream;
         setLocalStream(stream);
         pc.current = makePc(config);
         stream.getTracks().forEach((t) => pc.current.addTrack(t, stream));
@@ -284,7 +309,9 @@ export default function CallScreen({ route, navigation }) {
           const ping = sealInvite(invite, calleeKem);
           const shared = anonSharedSecret(user.dh.secretKey, calleeDh);
           const rid = discRid(shared, myLns, to, anonEpoch());
+          if (ended.current) return;
           await api.anonPut(rid, "ping", ping);
+          if (ended.current) return;
           if (hosted) {
             api.wakeCall(to, rid).then((result) => {
               if (mounted && !result?.devices) setWarn(lang === "en"
@@ -323,6 +350,7 @@ export default function CallScreen({ route, navigation }) {
             const sig = user?.sk ? signMessage(answer.sdp, user.sk) : "";
             const ansObj = { answer: { type: answer.type, sdp: answer.sdp }, answer_sig: sig, to_pk: myPk };
             const sealed = peerKem.current ? encryptForRecipients(JSON.stringify(ansObj), { c: peerKem.current })[0] : ansObj;
+            if (ended.current) return;
             await api.anonPut(chan.current, "answer", sealed);
             addCallLog({ call_id: chan.current, peer: route.params?.from || "", direction: "in", video: !!video, created_at: new Date().toISOString(), answered_at: new Date().toISOString(), ended_at: "" });
             if (!hosted) setStatus("connected");
@@ -330,45 +358,76 @@ export default function CallScreen({ route, navigation }) {
             trySas();
           }
         }
-        startPolling();
+        setupComplete.current = true;
       } catch (e) {
         if (mounted) { setErrMsg(String(e?.message || e || "errore")); setStatus("error"); }
         setTimeout(() => { if (mounted) hangup(); }, 6000);
       }
     })();
-    return () => { mounted = false; cleanup(); };
+    return () => { mounted = false; };
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accepted]);
 
-  const startPolling = useCallback(() => {
-    if (poll.current) clearInterval(poll.current);
+  // Keep reading the termination signal even before the callee answers.
+  useEffect(() => {
     let reading = false;
-    poll.current = setInterval(async () => {
-      if (reading || ended.current || !chan.current) return;
+    let alive = true;
+    const pollSignal = async () => {
+      const channel = chan.current;
+      if (!alive || reading || ended.current || !channel) return;
       reading = true;
       try {
-      let g;
-      try { g = await api.anonGet(chan.current, iceCFrom.current, iceEFrom.current); } catch { return; }
-      if (!g || !g.found) return;
-      if (g.bye) { cleanup(); navigation.goBack(); return; }
-      if (!incoming && !remoteSet.current && g.answer) {
-        let ans = g.answer;
-        if (ans && ans.ct) { try { const pt = decryptEnvelope(ans, user.kem.secretKey); ans = pt ? JSON.parse(pt) : null; } catch { ans = null; } }
-        if (ans && ans.answer && ans.answer.sdp) {
-          const ok = ans.answer_sig && ans.to_pk ? verifyMessage(ans.answer.sdp, ans.answer_sig, ans.to_pk) : false;
-          setVerified(ok);
-          if (!ok && api.getServerUrl() === DEFAULT_SERVER) { setErrMsg("Firma della risposta non valida."); setStatus("error"); return; }
-          try { await pc.current.setRemoteDescription(new RTCSessionDescription(ans.answer)); remoteSet.current = true; if (api.getServerUrl() !== DEFAULT_SERVER) setStatus("connected"); try { if (chan.current && api.getServerUrl() !== DEFAULT_SERVER) api.callAnswered(chan.current).catch(() => {}); } catch {} trySas(); } catch {}
+        const signal = await api.anonGet(channel, iceCFrom.current, iceEFrom.current, { timeout: 3500 });
+        if (!alive || ended.current || !signal?.found) return;
+        if (signal.bye) { finish(false); return; }
+        const connection = pc.current;
+        if (!setupComplete.current || !connection) return;
+        if (!incoming && !remoteSet.current && signal.answer) {
+          let answer = signal.answer;
+          if (answer.ct) {
+            const plain = decryptEnvelope(answer, user.kem.secretKey);
+            answer = plain ? JSON.parse(plain) : null;
+          }
+          if (answer?.answer?.sdp) {
+            const ok = answer.answer_sig && answer.to_pk &&
+              verifyMessage(answer.answer.sdp, answer.answer_sig, answer.to_pk);
+            setVerified(!!ok);
+            if (!ok && hosted) {
+              setErrMsg("Firma della risposta non valida.");
+              setStatus("error");
+              return;
+            }
+            await connection.setRemoteDescription(new RTCSessionDescription(answer.answer));
+            if (!alive || ended.current) return;
+            remoteSet.current = true;
+            if (!hosted) {
+              setStatus("connected");
+              api.callAnswered(channel).catch(() => {});
+            }
+            trySas();
+          }
         }
-      }
-      if (!pc.current?.remoteDescription) return;
-      if (incoming) { const l = g.ice_c || []; await applyRemoteIce(l); iceCFrom.current += l.length; }
-      else { const l = g.ice_e || []; await applyRemoteIce(l); iceEFrom.current += l.length; }
-      } finally { reading = false; }
-    // 800 ms: è il ritmo con cui si scambiano risposta e candidati ICE. A 1,5 s la
-    // connessione partiva con un secondo di ritardo secco.
-    }, 800);
-  }, [incoming, applyRemoteIce, cleanup, navigation, user]);
+        if (!connection.remoteDescription || ended.current) return;
+        if (incoming) {
+          const candidates = signal.ice_c || [];
+          await applyRemoteIce(candidates);
+          iceCFrom.current += candidates.length;
+        } else {
+          const candidates = signal.ice_e || [];
+          await applyRemoteIce(candidates);
+          iceEFrom.current += candidates.length;
+        }
+      } catch { /* A transient failure is retried on the next tick. */ }
+      finally { reading = false; }
+    };
+    const interval = setInterval(pollSignal, 800);
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") pollSignal();
+    });
+    pollSignal();
+    return () => { alive = false; clearInterval(interval); subscription.remove(); };
+  }, [incoming, applyRemoteIce, finish, hosted, trySas, user]);
 
   const toggleMute = () => { const a = localStream?.getAudioTracks?.()[0]; if (a) { a.enabled = muted; setMuted(!muted); } };
 
@@ -426,7 +485,7 @@ export default function CallScreen({ route, navigation }) {
         </View>
         <View style={styles.ringControls}>
           <View style={styles.ringBtnWrap}>
-            <TouchableOpacity style={[styles.ringBtn, styles.rejectBtn]} onPress={reject} testID="call-reject"><Ionicons name="call-outline" size={30} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} /></TouchableOpacity>
+            <TouchableOpacity style={[styles.ringBtn, styles.rejectBtn]} onPress={() => reject()} testID="call-reject"><Ionicons name="call-outline" size={30} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} /></TouchableOpacity>
             <Text style={styles.ringLbl}>{lang === "en" ? "Decline" : "Rifiuta"}</Text>
           </View>
           <View style={styles.ringBtnWrap}>
@@ -478,7 +537,7 @@ export default function CallScreen({ route, navigation }) {
       <View style={styles.controls}>
         <TouchableOpacity style={[styles.ctrl, muted && styles.ctrlOn]} onPress={toggleMute} testID="call-mute"><Ionicons name={muted ? "mic-off" : "mic"} size={24} color="#fff" /></TouchableOpacity>
 
-        <TouchableOpacity style={[styles.ctrl, styles.hang]} onPress={hangup} testID="call-hangup"><Ionicons name="call-outline" size={26} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} /></TouchableOpacity>
+        <TouchableOpacity style={[styles.ctrl, styles.hang]} onPress={() => hangup()} testID="call-hangup"><Ionicons name="call-outline" size={26} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} /></TouchableOpacity>
       </View>
     </View>
   );

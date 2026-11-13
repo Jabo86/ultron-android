@@ -161,12 +161,12 @@ export const pulseKeys1024 = (lns_list) =>
 export const pulseDhKeys = (lns_list) =>
   withAuth((a) => client.post("/public/pulse/dhkeys", { lns_list }, a).then((r) => r.data));
 // ── Signaling anonimo (blind rendezvous): endpoint pubblici non identificanti ──
-const anonPost = (path, body) => getServerUrl() === DEFAULT_SERVER
-  ? withAuth((a) => client.post(path, body, a).then((r) => r.data))
-  : client.post(path, body).then((r) => r.data);
-export const anonPut = (rid, slot, data) => anonPost("/public/anon/put", { rid, slot, data });
-export const anonGet = (rid, ice_c_from = 0, ice_e_from = 0) =>
-  anonPost("/public/anon/get", { rid, ice_c_from, ice_e_from });
+const anonPost = (path, body, options) => getServerUrl() === DEFAULT_SERVER
+  ? withAuth((a) => client.post(path, body, { ...a, ...options }).then((r) => r.data))
+  : client.post(path, body, options).then((r) => r.data);
+export const anonPut = (rid, slot, data, options) => anonPost("/public/anon/put", { rid, slot, data }, options);
+export const anonGet = (rid, ice_c_from = 0, ice_e_from = 0, options) =>
+  anonPost("/public/anon/get", { rid, ice_c_from, ice_e_from }, options);
 export const anonPoll = (rids) => anonPost("/public/anon/poll", { rids });
 export const wakeCall = (to, rid) =>
   withAuth((a) => client.post("/public/pulse/ring", { to, rid }, { ...a, timeout: 5000 }).then((r) => r.data));
