@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { View, ActivityIndicator, AppState as RNAppState, Platform } from "react-native";
+import { View, ActivityIndicator, AppState as RNAppState, NativeModules, Platform } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import notifee, { EventType } from "react-native-notify-kit";
@@ -77,6 +77,7 @@ import { useLook } from "./src/lib/appearance";
 import { alpha } from "./src/components/Surface";
 import { loadAppLock, loadConsent, saveConsent, CONSENT_VERSION } from "./src/lib/store";
 import * as api from "./src/lib/api";
+import { DEFAULT_SERVER } from "./src/config";
 import ErrorBoundary from "./src/components/ErrorBoundary";
 import { I18nProvider, useI18n } from "./src/lib/i18n";
 import { loadThreatList } from "./src/lib/threatList";
@@ -84,7 +85,7 @@ import { useTint } from "./src/lib/appearance";
 import { theme } from "./src/theme";
 import { isLockSuppressed, clearLockSuppress } from "./src/lib/lockGuard";
 import { anonEpochs, discRid, openInvite } from "./src/lib/anonCall";
-import { anonSharedSecret } from "./src/lib/crypto";
+import { anonSharedSecret, verifyMessage } from "./src/lib/crypto";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -253,6 +254,39 @@ function Root() {
   // Discovery ANONIMA delle chiamate in arrivo (blind rendezvous): calcolo i rid per ogni
   // contatto e chiedo al server quali hanno un invito, senza rivelare identità.
   const activeCall = useRef(null);
+  useEffect(() => {
+    if (locked || !user?.kem?.secretKey || !user?.dh?.secretKey || api.getServerUrl() !== DEFAULT_SERVER) return;
+    let alive = true;
+    let busy = false;
+    const open = async () => {
+      if (!alive || busy || RNAppState.currentState !== "active" || !navRef.isReady() ||
+          navRef.getCurrentRoute()?.name === "Call") return;
+      busy = true;
+      try {
+        const rid = await NativeModules.WakeControl?.takeIncomingCall();
+        if (!rid) return;
+        const event = await api.anonGet(rid);
+        const call = event?.ping && openInvite(event.ping, user.kem.secretKey);
+        if (!call?.chan || !call.from || !call.offer?.sdp || !call.offer_sig || !call.from_pk ||
+            !verifyMessage(call.offer.sdp, call.offer_sig, call.from_pk)) return;
+        const keys = await api.pulseDhKeys([call.from]);
+        if (!keys?.[call.from]) return;
+        const shared = anonSharedSecret(user.dh.secretKey, keys[call.from]);
+        if (!anonEpochs().some((epoch) => discRid(shared, call.from, user.lns, epoch) === rid)) return;
+        const session = await api.anonGet(call.chan);
+        if (!alive || session?.bye || session?.answer || activeCall.current === call.chan ||
+            navRef.getCurrentRoute()?.name === "Call") return;
+        activeCall.current = call.chan;
+        navRef.navigate("Call", { incoming: true, chan: call.chan, from: call.from,
+          from_pk: call.from_pk, from_kem: call.from_kem, offer: call.offer, offer_sig: call.offer_sig });
+      } catch { /* expired invite or unavailable connection */ }
+      finally { busy = false; }
+    };
+    open();
+    const interval = setInterval(open, 650);
+    return () => { alive = false; clearInterval(interval); };
+  }, [user, locked]);
+
   const dhCache = useRef({});
   const contactSet = useRef([]);
   const contactsAt = useRef(0);

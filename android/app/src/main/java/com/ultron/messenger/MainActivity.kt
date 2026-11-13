@@ -1,6 +1,7 @@
 package com.ultron.messenger
 import expo.modules.splashscreen.SplashScreenManager
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
@@ -73,6 +74,11 @@ class MainActivity : ReactActivity() {
 
   // Ogni volta che si torna nell'app: (ri)avvia il servizio in background se serve — così
   // l'interruttore "Traffico invisibile" ha effetto senza aspettare un riavvio del telefono.
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+  }
+
   override fun onResume() {
     super.onResume()
     try { WakeService.start(this) } catch (e: Throwable) { }

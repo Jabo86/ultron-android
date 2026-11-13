@@ -168,6 +168,8 @@ export const anonPut = (rid, slot, data) => anonPost("/public/anon/put", { rid, 
 export const anonGet = (rid, ice_c_from = 0, ice_e_from = 0) =>
   anonPost("/public/anon/get", { rid, ice_c_from, ice_e_from });
 export const anonPoll = (rids) => anonPost("/public/anon/poll", { rids });
+export const wakeCall = (to, rid) =>
+  withAuth((a) => client.post("/public/pulse/ring", { to, rid }, { ...a, timeout: 5000 }).then((r) => r.data));
 export const callTurn = () =>
   withAuth((a) => client.get("/public/pulse/turn", { ...a, timeout: 8000 }).then((r) => r.data));
 export const saveQuizReminder = (times, tzOffsetMin) =>

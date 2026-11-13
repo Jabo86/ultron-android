@@ -12,6 +12,18 @@ class WakeControlModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModu
     override fun getName(): String = "WakeControl"
 
     @ReactMethod
+    fun takeIncomingCall(promise: Promise) {
+        val activity = reactApplicationContext.currentActivity
+        if (activity == null) { promise.resolve(null); return }
+        activity.runOnUiThread {
+            val intent = activity.intent
+            val rid = intent?.getStringExtra(WakeService.CALL_RID)
+            intent?.removeExtra(WakeService.CALL_RID)
+            promise.resolve(rid?.takeIf { it.matches(Regex("[a-f0-9]{32}")) })
+        }
+    }
+
+    @ReactMethod
     fun start(promise: Promise) {
         try {
             promise.resolve(WakeService.start(reactApplicationContext))

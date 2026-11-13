@@ -283,10 +283,19 @@ export default function CallScreen({ route, navigation }) {
           const invite = { from: myLns, from_pk: myPk, from_kem: myKem, video: false, chan: chan.current, offer: { type: offer.type, sdp: offer.sdp }, offer_sig: sig };
           const ping = sealInvite(invite, calleeKem);
           const shared = anonSharedSecret(user.dh.secretKey, calleeDh);
-          await api.anonPut(discRid(shared, myLns, to, anonEpoch()), "ping", ping);
+          const rid = discRid(shared, myLns, to, anonEpoch());
+          await api.anonPut(rid, "ping", ping);
+          if (hosted) {
+            api.wakeCall(to, rid).then((result) => {
+              if (mounted && !result?.devices) setWarn(lang === "en"
+                ? "The recipient needs ULTRON notifications enabled for background calls."
+                : "Per ricevere chiamate in background, il destinatario deve attivare le notifiche ULTRON.");
+            }).catch(() => {
+              if (mounted) setWarn(lang === "en" ? "Background call alert unavailable." : "Avviso di chiamata in background non disponibile.");
+            });
+          }
           // Squillo via notifica: se il destinatario non ha dispositivi registrati non
           // può squillare ad app chiusa, e lo diciamo subito a chi chiama.
-          if (hosted && mounted) setWarn(lang === "en" ? "The recipient must have ULTRON open." : "Il destinatario deve avere ULTRON aperto.");
           if (!hosted) api.callRing({ to, video: false, call_id: chan.current }).then((r) => {
             if (mounted && r && r.devices === 0) {
               setWarn(lang === "en"

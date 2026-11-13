@@ -27,6 +27,9 @@ class WakeService : Service() {
 
   companion object {
     const val CH_SERVICE = "lattice-wake"
+    const val CH_CALL = "ultron-incoming-call"
+    const val CALL_ID = 4713
+    const val CALL_RID = "com.ultron.messenger.CALL_RID"
     const val CH_MSG = "lattice-wake-msg"
     const val FG_ID = 4711
 
@@ -66,6 +69,12 @@ class WakeService : Service() {
     nm.createNotificationChannel(svc)
     val msg = NotificationChannel(CH_MSG, "Messaggi", NotificationManager.IMPORTANCE_HIGH)
     nm.createNotificationChannel(msg)
+    val call = NotificationChannel(CH_CALL, "Chiamate ULTRON", NotificationManager.IMPORTANCE_HIGH)
+    val sound = android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE)
+    val audio = android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE).build()
+    call.setSound(sound, audio)
+    call.enableVibration(true)
+    nm.createNotificationChannel(call)
   }
 
   private fun openAppIntent(): PendingIntent {
@@ -119,9 +128,35 @@ class WakeService : Service() {
     } catch (e: Exception) { /* notifiche non concesse */ }
   }
 
+  private fun notifyCall(rid: String) {
+    try {
+      val nm = getSystemService(NotificationManager::class.java)
+      val intent = Intent(this, MainActivity::class.java)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        .putExtra(CALL_RID, rid)
+      val open = PendingIntent.getActivity(this, CALL_ID, intent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+      val call = NotificationCompat.Builder(this, CH_CALL)
+        .setContentTitle("Chiamata ULTRON")
+        .setContentText("Tocca per aprire la chiamata")
+        .setSmallIcon(applicationInfo.icon)
+        .setCategory(NotificationCompat.CATEGORY_CALL)
+        .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+        .setPriority(NotificationCompat.PRIORITY_MAX)
+        .setAutoCancel(true)
+        .setTimeoutAfter(35_000L)
+        .setContentIntent(open)
+      if (Build.VERSION.SDK_INT < 34 || nm.canUseFullScreenIntent()) {
+        call.setFullScreenIntent(open, true)
+      }
+      nm.notify(CALL_ID, call.build())
+    } catch (e: Exception) { /* permission or channel unavailable */ }
+  }
+
   private fun loop() {
     var previousRid = ""
     var previousCount = 0
+    var previousCall = ""
     var backoff = 5000L
     while (running) {
       val cfg = config(this)
@@ -138,6 +173,7 @@ class WakeService : Service() {
       if (rid != previousRid) {
         previousRid = rid
         previousCount = 0
+        previousCall = ""
       }
       try {
         val url = URL("$base/api/public/wake/poll?rid=$rid&wait=25")
@@ -151,14 +187,21 @@ class WakeService : Service() {
           val body = c.inputStream.bufferedReader().use { it.readText() }
           c.disconnect()
           backoff = 5000L
-          val n = try { JSONObject(body).optInt("n", 0) } catch (e: Exception) { 0 }
+          val event = try { JSONObject(body) } catch (e: Exception) { JSONObject() }
+          val n = event.optInt("n", 0)
+          val incoming = event.optString("call", "").takeIf { it.matches(Regex("[a-f0-9]{32}")) }.orEmpty()
           val current = config(this)
           if (running && current?.optBoolean("on", false) == true && current.optString("rid") == rid) {
+            if (incoming.isNotEmpty() && incoming != previousCall) notifyCall(incoming)
+            if (incoming.isEmpty() && previousCall.isNotEmpty()) {
+              getSystemService(NotificationManager::class.java).cancel(CALL_ID)
+            }
+            previousCall = incoming
             if (n > previousCount) notifyMessages(n)
             previousCount = n
           }
           // A nonzero count returns immediately even when it has not changed.
-          if (n > 0) Thread.sleep(1000)
+          if (n > 0 || incoming.isNotEmpty()) Thread.sleep(1000)
         } else {
           c.disconnect()
           // The configured token can be renewed while this connection is in flight.
