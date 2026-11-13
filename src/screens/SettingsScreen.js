@@ -1,9 +1,10 @@
 import { LEGAL_DOCS, PRIVACY_SUMMARY, CONTACTS_SUMMARY, DATA_PROTECTION } from "../lib/legalDocuments";
 import { isOwner as canaryIsOwner } from "../lib/canary";
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, ActivityIndicator, Alert, Linking, Platform, Modal, TextInput, Share,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as appearance from "../lib/appearance";
 import { Ionicons } from "@expo/vector-icons";
@@ -35,7 +36,7 @@ import { TRANSLATE_LANGS, langName } from "../lib/langs";
 import { getThreatLog, clearThreatLog, getThreatCount } from "../lib/threatLog";
 
 const PRIVACY_LNS = "";
-const HAS_TURN = ICE_SERVERS.some(({ urls }) => [urls].flat().some((url) => /^turns?:/i.test(url)));
+const HAS_STATIC_TURN = ICE_SERVERS.some(({ urls }) => [urls].flat().some((url) => /^turns?:/i.test(url)));
 
 function fmtAgo(ts, lang, t) {
   const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
@@ -56,7 +57,9 @@ export default function SettingsScreen({ navigation }) {
   const { user, signOut, lock } = useAuth();
   const isOss = (user?.lns || "").endsWith("@tuttooss.lns");
   const isOwner = canaryIsOwner(user);
+  const hostedCalls = api.getServerUrl() === DEFAULT_SERVER;
   const [callDirect, setCallDirect] = useState(false);
+  const [relayStatus, setRelayStatus] = useState("checking");
   const [chaff, setChaff] = useState(true);
   const [wakeOn, setWakeOn] = useState(false);
   const [wakeBusy, setWakeBusy] = useState(false);
@@ -126,6 +129,16 @@ export default function SettingsScreen({ navigation }) {
   useEffect(() => { displayInfo().then(setFps).catch(() => {}); }, []);
 
   useEffect(() => { loadAllowDirect().then((v) => setCallDirect(!!v)).catch(() => {}); }, []);
+  useFocusEffect(useCallback(() => {
+    if (!hostedCalls) return;
+    let active = true;
+    setRelayStatus("checking");
+    api.callTurn().then((relay) => {
+      if (!active) return;
+      setRelayStatus(relay?.urls?.length && relay.username && relay.credential ? "ready" : "unavailable");
+    }).catch(() => { if (active) setRelayStatus("unavailable"); });
+    return () => { active = false; };
+  }, [hostedCalls, user?.lns]));
 
   // Notifiche dal nostro server: il servizio nativo tiene aperta una connessione in attesa
   // usando soltanto il servizio nativo e il nodo ULTRON.
@@ -530,8 +543,18 @@ export default function SettingsScreen({ navigation }) {
       <Text style={styles.section}>{t("settings.section.security")}</Text>
       <View style={styles.privStatus} testID="settings-privacy-status">
         {[
-          { on: chaff, label: (en ? "Cover traffic requested" : "Rumore configurato"), tid: "privstat-noise" },
-          { on: !callDirect && HAS_TURN, label: HAS_TURN ? t("sm.032") : (en ? "TURN unavailable" : "TURN non configurato"), tid: "privstat-relay" },
+          { on: chaff, label: chaff ? (en ? "Cover traffic enabled" : "Rumore abilitato") : (en ? "Cover traffic off" : "Rumore disattivato"), tid: "privstat-noise" },
+          {
+            on: hostedCalls ? relayStatus === "ready" : HAS_STATIC_TURN,
+            label: hostedCalls
+              ? relayStatus === "ready"
+                ? (en ? "TURN credentials available" : "Credenziali TURN disponibili")
+                : relayStatus === "checking"
+                  ? (en ? "Checking TURN…" : "Verifica TURN…")
+                  : (en ? "TURN could not be verified" : "Verifica TURN non riuscita")
+              : HAS_STATIC_TURN ? t("sm.032") : (en ? "TURN unavailable" : "TURN non configurato"),
+            tid: "privstat-relay",
+          },
         ].map((it) => (
           <View key={it.tid} style={styles.privPill} testID={it.tid}>
             <View style={[styles.privDot, { backgroundColor: it.on ? "#50C878" : theme.textFaint }]} />
@@ -552,11 +575,18 @@ export default function SettingsScreen({ navigation }) {
             ? <ActivityIndicator color={tint} />
             : <Switch value={wakeOn} onValueChange={toggleWake} trackColor={{ true: tint, false: theme.border }} thumbColor="#fff" testID="settings-wake" />} />
         <View style={styles.divider} />
-        <Row icon="git-network-outline"
-          label={t("sm.037")}
-          hint={callDirect ? t("sm.038") : HAS_TURN ? t("sm.039")
-            : (en ? "Relay-only calls need a TURN server." : "Le chiamate solo relay richiedono un server TURN.")}
-          right={<Switch value={callDirect} onValueChange={async (v) => { setCallDirect(v); await saveAllowDirect(v); }} trackColor={{ true: "#50C878", false: theme.border }} thumbColor="#fff" testID="settings-call-direct" />} />
+        {hostedCalls ? (
+          <Row icon="git-network-outline"
+            label={en ? "Calls via ULTRON relay" : "Chiamate via relay ULTRON"}
+            hint={en ? "The other person does not receive your IP address. The relay sees the connection IP."
+              : "L’interlocutore non riceve il tuo IP. Il relay vede l’IP della connessione."} />
+        ) : (
+          <Row icon="git-network-outline"
+            label={t("sm.037")}
+            hint={callDirect ? t("sm.038") : HAS_STATIC_TURN ? t("sm.039")
+              : (en ? "Relay-only calls need a TURN server." : "Le chiamate solo relay richiedono un server TURN.")}
+            right={<Switch value={callDirect} onValueChange={async (v) => { setCallDirect(v); await saveAllowDirect(v); }} trackColor={{ true: "#50C878", false: theme.border }} thumbColor="#fff" testID="settings-call-direct" />} />
+        )}
         <View style={styles.divider} />
         <Row icon="pulse-outline"
           label={t("sm.040")}

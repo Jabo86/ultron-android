@@ -173,8 +173,8 @@ export default function CallScreen({ route, navigation }) {
     if (route.params?.chan || route.params?.offer || pushInv) { declined.current = true; reject(); }
   }, [pushInv, reject]);
 
-  const allowDirect = useRef(false);
-  useEffect(() => { loadAllowDirect().then((v) => { allowDirect.current = !!v; }).catch(() => {}); }, []);
+  const hosted = api.getServerUrl() === DEFAULT_SERVER;
+  const [directAllowed, setDirectAllowed] = useState(false);
 
   const makePc = useCallback((config) => {
     // relay-only: media SOLO via TURN self-hosted → nessun peer conosce l'IP dell'altro.
@@ -228,8 +228,10 @@ export default function CallScreen({ route, navigation }) {
     let mounted = true;
     (async () => {
       try {
-        const hosted = api.getServerUrl() === DEFAULT_SERVER;
-        let config = iceConfig(allowDirect.current);
+        const direct = !hosted && !!(await loadAllowDirect().catch(() => false));
+        if (!mounted) return;
+        setDirectAllowed(direct);
+        let config = iceConfig(direct);
         if (hosted) {
           let relay;
           try { relay = await api.callTurn(); }
@@ -394,8 +396,8 @@ export default function CallScreen({ route, navigation }) {
     Alert.alert(
       lang === "en" ? "🔒 End-to-end encrypted call" : "🔒 Chiamata cifrata E2EE",
       lang === "en"
-        ? "The voice travels only through an anonymous relay (no one learns your IP), is protected by DTLS-SRTP, keeps a constant bitrate (so no one can read the pauses of the conversation), and the emoji SAS check blocks any interception — not even we can listen."
-        : "La voce passa solo tramite relay anonimo (nessuno conosce il tuo IP), è protetta da DTLS-SRTP, viaggia a portata costante (quindi nessuno può leggere le pause della conversazione) e la verifica SAS a emoji blocca ogni intercettazione — nemmeno noi possiamo ascoltare.",
+        ? "WebRTC encrypts the audio between the phones with DTLS-SRTP. The relay can see connection IPs. Compare the security emojis through a trusted channel to verify the call."
+        : "WebRTC cifra l’audio tra i telefoni con DTLS-SRTP. Il relay può vedere gli IP delle connessioni. Confrontate le emoji di sicurezza tramite un canale fidato per verificare la chiamata.",
       [{ text: "OK" }]
     );
   }, [lang]);
@@ -437,10 +439,10 @@ export default function CallScreen({ route, navigation }) {
         <Text style={styles.status} testID="call-status">{held ? (lang === "en" ? "On hold · another call" : "In pausa · altra chiamata") : statusLabel}</Text>
         {status === "error" && !!errMsg && (<Text style={{ color: "#ff6b6b", fontSize: 12, marginTop: 6, textAlign: "center", paddingHorizontal: 20 }} testID="call-error-detail">{errMsg}</Text>)}
         {!!warn && (<Text style={{ color: "#50C878", fontSize: 12, marginTop: 6, textAlign: "center", paddingHorizontal: 20 }} testID="call-warning">{warn}</Text>)}
-        <Text style={{ color: allowDirect.current ? "#50C878" : "#8ea2c0", fontSize: 11, marginTop: 6, textAlign: "center" }} testID="call-ip-badge">
-          {allowDirect.current
-            ? (lang === "en" ? "Direct connection: the other side can see your IP" : "Connessione diretta: l'altra persona può vedere il tuo IP")
-            : (lang === "en" ? "Routed through our relay · your IP stays hidden" : "Instradata dal nostro relay · il tuo IP resta nascosto")}
+        <Text style={{ color: directAllowed ? "#50C878" : "#8ea2c0", fontSize: 11, marginTop: 6, textAlign: "center" }} testID="call-ip-badge">
+          {directAllowed
+            ? (lang === "en" ? "Direct connections allowed: the other side may see your IP" : "Connessioni dirette consentite: l’altra persona potrebbe vedere il tuo IP")
+            : (lang === "en" ? "Relay only · the other person does not receive your IP" : "Solo relay · il tuo IP resta nascosto all’interlocutore")}
         </Text>
         <TouchableOpacity style={styles.e2eeBadge} onPress={showE2eeInfo} testID="call-e2ee-badge" activeOpacity={0.75}>
           <Ionicons name="lock-closed-outline" size={14} color="#04120a" />
