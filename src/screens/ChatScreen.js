@@ -13,6 +13,8 @@ import * as FileSystem from "expo-file-system/legacy";
 import { useAudioRecorder, useAudioRecorderState, AudioModule, RecordingPresets, setAudioModeAsync } from "expo-audio";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
+import { DEFAULT_SERVER } from "../config";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useAuth } from "../context/AuthContext";
 import { useUnread } from "../context/UnreadContext";
@@ -135,6 +137,8 @@ export default function ChatScreen({ route, navigation }) {
   const sendingRef = useRef([]);  // messaggi appena inviati: visibili subito
   const pendingRef = useRef(false);
   const msgsSig = useRef("");
+  const [serverHasMessages, setServerHasMessages] = useState(false);
+  const serverCursor = useRef({ cid: null, id: null });
   const netDone = useRef(false);   // la rete ha già risposto per questa chat
   const arcRef = useRef({ cid: null, list: [] });
   const anonRef = useRef({ cid: null, list: [], dirty: true });
@@ -294,6 +298,14 @@ export default function ChatScreen({ route, navigation }) {
       // risposto la si scarta, per non tornare indietro nel tempo.
       const raw0 = preRaw || await api.messages(cid, want + 1);
       if (preRaw) { if (netDone.current) return; } else { netDone.current = true; convCache.save(cid, raw0); }
+      if (!preRaw && mounted.current) {
+        const lastId = raw0[raw0.length - 1]?.message_id;
+        const cursor = serverCursor.current;
+        if (lastId && (cursor.cid !== cid || lastId > cursor.id)) {
+          serverCursor.current = { cid, id: lastId };
+          setServerHasMessages(true);
+        }
+      }
       const tNet = Date.now() - t0;
       const more = raw0.length > want;
       const raw = more ? raw0.slice(raw0.length - want) : raw0;
@@ -333,7 +345,9 @@ export default function ChatScreen({ route, navigation }) {
             // Ogni 5 decifrature si lascia respirare l'interfaccia.
             if (heavy && heavy % 5 === 0) await new Promise((r) => setTimeout(r, 0));
             heavy++;
-            const pt = await decryptAny(m, user, { deep, breathe: deep });
+            const pt = api.getServerUrl() === DEFAULT_SERVER
+              ? decryptEnvelope(m.envelope, user.kem.secretKey)
+              : await decryptAny(m, user, { deep, breathe: deep });
             if (pt == null) {
               body = UNDEC;
               // Perché non si è aperta: forma delle buste, chiavi possedute, dispositivo.
@@ -524,10 +538,39 @@ export default function ChatScreen({ route, navigation }) {
   // Aggiornamenti: solo con l'app in primo piano e questa chat davanti agli occhi.
   // Passata leggera: i messaggi già decifrati arrivano dalla memoria, i nuovi si decifrano
   // per la loro strada. Niente tentativi a tentoni qui: quelli vanno in sottofondo.
+  const [live, setLive] = useState(false);
+  useFocusEffect(useCallback(() => {
+    if (!convId || !serverHasMessages || api.getServerUrl() !== DEFAULT_SERVER) return;
+    let controller;
+    const start = async (state) => {
+      controller?.abort();
+      setLive(false);
+      if (state !== "active" || serverCursor.current.cid !== convId) return;
+      const request = new AbortController();
+      controller = request;
+      try {
+        while (!request.signal.aborted) {
+          const before = serverCursor.current;
+          if (before.cid !== convId || !before.id) break;
+          const result = await api.messageEvents(convId, before.id, request.signal);
+          if (request.signal.aborted) break;
+          setLive(true);
+          // Refresh also on idle responses for delivery and read receipts.
+          await load(convId, winRef.current, false);
+          if (result.changed && serverCursor.current.id === before.id) break;
+        }
+      } catch { /* fall back to polling when a gateway has no events route */ }
+      finally { if (!request.signal.aborted) setLive(false); }
+    };
+    const sub = AppState.addEventListener("change", start);
+    start(AppState.currentState);
+    return () => { controller?.abort(); sub.remove(); };
+  }, [convId, load, serverHasMessages]));
+
   usePoll(async () => {
     await load(convId, winRef.current, false);
     if (pendingRef.current) scheduleRepair(convId);
-  }, 1000, { runOnFocus: false, active: !!convId });
+  }, 1000, { runOnFocus: false, active: !!convId && !live });
   usePoll(async () => {
     try { const r = await api.pulseTypingGet(convId); if (mounted.current) setTypers(Array.isArray(r?.typing) ? r.typing : []); } catch { /* */ }
     try { await api.presencePing(); } catch { /* */ }
@@ -591,6 +634,21 @@ export default function ChatScreen({ route, navigation }) {
       const isVid = asset.type === "video" || (asset.mimeType || "").startsWith("video");
       // FOTO: si riduce sotto i 500 KB e si prepara la micro-anteprima. Una foto da 4 MB
       // impiegava un'eternità a partire e ad aprirsi; la cifratura non cambia di una virgola.
+      const info = isVid ? await FileSystem.getInfoAsync(asset.uri) : null;
+      const size = asset.fileSize || info?.size || 0;
+      if (isVid && size > bigatt.ATT_CHUNK) {
+        setUploadPct(0);
+        const att = await bigatt.uploadFileChunked({
+          uri: asset.uri, name: asset.fileName || `video_${Date.now()}.mp4`,
+          mime: asset.mimeType || "video/mp4", size, allowed: others, onProgress: setUploadPct,
+        });
+        const envelopes = await buildEnvelopes(packMessage(text.trim(), [att], replyTo, ttl), others, user);
+        const res = await api.send({ to_lns: others, envelopes });
+        setText(""); setReplyTo(null);
+        if (res?.conv_id && res.conv_id !== convId) setConvId(res.conv_id);
+        await load(res?.conv_id || convId);
+        return;
+      }
       let b64 = null;
       let prev = null;
       if (!isVid) {

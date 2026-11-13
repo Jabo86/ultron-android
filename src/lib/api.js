@@ -363,6 +363,10 @@ export const purgeMessages = (conv_id, message_ids) =>
 // ogni aggiornamento (93 messaggi = 1,4 MB ogni 4 secondi, ed era la vera lentezza).
 export const messages = (conv_id, limit, before) =>
   withAuth((a) => client.get("/public/pulse/messages", { params: { conv_id, limit, before }, ...a }).then((r) => r.data));
+export const messageEvents = (conv_id, after, signal) =>
+  withAuth((a) => client.get("/public/pulse/message-events", {
+    ...a, params: { conv_id, after }, timeout: 20000, signal,
+  }).then((r) => r.data));
 export const pulseReact = (message_id, emoji) =>
   withAuth((a) => client.post("/public/pulse/react", { message_id, emoji }, a).then((r) => r.data));
 export const pulseTyping = (conv_id) =>
