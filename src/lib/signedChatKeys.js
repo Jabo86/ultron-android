@@ -34,7 +34,7 @@ export function hostedSignedChatKeys(owner, peer, validateKeys) {
     }
     validateKeys(bundle.kem_pk_hex, bundle.dh_pk_hex);
     if (!pinned) await AsyncStorage.setItem(scope, identity);
-    return { kem: bundle.kem_pk_hex, dh: bundle.dh_pk_hex };
+    return { kem: bundle.kem_pk_hex, dh: bundle.dh_pk_hex, identityKey: bundle.identity_pk_hex };
   });
   pending = operation.catch(() => {});
   return operation;

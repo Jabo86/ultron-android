@@ -155,6 +155,24 @@ export const publishSignedKeys = (bundle) =>
 export const signedKeys = (peer) =>
   withAuth((a, transport) => transport.get(`/public/pulse/signed-keys/${encodeURIComponent(peer)}`, a).then((r) => r.data));
 
+// Scope queued crypto operations to the authenticated account and transport.
+export function authenticatedScope(user) {
+  const { signal } = session;
+  const check = () => {
+    checkSession(signal);
+    if (user?.lns !== _kf?.lns || user?.server !== _base) throw new Error("La sessione ULTRON è cambiata.");
+  };
+  check();
+  return check;
+}
+
+export const hostedPrekeyPools = (peer) =>
+  withAuth((a, transport) => transport.get(`/public/pulse/prekey-pools/${encodeURIComponent(peer)}`, a).then((r) => r.data));
+export const hostedPublishPrekeys = (batch) =>
+  withAuth((a, transport) => transport.post("/public/pulse/prekey-batches", batch, a).then((r) => r.data));
+export const hostedClaimPrekey = (peer, device) =>
+  withAuth((a, transport) => transport.post(`/public/pulse/prekey-claim/${encodeURIComponent(peer)}/${encodeURIComponent(device)}`, null, a).then((r) => r.data));
+
 /// Curva d'aggancio dei contatti: quella che si può ruotare. Se un contatto non l'ha
 /// pubblicata si usa la sua curva d'identità, cioè la generazione 0.
 export const pulseHdhKeys = (lns_list) =>

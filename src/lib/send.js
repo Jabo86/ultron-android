@@ -7,6 +7,7 @@ import { bytesToHex, encryptForRecipients } from "./crypto";
 import { getVerified, keyFingerprint } from "./verify";
 import { addSelfKeys } from "./devices";
 import { ratchetEnvelopesFor } from "./ratchet";
+import { assertHostedLegacyAllowed } from "./hostedChatPolicy";
 import { hostedSignedChatKeys } from "./signedChatKeys";
 import * as api from "./api";
 
@@ -14,6 +15,7 @@ export async function buildEnvelopes(payload, others, user) {
   // The hosted gateway exposes static ML-KEM keys for individual chat.
   if (others.length === 1 && api.getServerUrl() === DEFAULT_SERVER) {
     const [peer] = others;
+    await assertHostedLegacyAllowed(user, peer);
     const pinned = await getVerified(peer);
     const validateKeys = (kem, dh) => {
       if (pinned && (!dh || keyFingerprint(peer, kem || "", dh) !== pinned.fp)) {
@@ -30,6 +32,7 @@ export async function buildEnvelopes(payload, others, user) {
       validateKeys(kem, dhKeys?.[peer]);
     }
     if (!kem) throw new Error(peer);
+    await assertHostedLegacyAllowed(user, peer);
     return encryptForRecipients(payload, { [peer]: kem, [user.lns]: bytesToHex(user.kem.publicKey) });
   }
 
