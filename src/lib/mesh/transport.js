@@ -9,6 +9,7 @@
 import * as FileSystem from "expo-file-system/legacy";
 import { NativeModules } from "react-native";
 import { PACKET_SIZE } from "./onion";
+import { randInt } from "./rand";
 
 const Ctrl = NativeModules.MeshControl || null;
 export function nativeAvailable() { return !!Ctrl; }
@@ -80,7 +81,7 @@ export async function send(packet, next) {
   // Il nome del file porta il salto successivo: il mezzo locale e' in broadcast, ma il
   // motore nativo della Fase 2 potra' consegnarlo direttamente a quel nodo.
   const hop = typeof next === "string" && /^[0-9a-f]{32}$/.test(next) ? next : "bcast";
-  const name = p.OUT + Date.now() + "-" + Math.floor(Math.random() * 1e9) + "-" + hop + ".bin";
+  const name = p.OUT + Date.now() + "-" + randInt(1e9) + "-" + hop + ".bin";
   await atomic(name, packet);
 }
 
@@ -112,7 +113,7 @@ export async function sendProbe(code) {
   const b = new Uint8Array(64);
   const head = PROBE_MAGIC + String(code).slice(0, 8).padEnd(8, "0");
   for (let i = 0; i < head.length; i++) b[i] = head.charCodeAt(i);
-  const name = p.OUT + Date.now() + "-" + Math.floor(Math.random() * 1e9) + "-probe.bin";
+  const name = p.OUT + Date.now() + "-" + randInt(1e9) + "-probe.bin";
   await atomic(name, b);
 }
 

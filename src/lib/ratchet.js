@@ -11,6 +11,7 @@ import {
   initReceiver2Gens, ratchetEncrypt, ratchetDecrypt,
 } from "./ratchetCore";
 import { candidateGens, keysFor } from "./keygen";
+import * as SA from "./senderAuth";
 
 const BLOB = "rat";
 const SPK_BLOB = "spk";   // chiavi statiche dei contatti, tenute in cassaforte locale
@@ -169,11 +170,19 @@ export async function ratchetEnvelopesFor(payload, peer, user) {
       // altrimenti si scende alla v1 post-quantistica pura, mai a niente.
       const hybrid = caps.includes(CAP2) && !!theirDhPk;
       if (!all[k] && staticPk) {
+        // AUTENTICAZIONE: se acceso, la radice include DH(identita' mia, identita' sua). La
+        // sua identita' e' quella che abbiamo in cassaforte (la prima vista), non per forza
+        // quella che il server mostra adesso.
+        let auth;
+        if (hybrid && user.dh && (await SA.sendOn())) {
+          const idPk = await SA.pinnedDhPk(peer, user.lns, bytesToHex(user.dh.publicKey));
+          if (idPk) auth = { mySk: bytesToHex(user.dh.secretKey), myPk: bytesToHex(user.dh.publicKey), theirPk: idPk };
+        }
         const st = hybrid
           ? initSender2({
               theirStaticPk: staticPk, theirDhPk, theirStaticPk1024: theirK5, theirHdhPk: theirHdh,
               theirRatchetPk: d.kem_pub, pkId: d.pk_id,
-              myDev, theirDev: d.device_id, peer,
+              myDev, theirDev: d.device_id, peer, auth,
             })
           : initSender({
               theirStaticPk: staticPk, theirRatchetPk: d.kem_pub, pkId: d.pk_id,
@@ -202,7 +211,7 @@ export async function ratchetEnvelopesFor(payload, peer, user) {
 }
 
 /// Tentativo di decifratura ratchet su una lista di buste. Ritorna il testo o null.
-export async function tryRatchetDecrypt(list, user, peerHint) {
+export async function tryRatchetDecrypt(list, user, peerHint, info) {
   const rats = (list || []).filter((e) => e && e.r && e.h);
   const myDhSk = user && user.dh && user.dh.secretKey ? bytesToHex(user.dh.secretKey) : "";
   const myDhPk = user && user.dh && user.dh.publicKey ? bytesToHex(user.dh.publicKey) : "";
@@ -222,6 +231,10 @@ export async function tryRatchetDecrypt(list, user, peerHint) {
     } catch { gens = null; }
   }
   if (!rats.length) return null;
+  // AUTENTICAZIONE: la chiave d'identita' del mittente come la conosciamo noi, e il rigore.
+  const strict = await SA.strictOn();
+  let senderIdPk = "";
+  try { senderIdPk = peerHint ? await SA.pinnedDhPk(peerHint, user && user.lns, myDhPk) : ""; } catch { /* niente */ }
   const myDev = await myDeviceId();
   const all = await loadAll();
   for (const env of rats) {
@@ -229,6 +242,9 @@ export async function tryRatchetDecrypt(list, user, peerHint) {
     const k = sessionKey(h.sdev, myDev);
     let st = all[k];
     let fresh = "";
+    // Con il rigore acceso una sessione NUOVA senza autenticazione non si apre (blocco del
+    // downgrade). Le sessioni gia' aperte continuano.
+    if (!st && h.init && strict && !(h.v === 2 && h.init.au === 1)) continue;
     if (!st && h.init) {
       // primo messaggio di una conversazione: la radice si ricava con la chiave d'identità,
       // il primo anello del ratchet è la chiave usa-e-getta che il mittente ha consumato.
@@ -242,6 +258,7 @@ export async function tryRatchetDecrypt(list, user, peerHint) {
             myStaticPk: bytesToHex(user.kem.publicKey), myDhSk, myDhPk,
             myStaticSk1024: myK5Sk, myStaticPk1024: myK5Pk,
             myRatchetPk: pub, myRatchetSk: sk, myDev, peer: peerHint || "",
+            senderIdPk, myIdDhSk: myDhSk, myIdDhPk: myDhPk, requireAuth: strict,
           }, gens, env)
         : initReceiver({
             header: h, myStaticSk: bytesToHex(user.kem.secretKey),
@@ -258,6 +275,7 @@ export async function tryRatchetDecrypt(list, user, peerHint) {
       await saveAll(all);
       // Sessione aperta per davvero: la usa-e-getta ha finito il suo lavoro e si butta.
       if (fresh) await consumePrekey(fresh);
+      if (info) info.authed = !!r.state.authed;
       return r.plaintext;
     }
   }

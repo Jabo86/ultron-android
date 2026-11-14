@@ -13,6 +13,7 @@ import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.SecureRandom
 
 /**
  * Notifiche del nodo ULTRON, senza push di terze parti.
@@ -220,18 +221,23 @@ class WakeService : Service() {
   // Anche a schermo spento o con l'app chiusa, invia richieste finte (innocuo /api/health,
   // con lo stesso riempitivo casuale delle richieste vere) a intervalli casuali. Così chi
   // osserva la rete non distingue i momenti di silenzio da quelli in cui comunichi davvero.
+  // Il momento del rumore deve essere imprevedibile: se si potesse indovinare quando parte, chi
+  // osserva la rete distinguerebbe il rumore dai messaggi veri. Per questo SecureRandom,
+  // non Math.random (un generatore a 48 bit che si ricostruisce da poche uscite).
+  private val rnd = SecureRandom()
+
   private fun randPad(): String {
     val cs = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-    val n = 24 + (Math.random() * 1200).toInt()
+    val n = 24 + rnd.nextInt(1200)
     val sb = StringBuilder(n)
-    for (i in 0 until n) sb.append(cs[(Math.random() * cs.length).toInt()])
+    for (i in 0 until n) sb.append(cs[rnd.nextInt(cs.length)])
     return sb.toString()
   }
 
   // Intervallo casuale esponenziale (processo di Poisson), limitato tra 6 e 60 s: una
   // cadenza fissa sarebbe a sua volta un'impronta riconoscibile.
   private fun nextDelayMs(): Long {
-    val u = Math.min(0.999999, Math.max(1e-6, Math.random()))
+    val u = Math.min(0.999999, Math.max(1e-6, rnd.nextDouble()))
     val d = (-17000.0 * Math.log(1.0 - u)).toLong()
     return Math.min(60000L, Math.max(6000L, d))
   }

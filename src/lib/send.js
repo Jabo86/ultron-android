@@ -8,6 +8,7 @@ import { getVerified, keyFingerprint } from "./verify";
 import { addSelfKeys } from "./devices";
 import { ratchetEnvelopesFor } from "./ratchet";
 import * as api from "./api";
+import * as SA from "./senderAuth";
 
 export async function buildEnvelopes(payload, others, user) {
   // The hosted gateway exposes static ML-KEM keys for individual chat.
@@ -21,7 +22,17 @@ export async function buildEnvelopes(payload, others, user) {
       throw new Error("Le chiavi del contatto verificato sono cambiate. Verifica di nuovo il QR prima di inviare.");
     }
     if (!keys?.[peer]) throw new Error(peer);
-    return encryptForRecipients(payload, { [peer]: keys[peer], [user.lns]: bytesToHex(user.kem.publicKey) });
+    // AUTENTICAZIONE: con l'interruttore acceso la busta si apre solo con la chiave d'identita'
+    // di chi la manda (stesso formato, nessun campo in piu'). Senza chiave del contatto in
+    // cassaforte si ripiega sul vecchio modo, a meno che il rigore non sia acceso.
+    let auth;
+    if (user.dh && (await SA.sendOn())) {
+      const myDh = bytesToHex(user.dh.publicKey);
+      const peerDh = await SA.pinnedDhPk(peer, user.lns, myDh);
+      if (peerDh) auth = { mySk: bytesToHex(user.dh.secretKey), from: user.lns, peers: { [String(peer).toLowerCase()]: peerDh, [String(user.lns).toLowerCase()]: myDh } };
+      else if (await SA.strictOn()) throw new Error("Chiave d'identita' del contatto non disponibile: invio bloccato (modalita' rigorosa).");
+    }
+    return encryptForRecipients(payload, { [peer]: keys[peer], [user.lns]: bytesToHex(user.kem.publicKey) }, auth);
   }
 
   const envelopes = [];

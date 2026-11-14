@@ -8,7 +8,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ml_kem768 } from "@noble/post-quantum/ml-kem.js";
 import { Platform } from "react-native";
-import { bytesToHex, hexToBytes, randomHex, decryptEnvelope } from "./crypto";
+import { bytesToHex, hexToBytes, randomHex, decryptEnvelope, decryptEnvelopeEx } from "./crypto";
+import * as SA from "./senderAuth";
 import { getBlob, setBlob } from "./lock";
 import * as api from "./api";
 import { CAP, CAP2, tryRatchetDecrypt } from "./ratchet";
@@ -113,10 +114,29 @@ export async function decryptAny(msg, user, opts) {
   const budget = opts && typeof opts.budget === "number" ? opts.budget : (deep ? 60 : 8);
   const breathe = !!(opts && opts.breathe);
   let used = 0;
+  // AUTENTICAZIONE DEL MITTENTE. Con il contesto si verifica che la busta sia stata fatta da
+  // chi il server dice (serve il suo segreto d'identita'). `strict` = rifiuta il resto.
+  // `opts.info.authed` dice al chiamante se la busta aperta era autenticata.
+  let ctx = null, strict = false;
+  try {
+    strict = await SA.strictOn();
+    if (user && user.dh && msg && msg.from_lns) {
+      const myPk = bytesToHex(user.dh.publicKey);
+      const senderPk = await SA.pinnedDhPk(msg.from_lns, user.lns, myPk);
+      if (senderPk) ctx = { mySk: bytesToHex(user.dh.secretKey), senderPk, from: msg.from_lns, to: user.lns, strict };
+    }
+  } catch { /* senza contesto si resta al comportamento di prima (a meno del rigore) */ }
   const attempt = async (env, secBytes) => {
     if (used >= budget) return undefined;
     used++;
     if (breathe && used % 3 === 0) await new Promise((r) => setTimeout(r, 0));
+    if (ctx) {
+      const r = decryptEnvelopeEx(env, secBytes, Object.assign({}, ctx, { to: (env && env.for) || ctx.to }));
+      if (opts && opts.info && r) opts.info.authed = r.authed;
+      return r ? r.pt : null;
+    }
+    if (strict) return null; // rigore acceso e mittente non verificabile: niente
+    if (opts && opts.info) opts.info.authed = false;
     return decryptEnvelope(env, secBytes);
   };
   const list = Array.isArray(msg?.envelopes) && msg.envelopes.length
@@ -126,7 +146,7 @@ export async function decryptAny(msg, user, opts) {
   // 0) BLOCCO R: buste con doppio ratchet (chiave nuova a ogni messaggio, auto-guarigione)
   if (list.some((e) => e && e.r && e.h)) {
     try {
-      const pt = await tryRatchetDecrypt(list, user, msg && msg.from_lns);
+      const pt = await tryRatchetDecrypt(list, user, msg && msg.from_lns, opts && opts.info);
       if (pt != null) return pt;
     } catch { /* si prosegue con gli schemi precedenti */ }
   }

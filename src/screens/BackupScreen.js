@@ -44,13 +44,10 @@ export default function BackupScreen({ route, navigation }) {
   useEffect(() => { if (pinAvail && !user) setMode("password"); }, [pinAvail, user]);
 
   const secret = async () => {
-    if (mode === "pin") {
-      if (!/^\d{4,10}$/.test(pin)) throw new Error(en ? "Type your app PIN." : "Digita il PIN dell'app.");
-      const r = await verifyPin(pin);
-      if (r !== "ok") throw new Error(en ? "Wrong PIN." : "PIN errato.");
-      return { password: "pin:" + pin, hint: "pin" };
-    }
-    if (pwd.length < 8) throw new Error(en ? "The password must be at least 8 characters." : "La password deve avere almeno 8 caratteri.");
+    // Per CREARE un backup serve una frase lunga: il PIN (4-10 cifre) si forza offline in
+    // pochi minuti. Il PIN resta valido solo per APRIRE i backup fatti in passato.
+    const weak = bkp.passphraseProblem(pwd);
+    if (weak) throw new Error(weak);
     if (pwd !== pwd2) throw new Error(en ? "The two passwords are different." : "Le due password non coincidono.");
     return { password: pwd, hint: "password" };
   };
@@ -199,43 +196,20 @@ export default function BackupScreen({ route, navigation }) {
             </View>
 
             <Text style={styles.cardHint}>{en ? "Protection" : "Protezione"}</Text>
-            <View style={styles.chips}>
-              <TouchableOpacity style={[styles.chip, mode === "password" && styles.chipOn]} onPress={() => setMode("password")} testID="backup-mode-password">
-                <Text style={[styles.chipTxt, mode === "password" && styles.chipTxtOn]}>{en ? "Dedicated password" : "Password dedicata"}</Text>
-              </TouchableOpacity>
-              {pinAvail && (
-                <TouchableOpacity style={[styles.chip, mode === "pin" && styles.chipOn]} onPress={() => setMode("pin")} testID="backup-mode-pin">
-                  <Text style={[styles.chipTxt, mode === "pin" && styles.chipTxtOn]}>{en ? "App PIN" : "PIN dell'app"}</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {mode === "pin" ? (
-              <>
-                <TextInput
-                  style={styles.input} value={pin} onChangeText={setPin} placeholder={en ? "App PIN" : "PIN dell'app"}
-                  placeholderTextColor={theme.textFaint} keyboardType="number-pad" secureTextEntry maxLength={10}
-                  testID="backup-pin-input"
-                />
-                <Text style={styles.warn}>
-                  {en ? "A 4-6 digit PIN is weak for a file that leaves the phone: prefer a long password for backups you keep for years."
-                      : "Un PIN di 4-6 cifre è debole per un file che esce dal telefono: per i backup che conservi per anni è meglio una password lunga."}
-                </Text>
-              </>
-            ) : (
-              <>
-                <TextInput
-                  style={styles.input} value={pwd} onChangeText={setPwd} placeholder={en ? "Backup password (min 8)" : "Password del backup (min 8)"}
-                  placeholderTextColor={theme.textFaint} secureTextEntry autoCapitalize="none" autoCorrect={false}
-                  testID="backup-pwd-input"
-                />
-                <TextInput
-                  style={styles.input} value={pwd2} onChangeText={setPwd2} placeholder={en ? "Repeat the password" : "Ripeti la password"}
-                  placeholderTextColor={theme.textFaint} secureTextEntry autoCapitalize="none" autoCorrect={false}
-                  testID="backup-pwd2-input"
-                />
-              </>
-            )}
+            <Text style={styles.warn}>
+              {en ? "Use a long passphrase (12+ characters, several words). A PIN is not accepted: a stolen backup file can be attacked offline."
+                  : "Usa una frase lunga (almeno 12 caratteri, meglio più parole). Il PIN non è accettato: un file di backup rubato si può attaccare offline."}
+            </Text>
+            <TextInput
+              style={styles.input} value={pwd} onChangeText={setPwd} placeholder={en ? "Backup passphrase (min 12)" : "Frase del backup (min 12)"}
+              placeholderTextColor={theme.textFaint} secureTextEntry autoCapitalize="none" autoCorrect={false}
+              testID="backup-pwd-input"
+            />
+            <TextInput
+              style={styles.input} value={pwd2} onChangeText={setPwd2} placeholder={en ? "Repeat the passphrase" : "Ripeti la frase"}
+              placeholderTextColor={theme.textFaint} secureTextEntry autoCapitalize="none" autoCorrect={false}
+              testID="backup-pwd2-input"
+            />
 
             <TouchableOpacity style={[styles.btn, busy && { opacity: 0.6 }]} onPress={doExport} disabled={!!busy} testID="backup-export-btn">
               {busy === "export" ? <ActivityIndicator color="#fff" /> : <Ionicons name="lock-closed-outline" size={17} color="#fff" />}

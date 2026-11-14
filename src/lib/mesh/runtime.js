@@ -7,6 +7,7 @@ import { wrap, MAX_PAYLOAD, MAX_PAYLOAD_SAFE, PACKET_SIZE, routeHybrid } from ".
 import * as transport from "./transport";
 import { bytesToHex } from "../crypto";
 import { hexToBytes } from "./onion";
+import { randInt, randFloat, shuffle } from "./rand";
 
 let timer = null;
 let deliverCb = null;
@@ -85,7 +86,7 @@ export function routeTo(destIdHex, destPkHex, destXHex) {
   const dest = { id: hexToBytes(destIdHex), pk: hexToBytes(destPkHex) };
   if (hyDest) dest.xpk = hexToBytes(destXHex);
   let pool = knownPeers().filter((p) => p.id !== destIdHex && (!me || p.id !== me.id));
-  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  shuffle(pool);
   // Se il destinatario sa fare l'ibrido, si PREFERISCONO relay che lo sanno fare: basta un
   // salto senza curva per far scendere l'intero pacchetto alla cipolla precedente.
   if (hyDest) {
@@ -113,14 +114,14 @@ export function mixSize() { return mix.length; }
 export function mixReset() { mix = []; }
 
 function mixPush(packet, next, now = Date.now()) {
-  mix.push({ packet, next, due: now + MIX_MIN + Math.floor(Math.random() * (MIX_MAX - MIX_MIN)) });
+  mix.push({ packet, next, due: now + MIX_MIN + randInt(MIX_MAX - MIX_MIN) });
 }
 /// Estrae i pacchetti pronti, RIMESCOLATI (non in ordine di arrivo).
 export function mixDue(now = Date.now()) {
   const due = [], keep = [];
   for (const m of mix) (m.due <= now ? due : keep).push(m);
   mix = keep;
-  for (let i = due.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [due[i], due[j]] = [due[j], due[i]]; }
+  shuffle(due);
   return due;
 }
 
@@ -181,7 +182,7 @@ async function pump() {
     // Più insistente quando non si vede NESSUNO: è il momento in cui serve farsi trovare
     // (senza internet è l'unico modo per accorgersi l'uno dell'altro).
     const alone = knownPeers().length === 0;
-    if (now - beaconAt > (alone ? 4000 + Math.random() * 3000 : 20000 + Math.random() * 25000)) {
+    if (now - beaconAt > (alone ? 4000 + randFloat() * 3000 : 20000 + randFloat() * 25000)) {
       beaconAt = now;
       const bp = beaconPacket();
       if (bp) { try { await transport.send(bp, null); } catch { /* si riprova */ } }
@@ -205,7 +206,7 @@ export async function start(user, onDeliver, onQueue, onCarry) {
   await transport.writeMode(true);   // accende SUBITO il motore nativo (MeshControl)
   if (timer) clearTimeout(timer);
   // Cadenza CASUALE (non fissa): una cadenza fissa è essa stessa un'impronta riconoscibile.
-  const jitter = () => 700 + Math.floor(Math.random() * 2100);
+  const jitter = () => 700 + randInt(2100);
   const loop = async () => { await pump(); if (timer) timer = setTimeout(loop, jitter()); };
   timer = setTimeout(loop, jitter());
   return info;
@@ -227,7 +228,7 @@ export async function stop() {
 export async function startSelfTest() {
   const info = node.nodeInfo();
   if (!info) throw new Error("nodo non attivo");
-  const code = "ST" + Math.random().toString(36).slice(2, 8).toUpperCase();
+  const code = "ST" + randFloat().toString(36).slice(2, 8).toUpperCase();
   const me = { id: hexToBytes(info.id), pk: hexToBytes(info.pk) };
   if (info.x) me.xpk = hexToBytes(info.x);
   const body = new TextEncoder().encode(code + ":prova-relay");

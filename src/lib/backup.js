@@ -7,8 +7,8 @@ import * as Sharing from "expo-sharing";
 import * as DocumentPicker from "expo-document-picker";
 import { Platform } from "react-native";
 import notifee, { AndroidImportance, TimeUnit, TriggerType } from "react-native-notify-kit";
-import { scrypt } from "@noble/hashes/scrypt.js";
-import { gcm } from "@noble/ciphers/aes.js";
+import { FMT, encryptContainer, decryptContainer, passphraseProblem, enc8, dec8 } from "./backupCrypto";
+export { FMT, encryptContainer, decryptContainer, passphraseProblem };
 import {
   bytesToHex, hexToBytes, randomHex, bytesToBase64, base64ToBytes,
   unpackMessage, decryptFileBytes,
@@ -19,48 +19,12 @@ import { getBlob, setBlob } from "./lock";
 import { decryptAny } from "./devices";
 import * as mbx from "./mailbox";
 
-export const FMT = "lattice-backup-1";
-const KDF = { N: 1 << 14, r: 8, p: 1 };
 const ARC_BLOB = "arc";
 const K_LAST = "lat.bkp.last";
 const K_EVERY = "lat.bkp.every"; // "off" | "weekly" | "monthly"
 const MAX_FILE = 8 * 1024 * 1024;
 const MAX_TOTAL = 120 * 1024 * 1024;
 const RESTORED_DIR = "lattice-ripristinati/";
-
-function enc8(str) {
-  const out = [];
-  const s = String(str);
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (c < 0x80) out.push(c);
-    else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f));
-    else if (c >= 0xd800 && c <= 0xdbff) {
-      const c2 = s.charCodeAt(++i);
-      const cp = 0x10000 + ((c & 0x3ff) << 10) + (c2 & 0x3ff);
-      out.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 0x3f), 0x80 | ((cp >> 6) & 0x3f), 0x80 | (cp & 0x3f));
-    } else out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
-  }
-  return new Uint8Array(out);
-}
-function dec8(bytes) {
-  const codes = [];
-  let i = 0;
-  while (i < bytes.length) {
-    const c = bytes[i++];
-    if (c < 0x80) codes.push(c);
-    else if (c < 0xe0) codes.push(((c & 0x1f) << 6) | (bytes[i++] & 0x3f));
-    else if (c < 0xf0) codes.push(((c & 0x0f) << 12) | ((bytes[i++] & 0x3f) << 6) | (bytes[i++] & 0x3f));
-    else {
-      const cp = ((c & 0x07) << 18) | ((bytes[i++] & 0x3f) << 12) | ((bytes[i++] & 0x3f) << 6) | (bytes[i++] & 0x3f);
-      const v = cp - 0x10000;
-      codes.push(0xd800 + (v >> 10), 0xdc00 + (v & 0x3ff));
-    }
-  }
-  let s = "";
-  for (let j = 0; j < codes.length; j += 8192) s += String.fromCharCode.apply(null, codes.slice(j, j + 8192));
-  return s;
-}
 
 // ── Contenuto del backup ──
 export async function buildPayload({ user, includeAtts = false, onStep } = {}) {
@@ -149,32 +113,6 @@ export async function buildPayload({ user, includeAtts = false, onStep } = {}) {
   };
 }
 
-// ── Container cifrato ──
-export function encryptContainer(payload, password, hint) {
-  const salt = randomHex(16);
-  const key = scrypt(enc8(password), hexToBytes(salt), { N: KDF.N, r: KDF.r, p: KDF.p, dkLen: 32 });
-  const iv = randomHex(12);
-  const ct = gcm(key, hexToBytes(iv)).encrypt(enc8(JSON.stringify(payload)));
-  return {
-    fmt: FMT, at: payload.at, lns: payload.lns, hint: hint || "password",
-    kdf: { alg: "scrypt", N: KDF.N, r: KDF.r, p: KDF.p, salt },
-    iv, ct: bytesToBase64(ct),
-  };
-}
-
-export function decryptContainer(container, password) {
-  if (!container || container.fmt !== FMT) throw new Error("Questo file non è un backup ULTRON.");
-  const k = container.kdf || {};
-  const key = scrypt(enc8(password), hexToBytes(k.salt || ""), { N: k.N || KDF.N, r: k.r || KDF.r, p: k.p || KDF.p, dkLen: 32 });
-  let pt;
-  try {
-    pt = gcm(key, hexToBytes(container.iv)).decrypt(base64ToBytes(container.ct));
-  } catch {
-    throw new Error("Password errata (oppure il file è danneggiato).");
-  }
-  return JSON.parse(dec8(pt));
-}
-
 function fileName(lns, at) {
   const d = String(at || new Date().toISOString()).slice(0, 16).replace(/[:T]/g, "-");
   const who = String(lns || "lattice").split("@")[0].replace(/[^a-zA-Z0-9._-]/g, "");
@@ -182,7 +120,8 @@ function fileName(lns, at) {
 }
 
 export async function exportBackup({ user, includeAtts, password, hint, onStep } = {}) {
-  if (!password || String(password).length < 4) throw new Error("Serve una password (o il PIN) per cifrare il backup.");
+  const weak = passphraseProblem(password);
+  if (weak) throw new Error(weak);
   const { payload, counts } = await buildPayload({ user, includeAtts, onStep });
   onStep && onStep("Cifratura del file");
   const container = encryptContainer(payload, String(password), hint);

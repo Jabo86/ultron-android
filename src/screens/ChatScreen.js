@@ -47,6 +47,7 @@ import { flushBlobs } from "../lib/lock";
 import { exportConversation } from "../lib/legalExport";
 import { useTint } from "../lib/appearance";
 import { theme } from "../theme";
+import * as tc from "../lib/translateConsent";
 
 // ── ORA E GIORNATA (v2.8.0) ────────────────────────────────────────────────
 // Prima le bolle non dicevano quando: si vedeva l'ordine, non l'orario. Da qui l'ora
@@ -247,9 +248,11 @@ export default function ChatScreen({ route, navigation }) {
 
   const [trTarget, setTrTarget] = useState(null);
   const effTarget = trTarget || (lang === "en" ? "en" : "it");
-  const onTranslate = async (item) => {
+  const onTranslate = async (item, auto) => {
     if (!item?.body) return;
     const target = effTarget;
+    // Il testo esce dalla cifratura end-to-end: serve il consenso. L'automatica non chiede.
+    if (auto ? !(await tc.hasConsent()) : !(await tc.ask(lang))) return;
     try {
       const r = await api.translate(item.body, target);
       const detected = (r?.detected || "").toLowerCase();
@@ -266,7 +269,7 @@ export default function ChatScreen({ route, navigation }) {
   }, []);
   useEffect(() => {
     if (!autoTrRef.current || !msgs.length) return;
-    msgs.filter((m) => !m.mine && m.body && translations[m.id] == null).slice(-40).forEach((m) => { onTranslate(m); });
+    msgs.filter((m) => !m.mine && m.body && translations[m.id] == null).slice(-40).forEach((m) => { onTranslate(m, true); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [msgs]);
 

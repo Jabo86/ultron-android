@@ -250,6 +250,8 @@ export const CAP2 = "rat2";
 const L2_INIT = "lattice-ratchet-init-v2";
 const L2_ROOT = "lattice-ratchet-root-v2";
 const L2_CHAIN = "lattice-ratchet-chain-v2";
+const L2_AUTH = "lattice-ratchet-auth-v1"; // autenticazione dell'iniziatore (X25519 d'identita' di entrambi)
+
 // Cadenza del passo post-quantistico: ogni 3 turni oppure ogni 20 minuti, quello che
 // arriva prima. E' il ritardo massimo con cui un intruso post-quantistico viene cacciato.
 const PQ_EVERY = 3;
@@ -314,7 +316,7 @@ function transcript2(bKemPkHex, bDhPkHex, pkId, ct1b64, epkb64, sdevA, lvl) {
 function aad2(h) {
   return u8([RAT_V2, h.sdev || "", h.pf || "", h.xpk || "", h.pk || "", h.ct || "", h.kf || "",
     h.n | 0, h.pn | 0, h.init ? h.init.ct1 : "", h.init ? h.init.epk : "",
-    h.init ? (h.init.k || "") : ""].join("|"));
+    h.init ? (h.init.k || "") : ""].concat(h.init && h.init.au ? ["A"] : []).join("|"));
 }
 const skKey2 = (pf, n) => String(pf || "") + ":" + n;
 function newX() {
@@ -325,7 +327,13 @@ function newX() {
 /// Chi apre la conversazione. La radice nasce da DUE segreti: incapsulazione ML-KEM-768
 /// sull'identita' del destinatario e X25519 effimero contro la sua chiave su curva. La
 /// chiave usa-e-getta entra al primo passo, che avviene subito col primo messaggio.
-export function initSender2({ theirStaticPk, theirDhPk, theirRatchetPk, pkId, myDev, theirDev, peer, theirStaticPk1024, theirHdhPk }) {
+// `auth` (facoltativo) = { mySk, myPk, theirPk }: la coppia X25519 d'IDENTITA' del mittente e la
+// chiave X25519 d'identita' del destinatario (quella del numero di sicurezza, non la curva
+// d'aggancio ruotabile). Con `auth` la radice dipende anche da DH(identita' mittente,
+// identita' destinatario): chi conosce solo le chiavi pubbliche del destinatario non puo'
+// aprire una sessione facendosi passare per un contatto. Autenticazione classica
+// (X25519); la riservatezza resta post-quantistica.
+export function initSender2({ theirStaticPk, theirDhPk, theirRatchetPk, pkId, myDev, theirDev, peer, theirStaticPk1024, theirHdhPk, auth }) {
   if (!theirStaticPk || !theirDhPk || !theirRatchetPk) return null;
   // Se il destinatario ha pubblicato una curva d'aggancio ruotabile si usa quella; altrimenti
   // la sua curva d'identità, che è la generazione 0. Mai niente.
@@ -340,17 +348,24 @@ export function initSender2({ theirStaticPk, theirDhPk, theirRatchetPk, pkId, my
   const e = newX();
   const ssX = x25519.getSharedSecret(hexToBytes(e.sk), hexToBytes(theirDhPk));
   const ct1 = b64(cipherText), epk = b64hex(e.pk);
-  const rk = bytesToHex(hkdf(sha256, cat2(sharedSecret, ssX), undefined,
-    u8(transcript2(ikPk, theirDhPk, pkId, ct1, epk, myDev, lvl)), 32));
+  let ikm = cat2(sharedSecret, ssX), label = transcript2(ikPk, theirDhPk, pkId, ct1, epk, myDev, lvl);
+  if (auth && auth.mySk && auth.myPk && auth.theirPk) {
+    const ssA = x25519.getSharedSecret(hexToBytes(auth.mySk), hexToBytes(auth.theirPk));
+    ikm = cat2(ikm, ssA);
+    label += "|" + L2_AUTH + "|" + pfOf(auth.myPk) + "|" + pfOf(auth.theirPk);
+  }
+  const rk = bytesToHex(hkdf(sha256, ikm, undefined, u8(label), 32));
   return {
     v: RAT_V2, rk, cks: null, ckr: null, ns: 0, nr: 0, pn: 0,
+    authed: !!(auth && auth.mySk && auth.myPk && auth.theirPk),
     theirXpk: theirDhPk, theirPf: "", theirKemPk: theirRatchetPk,
     myXpk: null, myXsk: null, myPf: "",
     myKemPk: null, myKemSk: null, myKemCt: null, prevKemPk: null, prevKemSk: null,
     pqOut: false, turns: 0, lastPq: 0,
     needStep: true, skipped: {}, heals: 0, sent: 0, recv: 0,
     myDev, theirDev, peer: peer || "", pkId: pkId || "",
-    pendingInit: lvl === "1024" ? { ct1, pk_id: pkId || "", epk, k: lvl } : { ct1, pk_id: pkId || "", epk },
+    pendingInit: Object.assign(lvl === "1024" ? { ct1, pk_id: pkId || "", epk, k: lvl } : { ct1, pk_id: pkId || "", epk },
+      (auth && auth.mySk && auth.myPk && auth.theirPk) ? { au: 1 } : {}),
     lvl,
     at: Date.now(),
   };
@@ -381,7 +396,12 @@ export function initReceiver2Gens(args, gens, env) {
   return null;
 }
 
-export function initReceiver2({ header, myStaticSk, myStaticPk, myDhSk, myDhPk, myRatchetPk, myRatchetSk, myDev, peer, myStaticSk1024, myStaticPk1024 }) {
+// `senderIdPk` = chiave X25519 d'identita' del mittente come la conosciamo NOI (cassaforte
+// locale, non quella che dichiara il pacchetto); `myIdDhSk`/`myIdDhPk` = la nostra identita'
+// su curva. Se il mittente dichiara l'autenticazione (`init.au`) e noi non possiamo
+// verificarla, la sessione NON si apre. Se `requireAuth` e il mittente non la dichiara,
+// idem: e' il blocco del downgrade.
+export function initReceiver2({ header, myStaticSk, myStaticPk, myDhSk, myDhPk, myRatchetPk, myRatchetSk, myDev, peer, myStaticSk1024, myStaticPk1024, senderIdPk, myIdDhSk, myIdDhPk, requireAuth }) {
   const init = header && header.init;
   if (!init || !init.ct1 || !init.epk || !myDhSk || !myDhPk || !myStaticPk) return null;
   // Il livello lo dichiara il mittente ed è coperto dall'AAD: non è modificabile per strada.
@@ -392,10 +412,20 @@ export function initReceiver2({ header, myStaticSk, myStaticPk, myDhSk, myDhPk, 
   let ss, ssX;
   try { ss = (lvl === "1024" ? ml_kem1024 : ml_kem768).decapsulate(unb64(init.ct1), hexToBytes(ikSk)); } catch { return null; }
   try { ssX = x25519.getSharedSecret(hexToBytes(myDhSk), unb64(init.epk)); } catch { return null; }
-  const rk = bytesToHex(hkdf(sha256, cat2(ss, ssX), undefined,
-    u8(transcript2(ikPk, myDhPk, init.pk_id, init.ct1, init.epk, header.sdev || "", lvl)), 32));
+  let ikm = cat2(ss, ssX), label = transcript2(ikPk, myDhPk, init.pk_id, init.ct1, init.epk, header.sdev || "", lvl);
+  const authed = init.au === 1;
+  if (requireAuth && !authed) return null;
+  if (authed) {
+    if (!senderIdPk || !myIdDhSk || !myIdDhPk) return null;
+    let ssA;
+    try { ssA = x25519.getSharedSecret(hexToBytes(myIdDhSk), hexToBytes(senderIdPk)); } catch { return null; }
+    ikm = cat2(ikm, ssA);
+    label += "|" + L2_AUTH + "|" + pfOf(senderIdPk) + "|" + pfOf(myIdDhPk);
+  }
+  const rk = bytesToHex(hkdf(sha256, ikm, undefined, u8(label), 32));
   return {
     v: RAT_V2, rk, cks: null, ckr: null, ns: 0, nr: 0, pn: 0,
+    authed,
     theirXpk: hexb64(init.epk), theirPf: "", theirKemPk: null,
     myXpk: myDhPk, myXsk: myDhSk, myPf: "",
     myKemPk: myRatchetPk, myKemSk: myRatchetSk, myKemCt: null, prevKemPk: null, prevKemSk: null,

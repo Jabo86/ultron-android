@@ -33,6 +33,7 @@ import * as bigatt from "../lib/bigatt";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { exportConversation } from "../lib/legalExport";
+import * as tc from "../lib/translateConsent";
 
 const EMOJI = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
@@ -448,9 +449,11 @@ export default function ChannelDetailScreen({ route, navigation }) {
   };
 
   // Traduzione on-device sovrana (LibreTranslate self-hosted).
-  const onTranslate = async (post) => {
+  const onTranslate = async (post, auto) => {
     if (!post?.body) return;
     const target = trTargetRef.current || (lang === "en" ? "en" : "it");
+    // Il testo esce dalla cifratura end-to-end: serve il consenso. L'automatica non chiede.
+    if (auto ? !(await tc.hasConsent()) : !(await tc.ask(lang))) return;
     try {
       const r = await api.translate(post.body, target);
       setTranslations((m) => ({ ...m, [post.post_id]: { text: r?.translated || "", detected: r?.detected || "", show: true, target } }));
@@ -475,7 +478,7 @@ export default function ChannelDetailScreen({ route, navigation }) {
   useEffect(() => { loadAutoTranslate().then((v) => { autoTrRef.current = v; }); loadTranslateTarget().then((v) => { trTargetRef.current = v; }); }, []);
   useEffect(() => {
     if (!autoTrRef.current || !posts.length) return;
-    posts.filter((p) => (p.from_lns || "").toLowerCase() !== me && p.body && p.body.indexOf(CAMBIO_PREFIX) !== 0 && p.body.indexOf(CONCORSO_PREFIX) !== 0 && translations[p.post_id] == null).slice(-30).forEach((p) => onTranslate(p));
+    posts.filter((p) => (p.from_lns || "").toLowerCase() !== me && p.body && p.body.indexOf(CAMBIO_PREFIX) !== 0 && p.body.indexOf(CONCORSO_PREFIX) !== 0 && translations[p.post_id] == null).slice(-30).forEach((p) => onTranslate(p, true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [posts]);
 

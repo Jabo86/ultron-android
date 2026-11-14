@@ -13,6 +13,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState } from "react-native";
 import * as api from "./api";
+import { randFloat } from "./mesh/rand";
 
 const KEY = "lat.chaff.v1";
 const MEAN = 17000; // intervallo medio ~17 s
@@ -25,7 +26,7 @@ let running = false;
 let timer = null;
 
 /// Prossimo intervallo casuale (esponenziale, limitato tra MIN e MAX). Puro: testabile.
-export function nextDelay(rand = Math.random) {
+export function nextDelay(rand = randFloat) {
   const u = Math.min(0.999999, Math.max(1e-6, rand()));
   const d = -MEAN * Math.log(1 - u);
   return Math.round(Math.min(MAX, Math.max(MIN, d)));

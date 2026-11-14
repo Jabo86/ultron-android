@@ -28,12 +28,14 @@ import { isDeviceSecure, authenticate } from "../lib/biometrics";
 import { requestNotificationPermission, scheduleDailyQuizReminder, loadReminderTimes } from "../lib/notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as cover from "../lib/cover";
+import * as SA from "../lib/senderAuth";
 import { ICE_SERVERS } from "../config";
 import { threatListSize } from "../lib/threatEngine";
 import { UI_LANGS } from "../lib/locales";
 import { saveAllowDirect, loadAllowDirect, saveAppLock, loadAppLock, loadPreferredServer, savePreferredServer, loadKeyfile, saveAutoTranslate, loadAutoTranslate, saveTranslateTarget, loadTranslateTarget } from "../lib/store";
 import { TRANSLATE_LANGS, langName } from "../lib/langs";
 import { getThreatLog, clearThreatLog, getThreatCount } from "../lib/threatLog";
+import * as tc from "../lib/translateConsent";
 
 const PRIVACY_LNS = "";
 const HAS_STATIC_TURN = ICE_SERVERS.some(({ urls }) => [urls].flat().some((url) => /^turns?:/i.test(url)));
@@ -61,6 +63,8 @@ export default function SettingsScreen({ navigation }) {
   const [callDirect, setCallDirect] = useState(false);
   const [relayStatus, setRelayStatus] = useState("checking");
   const [chaff, setChaff] = useState(true);
+  const [authSend, setAuthSend] = useState(false);
+  const [authStrict, setAuthStrict] = useState(false);
   const [wakeOn, setWakeOn] = useState(false);
   const [wakeBusy, setWakeBusy] = useState(false);
   const [upBusy, setUpBusy] = useState(false);
@@ -279,6 +283,7 @@ export default function SettingsScreen({ navigation }) {
     return navigation.addListener("focus", refresh);
   }, [navigation]);
   useEffect(() => { cover.isEnabled().then(setChaff).catch(() => {}); }, []);
+  useEffect(() => { SA.sendOn().then(setAuthSend).catch(() => {}); SA.strictOn().then(setAuthStrict).catch(() => {}); }, []);
   const doExport = async () => {
     setExporting(true);
     try {
@@ -531,7 +536,7 @@ export default function SettingsScreen({ navigation }) {
         <View style={styles.divider} />
         <Row icon="globe-outline" label={t("sm.117")}
           hint={t("sm.118")}
-          right={<Switch value={autoTr} onValueChange={async (v) => { setAutoTr(v); await saveAutoTranslate(v); }} trackColor={{ true: tint, false: theme.border }} thumbColor="#fff" testID="settings-autotranslate" />} />
+          right={<Switch value={autoTr} onValueChange={async (v) => { if (v && !(await tc.ask(lang))) return; if (!v) await tc.revokeConsent(); setAutoTr(v); await saveAutoTranslate(v); }} trackColor={{ true: tint, false: theme.border }} thumbColor="#fff" testID="settings-autotranslate" />} />
         <View style={styles.divider} />
         <Row icon="swap-horizontal-outline" label={t("sm.119")}
           hint={trTarget ? langName(trTarget) : (t("sm.120"))}
@@ -593,6 +598,18 @@ export default function SettingsScreen({ navigation }) {
           hint={en ? "Runs while Android keeps the service active. 24/7 operation is unverified."
             : "Funziona quando Android mantiene il servizio attivo. La continuità H24 è da verificare."}
           right={<Switch value={chaff} onValueChange={async (v) => { setChaff(v); await cover.setEnabled(v); }} trackColor={{ true: tint, false: theme.border }} thumbColor="#fff" testID="settings-chaff" />} />
+        <View style={styles.divider} />
+        <Row icon="finger-print-outline"
+          label={en ? "Authenticated sender" : "Mittente autenticato"}
+          hint={en ? "Messages can only be created by their real sender, nobody can impersonate a contact. Turn on only when your contacts have the updated app: older versions cannot open these messages."
+            : "I messaggi possono essere creati solo dal vero mittente: nessuno può spacciarsi per un contatto. Accendi solo quando i tuoi contatti hanno l'app aggiornata: le versioni vecchie non li aprono."}
+          right={<Switch value={authSend} onValueChange={async (v) => { setAuthSend(v); await SA.setSend(v); if (!v) { setAuthStrict(false); await SA.setStrict(false); } }} trackColor={{ true: tint, false: theme.border }} thumbColor="#fff" testID="settings-auth-send" />} />
+        <View style={styles.divider} />
+        <Row icon="shield-checkmark-outline"
+          label={en ? "Strict mode" : "Modalità rigorosa"}
+          hint={en ? "Refuse messages that are not authenticated. Turn on last, when everyone you talk to is updated."
+            : "Rifiuta i messaggi non autenticati. Accendila per ultima, quando tutti quelli con cui parli sono aggiornati."}
+          right={<Switch value={authStrict} disabled={!authSend} onValueChange={async (v) => { setAuthStrict(v); await SA.setStrict(v); }} trackColor={{ true: tint, false: theme.border }} thumbColor="#fff" testID="settings-auth-strict" />} />
         <View style={styles.divider} />
         <Row
           icon={pushOk ? "checkmark-circle-outline" : "alert-circle-outline"}

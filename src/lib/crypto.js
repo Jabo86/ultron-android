@@ -193,13 +193,33 @@ export function deriveKem1024Keypair(skHex) {
 //  · una stringa hex → chiave d'identità statica (comportamento storico);
 //  · un array [{device_id, pk_id, kem_pub}] → BLOCCO A: una busta per ogni dispositivo,
 //    cifrata con una chiave usa-e-getta che verrà buttata (forward secrecy).
-export function encryptForRecipients(plaintext, recipientPubHex) {
+//
+// `auth` (facoltativo) = { from, mySk, peers: { lns: chiaveX25519Identita } }: con questo la
+// chiave della busta dipende anche da DH(identita' del mittente, identita' del destinatario)
+// e l'AAD lega mittente e destinatario. Il formato sul filo NON cambia (stessi campi): chi
+// non puo' verificare la busta autenticata non riesce ad aprirla, e viceversa.
+const L_SAUTH = "lattice-static-auth-v1";
+function authKey(ssKem, ssA) {
+  const m = new Uint8Array(ssKem.length + ssA.length);
+  m.set(ssKem, 0); m.set(ssA, ssKem.length);
+  return hkdf(sha256, m, undefined, utf8Encode(L_SAUTH), 32);
+}
+function authAad(from, to) { return utf8Encode("lat-auth-v1|" + String(from).toLowerCase() + "|" + String(to).toLowerCase()); }
+
+export function encryptForRecipients(plaintext, recipientPubHex, auth) {
   const pt = utf8Encode(plaintext);
   const envelopes = [];
   const seal = (lns, pkHex, extra) => {
     const { cipherText, sharedSecret } = ml_kem768.encapsulate(hexToBytes(pkHex));
     const iv = randBytes(12);
-    const ct = gcm(sharedSecret, iv).encrypt(pt);
+    const peerDh = auth && auth.peers && auth.peers[String(lns).toLowerCase()];
+    let ct;
+    if (peerDh && auth.mySk && auth.from) {
+      const ssA = x25519.getSharedSecret(hexToBytes(auth.mySk), hexToBytes(peerDh));
+      ct = gcm(authKey(sharedSecret, ssA), iv, authAad(auth.from, lns)).encrypt(pt);
+    } else {
+      ct = gcm(sharedSecret, iv).encrypt(pt);
+    }
     envelopes.push(Object.assign({ for: lns, kem: bytesToHex(cipherText), iv: bytesToHex(iv), ct: bytesToHex(ct) }, extra || {}));
   };
   for (const [lns, v] of Object.entries(recipientPubHex)) {
@@ -211,6 +231,26 @@ export function encryptForRecipients(plaintext, recipientPubHex) {
     }
   }
   return envelopes;
+}
+
+/// Come decryptEnvelope, ma verifica anche chi ha scritto. `ctx` = { mySk, senderPk, from, to,
+/// strict }. Ritorna { pt, authed } oppure null. Con `strict` una busta non autenticata
+/// viene rifiutata; senza, si accetta ma `authed` e' falso.
+export function decryptEnvelopeEx(env, kemSecretKey, ctx) {
+  try {
+    const sharedSecret = ml_kem768.decapsulate(hexToBytes(env.kem), kemSecretKey);
+    const iv = hexToBytes(env.iv), ctb = hexToBytes(env.ct);
+    if (ctx && ctx.mySk && ctx.senderPk && ctx.from && ctx.to) {
+      try {
+        const ssA = x25519.getSharedSecret(hexToBytes(ctx.mySk), hexToBytes(ctx.senderPk));
+        return { pt: utf8Decode(gcm(authKey(sharedSecret, ssA), iv, authAad(ctx.from, ctx.to)).decrypt(ctb)), authed: true };
+      } catch { /* non e' autenticata (o il mittente non e' chi dice): sotto */ }
+    }
+    if (ctx && ctx.strict) return null;
+    return { pt: utf8Decode(gcm(sharedSecret, iv).decrypt(ctb)), authed: false };
+  } catch {
+    return null;
+  }
 }
 
 export function decryptEnvelope(env, kemSecretKey) {

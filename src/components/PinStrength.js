@@ -32,7 +32,7 @@ export function humanTime(s, en) {
 }
 
 export function pinVerdict(d) {
-  if (d < 4) return "short";
+  if (d < 6) return "short";
   if (d <= 5) return "weak";
   if (d <= 7) return "fair";
   if (d <= 9) return "good";

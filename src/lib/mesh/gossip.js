@@ -16,6 +16,7 @@ import { randomHex, bytesToHex } from "../crypto";
 import { wrap } from "./onion";
 import { routeTo } from "./runtime";
 import * as transport from "./transport";
+import { randInt } from "./rand";
 
 const HEAD = "GRP1";
 const BLOB = "grpg";
@@ -46,7 +47,7 @@ export async function offer(toLns, parts, relays) {
   if (!toLns || !Array.isArray(parts) || !parts.length) return false;
   const usable = (relays || []).filter((r) => r && r.lns !== toLns && r.id && r.pk);
   if (!usable.length) return false;
-  const r = usable[Math.floor(Math.random() * usable.length)];
+  const r = usable[randInt(usable.length)];
   const route = routeTo(r.id, r.pk, r.x);
   if (!route) return false;
   const g = randomHex(6);

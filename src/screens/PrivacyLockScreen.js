@@ -140,7 +140,7 @@ export default function PrivacyLockScreen({ navigation }) {
                 chi conosce come e' costruita questa app.
               </Text>
               {!!err && <Text style={styles.err}>{err}</Text>}
-              <TouchableOpacity style={[styles.btnFull, busy && { opacity: 0.6 }]} disabled={busy || pin.length < 4} onPress={savePin} testID="pin-save-btn">
+              <TouchableOpacity style={[styles.btnFull, busy && { opacity: 0.6 }]} disabled={busy || pin.length < 6} onPress={savePin} testID="pin-save-btn">
                 {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnTxt}>Salva PIN</Text>}
               </TouchableOpacity>
             </View>

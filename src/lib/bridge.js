@@ -18,6 +18,7 @@ import { bytesToHex, randomHex } from "./crypto";
 import * as transport from "./mesh/transport";
 import { wrap, MAX_PAYLOAD_SAFE } from "./mesh/onion";
 import { bridgePeers, knownPeers, routeTo } from "./mesh/runtime";
+import { randInt } from "./mesh/rand";
 
 const BLOB = "brg";
 const HEAD = "BRG1";
@@ -67,7 +68,7 @@ export async function sendVia(to_lns, envelopes) {
   const bytes = new TextEncoder().encode(JSON.stringify({ t, to: to_lns, e: envelopes }));
   const n = Math.ceil(bytes.length / CHUNK);
   if (n > MAX_PARTS) return false;                 // troppo grande: resterà in coda
-  const b = peers[Math.floor(Math.random() * peers.length)];
+  const b = peers[randInt(peers.length)];
   const route = routeTo(b.id, b.pk, b.x);
   if (!route) return false;
   const bid = randomHex(6);

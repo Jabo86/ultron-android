@@ -351,9 +351,9 @@ export async function removeBlob(name) {
 
 // ── Impostazione / modifica del PIN ──
 export async function setupPin(pin, panicPin, armFn) {
-  if (!/^\d{4,10}$/.test(String(pin || ""))) throw new Error("Il PIN deve avere da 4 a 10 cifre.");
+  if (!/^\d{6,10}$/.test(String(pin || ""))) throw new Error("Il PIN deve avere da 6 a 10 cifre.");
   if (panicPin && panicPin === pin) throw new Error("Il PIN di emergenza deve essere diverso dal PIN normale.");
-  if (panicPin && !/^\d{4,10}$/.test(String(panicPin))) throw new Error("Il PIN di emergenza deve avere da 4 a 10 cifre.");
+  if (panicPin && !/^\d{6,10}$/.test(String(panicPin))) throw new Error("Il PIN di emergenza deve avere da 6 a 10 cifre.");
   const salt = randomHex(16);
   // I blob esistenti sono cifrati con la chiave del dispositivo: si rileggono PRIMA di
   // cambiare chiave e si riscrivono dopo, altrimenti chiavi usa-e-getta e stato del
@@ -587,7 +587,7 @@ export async function upgradeKdf(pin) {
 /// Non scrive NESSUN verificatore: l'unica traccia dell'esca e' la sua sonda, che senza
 /// il PIN esca e' indistinguibile da un blocco qualunque di dati cifrati.
 export async function activateDecoy(realPin, decoyPin) {
-  if (!/^\d{4,10}$/.test(String(decoyPin || ""))) throw new Error("Il PIN esca deve avere da 4 a 10 cifre.");
+  if (!/^\d{6,10}$/.test(String(decoyPin || ""))) throw new Error("Il PIN esca deve avere da 6 a 10 cifre.");
   if (String(decoyPin) === String(realPin)) throw new Error("Il PIN esca deve essere diverso dal PIN normale.");
   const r = await verifyPin(realPin);
   if (r !== "ok") throw new Error("PIN attuale errato.");
