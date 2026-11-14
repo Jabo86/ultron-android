@@ -20,12 +20,22 @@ export function parsePools(reply) {
   return reply.devices;
 }
 
+export function hostedPrekeyDevice(user, installation) {
+  if (typeof installation !== "string" || !installation) throw new Error("Dispositivo ULTRON non identificato.");
+  return sha256Hex(JSON.stringify([user.server, user.lns, installation])).slice(0, 32);
+}
+
+export function withHostedPrekeyStorage(job) {
+  const write = writes.then(job);
+  writes = write.catch(() => {});
+  return write;
+}
+
 export function publishHostedPrekeys(user, installation) {
   const checkScope = api.authenticatedScope(user);
-  const job = writes.then(async () => {
+  return withHostedPrekeyStorage(async () => {
     checkScope();
-    if (typeof installation !== "string" || !installation) throw new Error("Dispositivo ULTRON non identificato.");
-    const device = sha256Hex(JSON.stringify([user.server, user.lns, installation])).slice(0, 32);
+    const device = hostedPrekeyDevice(user, installation);
     const name = "hosted-prekeys:" + device;
     const state = (await getBlob(name)) || { generation: 0, privateKeys: {} };
     checkScope();
@@ -71,8 +81,7 @@ export function publishHostedPrekeys(user, installation) {
     checkScope();
     return device;
   });
-  writes = job.catch(() => {});
-  return job;
+
 }
 
 export async function claimVerifiedHostedPrekey(user, peer, device, identityKey) {

@@ -10,7 +10,7 @@ export function historyRecord(user, message, envelope) {
   const { h, iv, ct, r } = envelope;
   const { init } = h;
   const digest = sha256Hex(JSON.stringify([
-    envelope.for, envelope.dev, r, iv, ct,
+    envelope.for, envelope.dev, r, envelope.init_sig, iv, ct,
     h.v, h.sdev, h.pf, h.xpk, h.pk, h.ct, h.kf, h.n, h.pn,
     init && [init.ct1, init.pk_id, init.epk, init.k, init.sct, init.spk],
   ]));
