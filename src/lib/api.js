@@ -410,6 +410,8 @@ export const pulseTypingGet = (conv_id) =>
   withAuth((a) => client.get("/public/pulse/typing", { params: { conv_id }, ...a }).then((r) => r.data));
 export const presencePing = () =>
   withAuth((a) => client.post("/public/presence/ping", {}, a).then((r) => r.data));
+export const sendHostedRatchet = (payload) =>
+  withAuth((a, transport) => transport.post("/public/pulse/send-ratchet", payload, a).then((r) => r.data));
 export const send = (payload) =>
   withAuth((a) => client.post("/public/pulse/send", payload, a).then((r) => r.data));
 export const deleteMessage = (message_id, scope) =>

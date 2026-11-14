@@ -3,16 +3,17 @@
 // Il server vede passare l'intestazione (chiave pubblica e incapsulamento ML-KEM): non gli
 // serve a niente e non gli dice con chi stai parlando più di quanto già sappia.
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { bytesToHex } from "./crypto";
+import { bytesToHex, randomHex, sha256Hex } from "./crypto";
 import { getBlob, setBlob, setBlobDurably, setBlobsDurably } from "./lock";
 import * as api from "./api";
 import {
   CAP, CAP2, sessionKey, initSender, initReceiver, initSender2, initReceiver2,
   initReceiver2Gens, ratchetEncrypt, ratchetDecrypt,
 } from "./ratchetCore";
-import { archivablePayload, historyRecord } from "./ratchetHistory";
-import { hostedPrekeyDevice, withHostedPrekeyStorage } from "./hostedPrekeys";
-import { verifyHostedRatchetInit } from "./hostedRatchetProof";
+import { archivablePayload, historyRecord, hostedSentRecord } from "./ratchetHistory";
+import { claimVerifiedHostedPrekey, hostedPrekeyDevice, parsePools, withHostedPrekeyStorage } from "./hostedPrekeys";
+import { signHostedRatchetInit, verifyHostedRatchetInit } from "./hostedRatchetProof";
+import { requireHostedRatchet } from "./hostedChatPolicy";
 import { candidateGens, keysFor } from "./keygen";
 
 const BLOB = "rat";
@@ -225,6 +226,77 @@ export function tryRatchetDecrypt(list, user, peerHint, archivedMessage) {
   return withRatchetState(() => tryRatchetDecryptLocked(list, user, peerHint, archivedMessage));
 }
 
+function hostedSessionName(user, peer, identityKey, device, peerDevice, sessionId) {
+  return "hosted:" + sha256Hex(JSON.stringify([user.server, user.lns, peer, identityKey, device, peerDevice, sessionId]));
+}
+
+export function sendHostedRatchet(payload, user, peer, installation, contact) {
+  const check = api.authenticatedScope(user);
+  return withRatchetState(async () => {
+    check();
+    const device = hostedPrekeyDevice(user, installation);
+    const pendingName = "ratchet-pending:" + sha256Hex(JSON.stringify([user.server, user.lns, peer, device]));
+    const payloadHash = sha256Hex(payload);
+    const previous = await getBlob(pendingName);
+
+    const deliver = async (pending) => {
+      check();
+      const result = await api.sendHostedRatchet(pending.wire);
+      check();
+      if (result?.ok !== true || !/^[0-9a-f]{24}$/.test(result.message_id || "") ||
+          !/^[0-9a-f]{64}$/.test(result.conv_id || "")) {
+        throw new Error("Il gateway non ha confermato il messaggio ratchet.");
+      }
+      await requireHostedRatchet(user, peer);
+      check();
+      await setBlobDurably(pendingName, null);
+      return result;
+    };
+
+    if (previous) {
+      const result = await deliver(previous);
+      if (previous.payloadHash === payloadHash) return result;
+    }
+    const devices = parsePools(await api.hostedPrekeyPools(peer));
+    check();
+    if (devices.length !== 1) throw new Error("La prova ratchet richiede un solo dispositivo per account.");
+    const target = devices[0];
+    const all = await loadAll();
+    check();
+    const matches = Object.values(all).filter((entry) =>
+      entry?.hosted && entry.myDev === device && entry.theirDev === target.device &&
+      entry.peer === peer && entry.hosted.owner === user.lns && entry.hosted.server === user.server &&
+      entry.hosted.identityKey === contact.identityKey
+    );
+    matches.sort((a, b) => b.at - a.at);
+    let state = matches[0];
+    if (!state) {
+      const prekey = await claimVerifiedHostedPrekey(user, peer, target.device, contact.identityKey);
+      check();
+      state = initSender2({
+        theirStaticPk: contact.kem, theirDhPk: contact.dh, theirRatchetPk: prekey.kem,
+        pkId: prekey.id, myDev: device, theirDev: target.device, peer,
+      });
+      state.hosted = { owner: user.lns, server: user.server, identityKey: contact.identityKey, sessionId: prekey.id };
+    }
+    const encrypted = ratchetEncrypt(state, payload);
+    const sessionId = state.hosted.sessionId;
+    const envelope = { ...encrypted.env, for: peer, dev: target.device, session_id: sessionId };
+    const sendId = randomHex(16);
+    const pending = {
+      payloadHash,
+      wire: { to_lns: [peer], send_id: sendId,
+        envelope: envelope.h.init ? signHostedRatchetInit(user.lns, envelope, user.sk) : envelope },
+    };
+    all[hostedSessionName(user, peer, contact.identityKey, device, target.device, sessionId)] = encrypted.state;
+    const extra = [[pendingName, pending]];
+    if (archivablePayload(payload)) extra.push([hostedSentRecord(user, peer, sendId), payload]);
+    check();
+    await saveAll(all, null, null, extra);
+    return deliver(pending);
+  });
+}
+
 // Call with the identity key authenticated by the signed contact-key lookup.
 export function receiveHostedRatchet(message, user, installation, identityKey) {
   const checkScope = api.authenticatedScope(user);
@@ -233,6 +305,7 @@ export function receiveHostedRatchet(message, user, installation, identityKey) {
   const device = hostedPrekeyDevice(user, installation);
   if (message.mine || sender === user.lns || !env?.h || env.for !== user.lns || env.dev !== device ||
       env.r !== 2 || env.h.v !== 2 || !/^[0-9a-f]{32}$/.test(env.h.sdev) ||
+      !/^[0-9a-f]{32}$/.test(env.session_id || "") ||
       !/^[0-9a-f]{3904}$/.test(identityKey)) return null;
   if (env.h.init && !verifyHostedRatchetInit(sender, user.lns, device, env, identityKey)) return null;
   return withRatchetState(() => withHostedPrekeyStorage(() =>
@@ -272,7 +345,7 @@ async function tryRatchetDecryptLocked(list, user, peerHint, archivedMessage, ho
     }
     const h = env.h || {};
     const k = hosted
-      ? "hosted:" + JSON.stringify([user.server, user.lns, peerHint, hosted.identityKey, myDev, h.sdev])
+      ? hostedSessionName(user, peerHint, hosted.identityKey, myDev, h.sdev, env.session_id)
       : sessionKey(h.sdev, myDev);
     let st = all[k];
     if (st?.peer && peerHint && st.peer !== peerHint) continue;
@@ -317,10 +390,14 @@ async function tryRatchetDecryptLocked(list, user, peerHint, archivedMessage, ho
     const r = ratchetDecrypt(st, env);
     if (r) {
       if (peerHint && !r.state.peer) r.state.peer = peerHint;
+      if (hosted) r.state.hosted = {
+        owner: user.lns, server: user.server, identityKey: hosted.identityKey, sessionId: env.session_id,
+      };
       all[k] = r.state;
       hosted?.checkScope();
       await saveAll(all, record, r.plaintext, consumed);
       hosted?.checkScope();
+      if (hosted) await requireHostedRatchet(user, peerHint);
       // Sessione aperta per davvero: la usa-e-getta ha finito il suo lavoro e si butta.
       if (fresh) await consumePrekey(fresh);
       return r.plaintext;

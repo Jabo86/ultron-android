@@ -20,7 +20,8 @@ import { useAuth } from "../context/AuthContext";
 import { useUnread } from "../context/UnreadContext";
 import * as api from "../lib/api";
 import { decryptAny } from "../lib/devices";
-import { buildEnvelopes } from "../lib/send";
+import { hostedRatchetPilot, readPilotMessage, registerHostedRatchet } from "../lib/hostedRatchetChat";
+import { buildEnvelopes, sendChatMessage } from "../lib/send";
 import * as msh from "../lib/meshchat";
 import * as decdiag from "../lib/decdiag";
 import * as ratchetheal from "../lib/ratchetheal";
@@ -28,7 +29,7 @@ import { localPrekeyIds, deviceId as myDeviceId } from "../lib/devices";
 import * as mbx from "../lib/mailbox";
 import {
   decryptEnvelope, unpackMessage, encryptForRecipients, packMessage, bytesToHex,
-  encryptFileBytes, base64ToBytes, verifyMessage, decryptFileBytes,
+  encryptFileBytes, base64ToBytes, verifyMessage, decryptFileBytes, sha256Hex,
 } from "../lib/crypto";
 import EncryptedAttachment from "../components/EncryptedAttachment";
 import ThreatBanner from "../components/ThreatBanner";
@@ -320,13 +321,15 @@ export default function ChatScreen({ route, navigation }) {
         let reply = null;
         let ttlv = 0;
         let signed = null;
-        if (m.envelope && user?.kem) {
+        if ((m.envelope || m.ratchet) && user?.kem) {
           // Riuso della decifratura già fatta (in memoria, non sul disco: nessun testo in
           // chiaro in più sul telefono). Prima si ri-decifrava tutta la conversazione ogni
           // 4 secondi, e uscendo dalla chat si ripartiva da zero.
           const e0 = (Array.isArray(m.envelopes) && m.envelopes[0]) || m.envelope || m;
           const ct = typeof e0 === "string" ? e0 : String(e0.ct || e0.c || "");
-          const csig = ct.length + ":" + ct.slice(-24);
+          const csig = m.ratchet
+            ? sha256Hex(JSON.stringify([user.lns, m.mine, m.from_lns, m.to_lns, m.send_id, m.envelope]))
+            : ct.length + ":" + ct.slice(-24);
           const hit = msgCache.get(cid, m.message_id);
           if (hit && hit.csig === csig && !(hit.soft && deep)) {
             if (hit.ctl) continue;
@@ -335,7 +338,9 @@ export default function ChatScreen({ route, navigation }) {
             // Ogni 5 decifrature si lascia respirare l'interfaccia.
             if (heavy && heavy % 5 === 0) await new Promise((r) => setTimeout(r, 0));
             heavy++;
-            const pt = api.getServerUrl() === DEFAULT_SERVER
+            const pt = m.ratchet
+              ? await readPilotMessage(m, user).catch(() => null)
+              : api.getServerUrl() === DEFAULT_SERVER
               ? decryptEnvelope(m.envelope, user.kem.secretKey)
               : await decryptAny(m, user, { deep, breathe: deep });
             if (pt == null) {
@@ -349,12 +354,12 @@ export default function ChatScreen({ route, navigation }) {
               try {
                 const envs = Array.isArray(m.envelopes) ? m.envelopes : (m.envelope ? [m.envelope] : []);
                 const rat = envs.find((e) => e && e.r && e.h && (!e.for || e.for === user.lns));
-                if (rat && !m.mine && others.length === 1) {
+                if (rat && !m.ratchet && !m.mine && others.length === 1) {
                   await ratchetheal.requestReset(others[0], user, rat.h ? rat.h.sdev : "");
                 }
               } catch { /* */ }
               // Esito negativo ricordato: senza questo si ritentava a ogni giro.
-              msgCache.put(cid, m.message_id, { csig, body, atts: [], reply: null, ttl: 0, signed: null, soft: !deep });
+              if (!m.ratchet) msgCache.put(cid, m.message_id, { csig, body, atts: [], reply: null, ttl: 0, signed: null, soft: !deep });
               if (!deep) deferred = true;
             } else {
               const u = unpackMessage(pt); body = u.text; atts = u.atts; reply = u.reply; ttlv = u.ttl || 0;
@@ -364,7 +369,7 @@ export default function ChatScreen({ route, navigation }) {
               // controllo che porta un init nuovo (invisibile per l'utente).
               if (typeof body === "string" && body.startsWith(ratchetheal.CTL_PREFIX)) {
                 msgCache.put(cid, m.message_id, { csig, ctl: true });
-                if (!m.mine) { try { await ratchetheal.onReset(m.from_lns || "", user); } catch { /* */ } }
+                if (!m.mine && !hostedRatchetPilot(user)) { try { await ratchetheal.onReset(m.from_lns || "", user); } catch { /* */ } }
                 continue;
               }
               // Identità mesh del contatto (chat sulla mesh): controllo invisibile.
@@ -503,6 +508,10 @@ export default function ChatScreen({ route, navigation }) {
   // Aggiornamenti: solo con l'app in primo piano e questa chat davanti agli occhi.
   // Passata leggera: i messaggi già decifrati arrivano dalla memoria, i nuovi si decifrano
   // per la loro strada. Niente tentativi a tentoni qui: quelli vanno in sottofondo.
+  useEffect(() => {
+    registerHostedRatchet(user).catch(() => {});
+  }, [user]);
+
   const hostedChat = api.getServerUrl() === DEFAULT_SERVER;
   const [live, setLive] = useState(false);
   useFocusEffect(useCallback(() => {
@@ -569,6 +578,7 @@ export default function ChatScreen({ route, navigation }) {
     setSending(true); setErr("");
     if (editing) {
       try {
+        if (hostedRatchetPilot(user)) throw new Error("La modifica dei messaggi non è disponibile nella prova ratchet.");
         const payload = packMessage(body, [], null, ttl, null);
         const envelopes = await buildEnvelopes(payload, others, user);
         await api.editMessage(editing.id, envelopes);
@@ -592,8 +602,7 @@ export default function ChatScreen({ route, navigation }) {
     const done = () => { sendingRef.current = sendingRef.current.filter((x) => x.id !== tmp.id); msgsSig.current = ""; };
     try {
       const payload = packMessage(body, [], myReply, ttl, null);
-      const envelopes = await buildEnvelopes(payload, others, user);
-      const r = await api.send({ to_lns: others, envelopes });
+      const r = await sendChatMessage(payload, others, user);
       if (r?.conv_id && r.conv_id !== convId) setConvId(r.conv_id);
       done();
       await load(r?.conv_id || convId);
@@ -623,8 +632,7 @@ export default function ChatScreen({ route, navigation }) {
           uri: asset.uri, name: asset.fileName || `video_${Date.now()}.mp4`,
           mime: asset.mimeType || "video/mp4", size, allowed: others, onProgress: setUploadPct,
         });
-        const envelopes = await buildEnvelopes(packMessage(text.trim(), [att], replyTo, ttl), others, user);
-        const res = await api.send({ to_lns: others, envelopes });
+        const res = await sendChatMessage(packMessage(text.trim(), [att], replyTo, ttl), others, user);
         setText(""); setReplyTo(null);
         if (res?.conv_id && res.conv_id !== convId) setConvId(res.conv_id);
         await load(res?.conv_id || convId);
@@ -651,8 +659,7 @@ export default function ChatScreen({ route, navigation }) {
         prev: prev || undefined,
       };
       const payload = packMessage(text.trim(), [att], replyTo, ttl);
-      const envelopes = await buildEnvelopes(payload, others, user);
-      const res = await api.send({ to_lns: others, envelopes });
+      const res = await sendChatMessage(payload, others, user);
       setText(""); setReplyTo(null);
       if (res?.conv_id && res.conv_id !== convId) setConvId(res.conv_id);
       await load(res?.conv_id || convId);
@@ -687,8 +694,7 @@ export default function ChatScreen({ route, navigation }) {
       const { id } = await api.blobUpload(enc.ciphertext, (p) => { if (mounted.current) setUploadPct(p); }, others);
       const att = { id, name: `vocale_${Date.now()}.m4a`, mime: "audio/m4a", size: bytes.length, key: enc.key, iv: enc.iv, kind: "voice", duration: dur };
       const payload = packMessage("", [att], replyTo, ttl);
-      const envelopes = await buildEnvelopes(payload, others, user);
-      const res = await api.send({ to_lns: others, envelopes });
+      const res = await sendChatMessage(payload, others, user);
       setReplyTo(null);
       if (res?.conv_id && res.conv_id !== convId) setConvId(res.conv_id);
       await load(res?.conv_id || convId);
@@ -744,8 +750,7 @@ export default function ChatScreen({ route, navigation }) {
         att = { id, name, mime, size: bytes.length, key: enc.key, iv: enc.iv };
       }
       const payload = packMessage(text.trim(), [att], replyTo, ttl);
-      const envelopes = await buildEnvelopes(payload, others, user);
-      const r2 = await api.send({ to_lns: others, envelopes });
+      const r2 = await sendChatMessage(payload, others, user);
       setText(""); setReplyTo(null);
       if (r2?.conv_id && r2.conv_id !== convId) setConvId(r2.conv_id);
       await load(r2?.conv_id || convId);

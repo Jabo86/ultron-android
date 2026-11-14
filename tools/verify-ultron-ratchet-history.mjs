@@ -72,7 +72,7 @@ let attemptCount = 0;
 const wire = { ...envelope, h: { ...envelope.h, sdev: "sender", init: null } };
 function receiveOnDevice() {
   return runInNewContext(
-    receiver.slice(receiver.indexOf("export function tryRatchetDecrypt("), receiver.indexOf("/// Numeri per il pannello")).replaceAll("export ", "") +
+    (receiver.slice(receiver.indexOf("export function tryRatchetDecrypt("), receiver.indexOf("function hostedSessionName")) + receiver.slice(receiver.indexOf("async function tryRatchetDecryptLocked("), receiver.indexOf("/// Numeri per il pannello"))).replaceAll("export ", "") +
     "\ntryRatchetDecrypt",
     {
       withRatchetState: async (fn) => fn(), myDeviceId: async () => "receiver",

@@ -9,6 +9,7 @@ import { addSelfKeys } from "./devices";
 import { ratchetEnvelopesFor } from "./ratchet";
 import { assertHostedLegacyAllowed } from "./hostedChatPolicy";
 import { hostedSignedChatKeys } from "./signedChatKeys";
+import { hostedRatchetPilot, sendPilotMessage } from "./hostedRatchetChat";
 import * as api from "./api";
 
 export async function buildEnvelopes(payload, others, user) {
@@ -55,4 +56,13 @@ export async function buildEnvelopes(payload, others, user) {
   const missing = others.filter((o) => !covered.has(o));
   if (missing.length) throw new Error(missing.join(", "));
   return envelopes;
+}
+
+
+export async function sendChatMessage(payload, others, user) {
+  if (others.length === 1 && hostedRatchetPilot(user)) {
+    return sendPilotMessage(payload, user, others[0]);
+  }
+  const envelopes = await buildEnvelopes(payload, others, user);
+  return api.send({ to_lns: others, envelopes });
 }
