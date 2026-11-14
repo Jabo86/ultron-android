@@ -7,6 +7,7 @@ import { bytesToHex, encryptForRecipients } from "./crypto";
 import { getVerified, keyFingerprint } from "./verify";
 import { addSelfKeys } from "./devices";
 import { ratchetEnvelopesFor } from "./ratchet";
+import { hostedSignedChatKeys } from "./signedChatKeys";
 import * as api from "./api";
 
 export async function buildEnvelopes(payload, others, user) {
@@ -14,14 +15,22 @@ export async function buildEnvelopes(payload, others, user) {
   if (others.length === 1 && api.getServerUrl() === DEFAULT_SERVER) {
     const [peer] = others;
     const pinned = await getVerified(peer);
-    const [keys, dhKeys] = await Promise.all([
-      api.pulseStaticKeys([peer]), pinned ? api.pulseDhKeys([peer]) : null,
-    ]);
-    if (pinned && (!dhKeys?.[peer] || keyFingerprint(peer, keys?.[peer] || "", dhKeys[peer]) !== pinned.fp)) {
-      throw new Error("Le chiavi del contatto verificato sono cambiate. Verifica di nuovo il QR prima di inviare.");
+    const validateKeys = (kem, dh) => {
+      if (pinned && (!dh || keyFingerprint(peer, kem || "", dh) !== pinned.fp)) {
+        throw new Error("Le chiavi del contatto verificato sono cambiate. Verifica di nuovo il QR prima di inviare.");
+      }
+    };
+    const signed = await hostedSignedChatKeys(user.lns, peer, validateKeys);
+    let kem = signed?.kem;
+    if (!signed) {
+      const [keys, dhKeys] = await Promise.all([
+        api.pulseStaticKeys([peer]), pinned ? api.pulseDhKeys([peer]) : null,
+      ]);
+      kem = keys?.[peer];
+      validateKeys(kem, dhKeys?.[peer]);
     }
-    if (!keys?.[peer]) throw new Error(peer);
-    return encryptForRecipients(payload, { [peer]: keys[peer], [user.lns]: bytesToHex(user.kem.publicKey) });
+    if (!kem) throw new Error(peer);
+    return encryptForRecipients(payload, { [peer]: kem, [user.lns]: bytesToHex(user.kem.publicKey) });
   }
 
   const envelopes = [];

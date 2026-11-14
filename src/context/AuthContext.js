@@ -8,6 +8,7 @@ import { scheduleDailyQuizReminder, cancelDailyQuizReminder } from "../lib/notif
 import * as guard from "../lib/guard";
 import { isDeviceSecure } from "../lib/biometrics";
 import * as lock from "../lib/lock";
+import { publishSignedChatKeys } from "../lib/signedChatKeys";
 import * as devices from "../lib/devices";
 
 const Ctx = createContext(null);
@@ -73,6 +74,7 @@ export function AuthProvider({ children }) {
       const hs = kg.keysFor(kf.sk, await kg.currentGen());
       await api.publishKey(bytesToHex(kem.publicKey), bytesToHex(dh.publicKey),
         bytesToHex(hs.k5.publicKey), bytesToHex(hs.dh.publicKey));
+      await publishSignedChatKeys(kf.lns, kf.sk, bytesToHex(kem.publicKey), bytesToHex(dh.publicKey));
       kg.rotateIfStale({ sk: kf.sk, kem, dh }).catch(() => {});
       // Promemoria del canarino: parte SOLO se questo account è l'owner del server.
       require("../lib/canary").remindOwner({ lns: kf.lns }, true).catch(() => {});
@@ -126,6 +128,8 @@ export function AuthProvider({ children }) {
     const kem1024 = deriveKem1024Keypair(kf.sk);
     const dh = deriveDhKeypair(kf.sk);
     try { await api.publishKey(bytesToHex(kem.publicKey), bytesToHex(dh.publicKey), bytesToHex(kem1024.publicKey)); } catch { /* idempotent */ }
+    try { await publishSignedChatKeys(kf.lns, kf.sk, bytesToHex(kem.publicKey), bytesToHex(dh.publicKey)); }
+    catch { /* Riprovato al prossimo accesso. */ }
     await saveKeyfile(rawKf); // persiste la NUOVA chiave
     const u2 = { lns: kf.lns, sk: kf.sk, pk: kf.pk, tenant_id: kf.tenant_id, kem, kem1024, dh, server: api.getServerUrl() };
     setUser((prev) => ({ ...(prev || {}), ...u2 }));

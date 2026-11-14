@@ -4,7 +4,7 @@
 // serve a niente e non gli dice con chi stai parlando più di quanto già sappia.
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { bytesToHex } from "./crypto";
-import { getBlob, setBlob, setBlobSoon } from "./lock";
+import { getBlob, setBlob, setBlobDurably } from "./lock";
 import * as api from "./api";
 import {
   CAP, CAP2, sessionKey, initSender, initReceiver, initSender2, initReceiver2,
@@ -24,7 +24,7 @@ export { CAP, CAP2 };
 
 async function loadAll() {
   const o = await getBlob(BLOB);
-  return o && typeof o === "object" ? o : {};
+  return o && typeof o === "object" ? { ...o } : {};
 }
 async function saveAll(all) {
   const keys = Object.keys(all);
@@ -32,8 +32,16 @@ async function saveAll(all) {
     keys.sort((a, b) => (all[a].at || 0) - (all[b].at || 0));
     for (const k of keys.slice(0, keys.length - MAX_SESSIONS)) delete all[k];
   }
-  setBlobSoon(BLOB, all);
+  await setBlobDurably(BLOB, all);
 }
+let stateQueue = Promise.resolve();
+
+function withRatchetState(operation) {
+  const next = stateQueue.then(operation);
+  stateQueue = next.catch(() => {});
+  return next;
+}
+
 let cachedDev = null; // letto una volta: prima si leggeva AsyncStorage per ogni messaggio
 async function myDeviceId() {
   if (cachedDev) return cachedDev;
@@ -132,7 +140,11 @@ async function staticKeyFor(peer) {
 
 /// Buste ratchet per un contatto (chat 1:1). Ritorna anche le buste "vecchio stile" per i
 /// dispositivi che non sanno ancora ratchettare, così nessuno resta senza messaggi.
-export async function ratchetEnvelopesFor(payload, peer, user) {
+export function ratchetEnvelopesFor(payload, peer, user) {
+  return withRatchetState(() => ratchetEnvelopesForLocked(payload, peer, user));
+}
+
+async function ratchetEnvelopesForLocked(payload, peer, user) {
   const myDev = await myDeviceId();
   if (!myDev || !user || !user.kem) return { envelopes: [], legacy: [] };
   const all = await loadAll();
@@ -202,7 +214,11 @@ export async function ratchetEnvelopesFor(payload, peer, user) {
 }
 
 /// Tentativo di decifratura ratchet su una lista di buste. Ritorna il testo o null.
-export async function tryRatchetDecrypt(list, user, peerHint) {
+export function tryRatchetDecrypt(list, user, peerHint) {
+  return withRatchetState(() => tryRatchetDecryptLocked(list, user, peerHint));
+}
+
+async function tryRatchetDecryptLocked(list, user, peerHint) {
   const rats = (list || []).filter((e) => e && e.r && e.h);
   const myDhSk = user && user.dh && user.dh.secretKey ? bytesToHex(user.dh.secretKey) : "";
   const myDhPk = user && user.dh && user.dh.publicKey ? bytesToHex(user.dh.publicKey) : "";
@@ -228,6 +244,7 @@ export async function tryRatchetDecrypt(list, user, peerHint) {
     const h = env.h || {};
     const k = sessionKey(h.sdev, myDev);
     let st = all[k];
+    if (st?.peer && peerHint && st.peer !== peerHint) continue;
     let fresh = "";
     if (!st && h.init) {
       // primo messaggio di una conversazione: la radice si ricava con la chiave d'identità,
@@ -285,10 +302,14 @@ export async function ratchetStats(peer) {
 /// si tengono le chiavi in cassaforte, un eventuale chiave falsa infilata mentre il telefono
 /// era via resterebbe lì a fare danno. Buttandole si riscaricano dal server, e se non
 /// combaciano più con l'impronta verificata l'app lo dice.
-export async function resetAllRatchets() {
+export function resetAllRatchets() {
+  return withRatchetState(() => resetAllRatchetsLocked());
+}
+
+async function resetAllRatchetsLocked() {
   const all = await loadAll();
   const sessions = Object.keys(all).length;
-  await setBlob(BLOB, {});
+  await setBlobDurably(BLOB, {});
   await setBlob(PROBE_BLOB, {});
   let peerKeys = 0;
   for (const b of [SPK_BLOB, DHK_BLOB, K5_BLOB, HDH_BLOB]) {
@@ -300,7 +321,11 @@ export async function resetAllRatchets() {
 }
 
 /// Azzera la sessione con un contatto: il prossimo messaggio riparte da una radice nuova.
-export async function resetRatchet(peer) {
+export function resetRatchet(peer) {
+  return withRatchetState(() => resetRatchetLocked(peer));
+}
+
+async function resetRatchetLocked(peer) {
   const all = await loadAll();
   for (const k of Object.keys(all)) if (all[k] && all[k].peer === peer) delete all[k];
   await saveAll(all);

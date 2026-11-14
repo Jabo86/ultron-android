@@ -218,7 +218,7 @@ export async function restorePayload(payload) {
   const report = { prefs: 0, convs: 0, msgs: 0, files: 0, keyfile: false, mbx: false };
   if (!payload || payload.v !== 1) throw new Error("Versione del backup non supportata.");
   if (payload.prefs) {
-    const pairs = Object.entries(payload.prefs).filter(([k]) => k !== K_LAST && k !== "lattice.pulse.keyfile.v1" && !k.startsWith("lat.enc."));
+    const pairs = Object.entries(payload.prefs).filter(([k]) => k !== K_LAST && k !== "lattice.pulse.keyfile.v1" && !k.startsWith("lat.enc.") && !k.startsWith("ultron.signed-identity:"));
     if (pairs.length) { try { await AsyncStorage.multiSet(pairs); report.prefs = pairs.length; } catch { /* */ } }
   }
   if (payload.mbx) { try { await setBlob("mbx", payload.mbx); report.mbx = true; } catch { /* */ } }

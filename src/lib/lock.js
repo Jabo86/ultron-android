@@ -233,16 +233,29 @@ export async function triesLeft() {
 async function writeBlob(name, value) {
   const json = JSON.stringify(value);
   const withPin = !!memKey;
+  const storageKey = blobKey(name);
   const key = memKey || (await deviceKey());
   const iv = hexToBytes(randomHex(12));
   const ct = gcm(key, iv).encrypt(enc8(json));
-  await AsyncStorage.setItem(blobKey(name), JSON.stringify({ k: withPin ? "pin" : "dev", iv: bytesToHex(iv), ct: bytesToHex(ct) }));
+  await AsyncStorage.setItem(storageKey, JSON.stringify({ k: withPin ? "pin" : "dev", iv: bytesToHex(iv), ct: bytesToHex(ct) }));
 }
 
 export async function setBlob(name, value) {
   blobCache.set(name, value);
   blobPending.delete(name);
   await writeBlob(name, value);
+  await noteName(name);
+}
+
+// Protocol state is published to the memory cache only after storage acknowledges it.
+export async function setBlobDurably(name, value) {
+  const namespace = memNs;
+  const activeKey = memKey;
+  if (!activeKey && await hasPin()) throw new Error("Sblocca ULTRON prima di salvare lo stato della chat.");
+  if (namespace !== memNs || activeKey !== memKey) throw new Error("La sessione locale è cambiata.");
+  await writeBlob(name, value);
+  if (namespace !== memNs || activeKey !== memKey) throw new Error("La sessione locale è cambiata.");
+  blobCache.set(name, value);
   await noteName(name);
 }
 

@@ -150,6 +150,11 @@ export const publishKey = (kem_pk_hex, dh_pk_hex, kem1024_pk_hex, hdh_pk_hex) =>
     { kem_pk_hex, dh_pk_hex, kem1024_pk_hex: kem1024_pk_hex || "", hdh_pk_hex: hdh_pk_hex || "" }, a)
     .then((r) => r.data));
 
+export const publishSignedKeys = (bundle) =>
+  withAuth((a, transport) => transport.post("/public/pulse/signed-keys", bundle, a).then((r) => r.data));
+export const signedKeys = (peer) =>
+  withAuth((a, transport) => transport.get(`/public/pulse/signed-keys/${encodeURIComponent(peer)}`, a).then((r) => r.data));
+
 /// Curva d'aggancio dei contatti: quella che si può ruotare. Se un contatto non l'ha
 /// pubblicata si usa la sua curva d'identità, cioè la generazione 0.
 export const pulseHdhKeys = (lns_list) =>
