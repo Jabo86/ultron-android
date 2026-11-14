@@ -56,8 +56,10 @@ function cat(a, b) {
 const blobCache = new Map();
 const blobPending = new Map();
 let blobTimer = null;
+let storageEpoch = 0;
 
 function setMemKey(k, ns) {
+  storageEpoch++;
   memKey = k;
   memNs = ns || "";
   blobCache.clear(); // dati di un'altra chiave: mai riusarli
@@ -230,14 +232,17 @@ export async function triesLeft() {
 // ── Cifratura dei blob locali (file chiave, chiavi usa-e-getta, cronologia) ──
 // Niente resta più in chiaro: col PIN attivo si usa la chiave derivata dal PIN, altrimenti
 // la chiave del dispositivo custodita dal Keystore Android.
+function encryptedBlob(value, key, withPin) {
+  const iv = hexToBytes(randomHex(12));
+  const ct = gcm(key, iv).encrypt(enc8(JSON.stringify(value)));
+  return JSON.stringify({ k: withPin ? "pin" : "dev", iv: bytesToHex(iv), ct: bytesToHex(ct) });
+}
+
 async function writeBlob(name, value) {
-  const json = JSON.stringify(value);
   const withPin = !!memKey;
   const storageKey = blobKey(name);
   const key = memKey || (await deviceKey());
-  const iv = hexToBytes(randomHex(12));
-  const ct = gcm(key, iv).encrypt(enc8(json));
-  await AsyncStorage.setItem(storageKey, JSON.stringify({ k: withPin ? "pin" : "dev", iv: bytesToHex(iv), ct: bytesToHex(ct) }));
+  await AsyncStorage.setItem(storageKey, encryptedBlob(value, key, withPin));
 }
 
 export async function setBlob(name, value) {
@@ -247,29 +252,55 @@ export async function setBlob(name, value) {
   await noteName(name);
 }
 
-// Protocol state is published to the memory cache only after storage acknowledges it.
-export async function setBlobDurably(name, value) {
+export function setBlobDurably(name, value) {
+  return setBlobsDurably([[name, value]]);
+}
+
+let durableWrites = Promise.resolve();
+
+// Android AsyncStorage multiSet commits its entries in one database transaction.
+export function setBlobsDurably(entries) {
   const namespace = memNs;
   const activeKey = memKey;
-  if (!activeKey && await hasPin()) throw new Error("Sblocca ULTRON prima di salvare lo stato della chat.");
-  if (namespace !== memNs || activeKey !== memKey) throw new Error("La sessione locale è cambiata.");
-  await writeBlob(name, value);
-  if (namespace !== memNs || activeKey !== memKey) throw new Error("La sessione locale è cambiata.");
-  blobCache.set(name, value);
-  await noteName(name);
+  const epoch = storageEpoch;
+  const checkScope = () => {
+    if (epoch !== storageEpoch || namespace !== memNs || activeKey !== memKey) throw new Error("La sessione locale è cambiata.");
+  };
+  const write = durableWrites.then(async () => {
+    checkScope();
+    if (!activeKey && await hasPin()) throw new Error("Sblocca ULTRON prima di salvare lo stato della chat.");
+    const key = activeKey || await deviceKey();
+    if (namespace) {
+      for (const [name] of entries) {
+        checkScope();
+        await noteName(name, { strict: true, checkScope });
+      }
+    }
+    checkScope();
+    const rows = entries.map(([name, value]) => [blobKey(name), encryptedBlob(value, key, !!activeKey)]);
+    await AsyncStorage.multiSet(rows);
+    checkScope();
+    for (const [name, value] of entries) blobCache.set(name, value);
+  });
+  durableWrites = write.catch(() => {});
+  return write;
 }
 
 /// Con i nomi opachi non si possono piu elencare i blocchi leggendo le chiavi di
 /// AsyncStorage: l'elenco vive dentro un blocco cifrato come tutti gli altri.
-async function noteName(name) {
+async function noteName(name, { strict = false, checkScope } = {}) {
   if (!memNs || name === N_INDEX || name === N_PROBE) return;
   try {
     const idx = (await getBlob(N_INDEX)) || [];
-    if (idx.indexOf(name) >= 0) return;
-    idx.push(name);
-    blobCache.set(N_INDEX, idx);
-    await writeBlob(N_INDEX, idx);
-  } catch { /* l'elenco si ricostruisce alla prossima scrittura */ }
+    checkScope?.();
+    if (idx.includes(name)) return;
+    const updated = [...idx, name];
+    await writeBlob(N_INDEX, updated);
+    checkScope?.();
+    blobCache.set(N_INDEX, updated);
+  } catch (error) {
+    if (strict) throw error;
+  }
 }
 
 /// Salvataggio accorpato (entro 250 ms, o subito quando l'app passa in secondo piano):
@@ -302,7 +333,11 @@ export function flushBlobs({ strict = false } = {}) {
 
 export async function getBlob(name) {
   if (blobCache.has(name)) return blobCache.get(name);
+  const epoch = storageEpoch;
+  const pinKey = memKey;
   const raw = await AsyncStorage.getItem(blobKey(name));
+  if (epoch !== storageEpoch) return null;
+  if (blobCache.has(name)) return blobCache.get(name);
   if (!raw) return null;
   try {
     const o = JSON.parse(raw);
@@ -315,11 +350,13 @@ export async function getBlob(name) {
       legacyPlain = true;
     } else if (o.k === "dev") {
       v = JSON.parse(dec8(gcm(await deviceKey(), hexToBytes(o.iv)).decrypt(hexToBytes(o.ct))));
-    } else if (!memKey) {
+    } else if (!pinKey) {
       return null; // cifrato col PIN e il PIN non è ancora stato inserito
     } else {
-      v = JSON.parse(dec8(gcm(memKey, hexToBytes(o.iv)).decrypt(hexToBytes(o.ct))));
+      v = JSON.parse(dec8(gcm(pinKey, hexToBytes(o.iv)).decrypt(hexToBytes(o.ct))));
     }
+    if (epoch !== storageEpoch) return null;
+    if (blobCache.has(name)) return blobCache.get(name);
     blobCache.set(name, v);
     if (legacyPlain) writeBlob(name, v).catch(() => {});
     return v;

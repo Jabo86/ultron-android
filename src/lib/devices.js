@@ -126,10 +126,11 @@ export async function decryptAny(msg, user, opts) {
   // 0) BLOCCO R: buste con doppio ratchet (chiave nuova a ogni messaggio, auto-guarigione)
   if (list.some((e) => e && e.r && e.h)) {
     try {
-      const pt = await tryRatchetDecrypt(list, user, msg && msg.from_lns);
+      const pt = await tryRatchetDecrypt(list, user, msg?.from_lns, opts?.durableHistory ? msg : undefined);
       if (pt != null) return pt;
-    } catch { /* si prosegue con gli schemi precedenti */ }
+    } catch (error) { if (opts?.durableHistory) throw error; }
   }
+  if (opts?.durableHistory) return null;
   // 1) chiave d'identità (messaggi vecchi o mittenti senza forward secrecy)
   for (const env of list) {
     if (env && !env.pk_id) {

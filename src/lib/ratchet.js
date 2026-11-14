@@ -4,12 +4,13 @@
 // serve a niente e non gli dice con chi stai parlando più di quanto già sappia.
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { bytesToHex } from "./crypto";
-import { getBlob, setBlob, setBlobDurably } from "./lock";
+import { getBlob, setBlob, setBlobDurably, setBlobsDurably } from "./lock";
 import * as api from "./api";
 import {
   CAP, CAP2, sessionKey, initSender, initReceiver, initSender2, initReceiver2,
   initReceiver2Gens, ratchetEncrypt, ratchetDecrypt,
 } from "./ratchetCore";
+import { archivablePayload, historyRecord } from "./ratchetHistory";
 import { candidateGens, keysFor } from "./keygen";
 
 const BLOB = "rat";
@@ -26,13 +27,17 @@ async function loadAll() {
   const o = await getBlob(BLOB);
   return o && typeof o === "object" ? { ...o } : {};
 }
-async function saveAll(all) {
+async function saveAll(all, record, plaintext) {
   const keys = Object.keys(all);
   if (keys.length > MAX_SESSIONS) {
     keys.sort((a, b) => (all[a].at || 0) - (all[b].at || 0));
     for (const k of keys.slice(0, keys.length - MAX_SESSIONS)) delete all[k];
   }
-  await setBlobDurably(BLOB, all);
+  const writes = [[BLOB, all]];
+  if (record && archivablePayload(plaintext)) {
+    writes.push([record.name, { digest: record.digest, plaintext }]);
+  }
+  await setBlobsDurably(writes);
 }
 let stateQueue = Promise.resolve();
 
@@ -214,11 +219,11 @@ async function ratchetEnvelopesForLocked(payload, peer, user) {
 }
 
 /// Tentativo di decifratura ratchet su una lista di buste. Ritorna il testo o null.
-export function tryRatchetDecrypt(list, user, peerHint) {
-  return withRatchetState(() => tryRatchetDecryptLocked(list, user, peerHint));
+export function tryRatchetDecrypt(list, user, peerHint, archivedMessage) {
+  return withRatchetState(() => tryRatchetDecryptLocked(list, user, peerHint, archivedMessage));
 }
 
-async function tryRatchetDecryptLocked(list, user, peerHint) {
+async function tryRatchetDecryptLocked(list, user, peerHint, archivedMessage) {
   const rats = (list || []).filter((e) => e && e.r && e.h);
   const myDhSk = user && user.dh && user.dh.secretKey ? bytesToHex(user.dh.secretKey) : "";
   const myDhPk = user && user.dh && user.dh.publicKey ? bytesToHex(user.dh.publicKey) : "";
@@ -241,6 +246,11 @@ async function tryRatchetDecryptLocked(list, user, peerHint) {
   const myDev = await myDeviceId();
   const all = await loadAll();
   for (const env of rats) {
+    const record = historyRecord(user, archivedMessage, env);
+    const saved = record && await getBlob(record.name);
+    if (saved?.digest === record?.digest && typeof saved?.plaintext === "string") {
+      return saved.plaintext;
+    }
     const h = env.h || {};
     const k = sessionKey(h.sdev, myDev);
     let st = all[k];
@@ -272,7 +282,7 @@ async function tryRatchetDecryptLocked(list, user, peerHint) {
     if (r) {
       if (peerHint && !r.state.peer) r.state.peer = peerHint;
       all[k] = r.state;
-      await saveAll(all);
+      await saveAll(all, record, r.plaintext);
       // Sessione aperta per davvero: la usa-e-getta ha finito il suo lavoro e si butta.
       if (fresh) await consumePrekey(fresh);
       return r.plaintext;
