@@ -228,7 +228,9 @@ export const wakeRegister = (rid) =>
 export const wakeRevoke = (rid) =>
   withAuth((a) => client.post("/public/pulse/wake/revoke", { rid }, a).then((r) => r.data));
 export const panicArm = (token) =>
-  withAuth((a) => client.post("/public/pulse/panic/arm", { token }, a).then((r) => r.data));
+  withAuth((a, transport) => transport.post("/public/pulse/panic/arm", { token }, { ...a, timeout: 5000 }).then((r) => r.data));
+export const panicWipe = ({ server, token }) =>
+  makeClient(personalServerUrl(server)).post("/public/pulse/panic/wipe", { token }, { timeout: 5000 });
 // ── CASSETTE POSTALI ANONIME: nessun token di sessione, per costruzione ──
 export const mailboxCreate = (mailbox_id, secret_hash) =>
   client.post("/public/mailbox/create", { mailbox_id, secret_hash }).then((r) => r.data);

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { AppState } from "react-native";
 import { parseKeyfile, deriveKemKeypair, deriveKem1024Keypair, deriveDhKeypair, bytesToHex } from "../lib/crypto";
 import * as api from "../lib/api";
@@ -23,6 +23,9 @@ export function AuthProvider({ children }) {
   const [booting, setBooting] = useState(true);
   const [locked, setLocked] = useState(false); // app-lock gate (biometric/PIN)
   const [mustRotate, setMustRotate] = useState(false); // primo accesso: cambio chiave obbligatorio
+  const [decoySession, setDecoySession] = useState(false);
+  const decoyProfile = useRef(false);
+  const wiping = useRef(null);
   const [pinGate, setPinGate] = useState(false); // PIN dell'app da inserire (dati locali cifrati)
 
   const unlock = useCallback(() => {
@@ -56,7 +59,7 @@ export function AuthProvider({ children }) {
   }, [user, lockApp]);
 
   const signIn = useCallback(async (rawKf, opts = {}) => {
-    const { persist = true, server, overrideServer = false } = opts;
+    const { persist = true, server, overrideServer = false, decoy = decoyProfile.current } = opts;
     const kf = parseKeyfile(rawKf);
     if (!kf) throw new Error("File chiave non valido o corrotto.");
     const target = (overrideServer && server) || serverFromKeyfile(rawKf) || server || api.getServerUrl();
@@ -78,6 +81,8 @@ export function AuthProvider({ children }) {
     if ((kf.lns || "").endsWith("@tuttooss.lns")) scheduleDailyQuizReminder().catch(() => {});
     else cancelDailyQuizReminder().catch(() => {});
     const u = { lns: kf.lns, sk: kf.sk, pk: kf.pk, tenant_id: kf.tenant_id, kem, kem1024, dh, server: api.getServerUrl() };
+    decoyProfile.current = decoy;
+    setDecoySession(decoy);
     setUser(u);
     // La cassetta anonima ha bisogno di sapere chi siamo per aprire le buste del ratchet.
     try { require("../lib/mailbox").setIdentity(u); } catch { /* modulo assente */ }
@@ -106,7 +111,7 @@ export function AuthProvider({ children }) {
       try { require("../lib/maintenance").run([]); } catch { /* */ }
     } catch { /* rubrica non disponibile */ }
     // Riallinea il token di autodistruzione se il PIN era già attivo.
-    lock.panicToken().then((tok) => { if (tok) api.panicArm(tok).catch(() => {}); }).catch(() => {});
+    if (!decoy) await lock.armReset(u.lns, u.server, api.panicArm).catch(() => false);
     return u;
   }, []);
 
@@ -140,27 +145,23 @@ export function AuthProvider({ children }) {
 
   // AUTODISTRUZIONE: cancella l'account sul server e rade al suolo i dati locali.
   const wipeNow = useCallback(async () => {
-    try { const mbx = require("../lib/mailbox"); await mbx.close(); } catch { /* nessuna cassetta */ }
-    try { await lock.selfDestruct((tok) => api.panicWipe(tok)); } catch { /* best effort */ }
-    api.clearAuth();
-    msgCache.clearAll(); // le decifrature in memoria non sopravvivono all uscita
-    try { require("../lib/book").setUser(null); } catch { /* */ }
-    try { require("../lib/mailbox").setIdentity(null); } catch { /* */ }
-    try { api.setIdentity(null); require("../lib/gname").clear(); } catch { /* */ }
-    lock.clearPlainCache().catch(() => {}); // via le foto e i file decifrati dalla cache
-    setUser(null);
-    setPinGate(false);
-    setLocked(false);
+    if (wiping.current) return wiping.current;
+    const pending = (async () => {
+      api.clearAuth();
+      msgCache.clearAll();
+      setUser(null);
+      setPinGate(true);
+      await lock.selfDestruct(api.panicWipe);
+    })();
+    wiping.current = pending;
+    try { await pending; }
+    catch (error) { wiping.current = null; throw error; }
   }, []);
 
-  // Sblocco col PIN dell'app: decifra il file chiave e apre la sessione.
   const unlockWithPin = useCallback(async (pin) => {
     const r = await lock.unlockWithPin(pin);
-    if (r.status === "panic") { await wipeNow(); return { status: "panic" }; }
-    if (r.status === "wrong") {
-      if (r.left <= 0) { await wipeNow(); return { status: "wiped" }; }
-      return r;
-    }
+    if (r.status === "wipe") { await wipeNow(); return { status: "wiped" }; }
+    if (r.status === "wrong" || r.status === "busy") return r;
     if (r.status === "decoy") {
       // PROFILO ESCA. Da qui l'app e' identica in tutto: nessun segno, nessun contatore,
       // nessuna scorciatoia per rientrare nel profilo vero. Se l'esca non ha ancora un
@@ -168,7 +169,9 @@ export function AuthProvider({ children }) {
       // vedrebbe chi ha appena installato Lattice.
       const srvD = await loadServer();
       if (srvD) api.setServerUrl(srvD);
-      if (r.keyfile) await signIn(r.keyfile, { persist: false });
+      decoyProfile.current = true;
+      setDecoySession(true);
+      if (r.keyfile) await signIn(r.keyfile, { persist: false, decoy: true });
       setPinGate(false);
       setLocked(false);
       return { status: "ok" };
@@ -176,7 +179,7 @@ export function AuthProvider({ children }) {
     if (!r.keyfile) throw new Error("Nessun file chiave salvato su questo telefono.");
     const srv = await loadServer();
     if (srv) api.setServerUrl(srv);
-    await signIn(r.keyfile, { persist: false });
+    await signIn(r.keyfile, { persist: false, decoy: false });
     setPinGate(false);
     setLocked(false);
     return { status: "ok" };
@@ -186,6 +189,7 @@ export function AuthProvider({ children }) {
     try { await require("../lib/wake").disable(); } catch { /* best effort */ }
     try { await api.logout(); } catch { /* best-effort: revoca lato server */ }
     await clearStoredKeyfile();
+    if (!decoyProfile.current) await lock.forgetResetTarget().catch(() => {});
     api.clearAuth();
     msgCache.clearAll(); // le decifrature in memoria non sopravvivono all uscita
     try { require("../lib/book").setUser(null); } catch { /* */ }
@@ -222,7 +226,10 @@ export function AuthProvider({ children }) {
       try {
         const srv = await loadServer();
         if (srv) api.setServerUrl(srv);
-        if (await lock.hasPin()) { setPinGate(true); setBooting(false); return; }
+        const pinState = await Promise.all([lock.hasPin(), lock.triesLeft()]).catch(() => null);
+        if (!pinState) { setPinGate(true); setBooting(false); return; }
+        if (pinState[1] === 0) { setPinGate(true); setBooting(false); await wipeNow(); return; }
+        if (pinState[0]) { setPinGate(true); setBooting(false); return; }
         const kf = await loadKeyfile();
         if (kf) {
           await signIn(kf, { persist: false });
@@ -234,13 +241,13 @@ export function AuthProvider({ children }) {
       } catch { /* stale/invalid key — show login */ }
       setBooting(false);
     })();
-  }, [signIn]);
+  }, [signIn, wipeNow]);
 
   // Oggetto stabile: prima cambiava identità a ogni render del provider e faceva
   // ridisegnare TUTTE le schermate che leggono il contesto (chat compresa).
   const value = useMemo(
-    () => ({ user, booting, locked, mustRotate, pinGate, signIn, signOut, unlock, lock: lockApp, rotateKey, finishRotation, unlockWithPin, wipeNow }),
-    [user, booting, locked, mustRotate, pinGate, signIn, signOut, unlock, lockApp, rotateKey, finishRotation, unlockWithPin, wipeNow]
+    () => ({ user, booting, locked, mustRotate, pinGate, decoySession, signIn, signOut, unlock, lock: lockApp, rotateKey, finishRotation, unlockWithPin, wipeNow }),
+    [user, booting, locked, mustRotate, pinGate, decoySession, signIn, signOut, unlock, lockApp, rotateKey, finishRotation, unlockWithPin, wipeNow]
   );
   return (
     <Ctx.Provider value={value}>

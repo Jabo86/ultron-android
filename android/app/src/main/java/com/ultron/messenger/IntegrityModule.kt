@@ -1,5 +1,6 @@
 package com.ultron.messenger
 
+import android.app.ActivityManager
 import android.os.Build
 import android.os.Debug
 import android.provider.Settings
@@ -29,6 +30,16 @@ import java.io.File
 class IntegrityModule(private val ctx: ReactApplicationContext) : ReactContextBaseJavaModule(ctx) {
 
   override fun getName() = "LatticeIntegrity"
+
+  @ReactMethod
+  fun clearAppData(promise: Promise) {
+    try {
+      val manager = ctx.getSystemService(ActivityManager::class.java)
+      promise.resolve(manager?.clearApplicationUserData() == true)
+    } catch (e: Exception) {
+      promise.reject("ULTRON_RESET_FAILED", e)
+    }
+  }
 
   private val binariRoot = arrayOf(
     "/system/bin/su", "/system/xbin/su", "/sbin/su", "/su/bin/su", "/system/sd/xbin/su",

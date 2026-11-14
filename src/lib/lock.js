@@ -1,17 +1,8 @@
-// BLOCCO C/SICUREZZA LOCALE — PIN dell'app, cifratura dei dati sul dispositivo,
-// PIN di emergenza e autodistruzione totale.
-//
-// Come funziona:
-// · Il PIN non viene salvato: si salva solo un verificatore (hash con sale casuale).
-// · Dal PIN si deriva la chiave AES-256 che cifra sul telefono il file chiave, le chiavi
-//   usa-e-getta e la cronologia locale: a telefono bloccato o spento quei dati sono
-//   illeggibili anche estraendo la memoria dell'app.
-// · Tre PIN sbagliati (avviso a schermo pieno al secondo) → distruzione totale.
-// · PIN di emergenza: sblocca "normalmente" ma cancella tutto in silenzio.
+// PIN locale, cifratura e ripristino dei dati dell’app.
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 import * as FileSystem from "expo-file-system/legacy";
-import * as IntentLauncher from "expo-intent-launcher";
+import { NativeModules } from "react-native";
 import { sha512 } from "@noble/hashes/sha2.js";
 import * as kdf from "./kdf";
 import * as hw from "./hwkey";
@@ -22,7 +13,7 @@ import { clearThumbCache } from "./thumb";
 const K_SALT = "lat.pin.salt";
 const K_VER = "lat.pin.ver";
 const K_PANIC_VER = "lat.pin.panicver";
-const K_PANIC_TOKEN = "lat.panic.token";
+const K_RESET_TARGET = "ultron.reset.target.v1";
 const K_TRIES = "lat.pin.tries";
 // Chiave AES-256 del DISPOSITIVO, custodita dal Keystore Android tramite SecureStore.
 // Serve a non lasciare NULLA in chiaro quando il PIN non è attivo: prima file chiave,
@@ -42,8 +33,8 @@ const SUFF_HW = "+hw";
 const N_PROBE = "\u0001p";
 const N_INDEX = "\u0001i";
 const PROBE_MAGIC = "L2V";
-export const MAX_TRIES = 3;
-export const PACKAGE_NAME = "com.ultron.messenger";
+export const MAX_TRIES = 5;
+let unlockPending = false;
 
 let memKey = null; // chiave AES derivata dal PIN, solo in RAM
 // Namespace del profilo attivo. Stringa vuota = installazioni vecchie, dove i blocchi
@@ -147,7 +138,7 @@ export async function deviceKey() {
 }
 
 export async function hasPin() {
-  return !!(await ss.get(K_VER));
+  return !!(await SecureStore.getItemAsync(K_VER));
 }
 
 // ── DERIVAZIONE DEL PIN ──
@@ -229,7 +220,7 @@ export async function isUnlocked() {
   return !!memKey || !(await hasPin());
 }
 export async function tries() {
-  const n = parseInt((await ss.get(K_TRIES)) || "0", 10);
+  const n = parseInt((await SecureStore.getItemAsync(K_TRIES)) || "0", 10);
   return isNaN(n) ? 0 : n;
 }
 export async function triesLeft() {
@@ -350,10 +341,8 @@ export async function removeBlob(name) {
 }
 
 // ── Impostazione / modifica del PIN ──
-export async function setupPin(pin, panicPin, armFn) {
+export async function setupPin(pin) {
   if (!/^\d{4,10}$/.test(String(pin || ""))) throw new Error("Il PIN deve avere da 4 a 10 cifre.");
-  if (panicPin && panicPin === pin) throw new Error("Il PIN di emergenza deve essere diverso dal PIN normale.");
-  if (panicPin && !/^\d{4,10}$/.test(String(panicPin))) throw new Error("Il PIN di emergenza deve avere da 4 a 10 cifre.");
   const salt = randomHex(16);
   // I blob esistenti sono cifrati con la chiave del dispositivo: si rileggono PRIMA di
   // cambiare chiave e si riscrivono dopo, altrimenti chiavi usa-e-getta e stato del
@@ -367,11 +356,8 @@ export async function setupPin(pin, panicPin, armFn) {
   await ss.set(K_KDF, migliore);
   const dNew = await derivePin(pin, migliore);
   await ss.set(K_VER, dNew.ver);
-  if (panicPin) {
-    const dp = await derivePin(panicPin, migliore);
-    await ss.set(K_PANIC_VER, dp.ver);
-  } else await ss.del(K_PANIC_VER);
-  await ss.set(K_TRIES, "0");
+  await ss.del(K_PANIC_VER);
+  await SecureStore.setItemAsync(K_TRIES, "0");
   setMemKey(dNew.key, dNew.ns);
   const nomi = [];
   for (const [n, v] of snapshot) {
@@ -401,7 +387,6 @@ export async function setupPin(pin, panicPin, armFn) {
   for (const n of nomi) {
     try { await AsyncStorage.removeItem(ENC_PREFIX + n); } catch { /* niente */ }
   }
-  // La chiave del PIN d'emergenza e' servita solo per scriverne il verificatore.
   derivCache.clear();
   // Il file chiave passa da "in chiaro" a "cifrato col PIN".
   const plain = await AsyncStorage.getItem(KF_PLAIN);
@@ -418,16 +403,6 @@ export async function setupPin(pin, panicPin, armFn) {
     }
     await AsyncStorage.removeItem(KF_PLAIN);
   }
-  // Token di autodistruzione: permette di ordinare la cancellazione al server anche
-  // quando la chiave d'identità è già cifrata dietro al PIN o distrutta.
-  let token = await ss.get(K_PANIC_TOKEN);
-  if (!token) {
-    token = randomHex(32);
-    await ss.set(K_PANIC_TOKEN, token);
-  }
-  if (typeof armFn === "function") {
-    try { await armFn(token); } catch { /* si riproverà al prossimo avvio */ }
-  }
   return true;
 }
 
@@ -440,7 +415,7 @@ export async function disablePin(pin) {
   const vecchi = snapshot.map((x) => x[0]);
   const nsVecchio = memNs;
   await ss.del(K_VER); await ss.del(K_SALT); await ss.del(K_PANIC_VER); await ss.del(K_KDF);
-  await ss.set(K_TRIES, "0");
+  await SecureStore.setItemAsync(K_TRIES, "0");
   setMemKey(null, "");
   for (const [n, v] of snapshot) {
     blobCache.set(n, v);
@@ -462,21 +437,13 @@ export async function disablePin(pin) {
   return true;
 }
 
-/// "ok" | "panic" | "decoy" | "wrong"
-/// L'ordine conta: prima il profilo vero, poi l'emergenza, e SOLO alla fine l'esca —
-/// che non ha un verificatore e si riconosce unicamente perche' apre la propria sonda.
+/// Il profilo esca si riconosce tramite la propria sonda cifrata.
 export async function verifyPin(pin) {
   const d = await derivePin(pin);
-  if (!d) return "wrong";
-  const ver = await ss.get(K_VER);
-  if (!ver) return "wrong";
+  if (!d) throw new Error("Impossibile verificare il PIN su questo dispositivo.");
+  const ver = await SecureStore.getItemAsync(K_VER);
+  if (!ver) throw new Error("Configurazione del PIN non disponibile.");
   if (d.ver === ver) return "ok";
-  const pv = await ss.get(K_PANIC_VER);
-  if (pv && d.ver === pv) return "panic";
-  // Un PIN di emergenza impostato PRIMA del passaggio ad argon2 ha ancora il verificatore
-  // vecchio: si controlla anche quello, altrimenti l'aggiornamento gli spegnerebbe
-  // l'unica difesa che ha in caso di costrizione.
-  if (pv && d.a2 && verifierOf(d.salt, pin) === pv) return "panic";
   if (await probeOpens(d)) return "decoy";
   return "wrong";
 }
@@ -486,28 +453,27 @@ export async function _derive(pin) { return derivePin(pin); }
 
 /// Sblocco: restituisce { status, keyfile }.
 export async function unlockWithPin(pin) {
-  const r = await verifyPin(pin);
-  if (r === "wrong") {
-    const n = (await tries()) + 1;
-    await ss.set(K_TRIES, String(n));
-    const left = Math.max(0, MAX_TRIES - n);
-    // distruzione non delegata: parte QUI, non nello strato che disegna lo schermo.
-    // Prima era `AuthContext` a decidere di cancellare dopo aver visto `left: 0`: chi ha
-    // il telefono in mano puo uccidere il processo in quell'istante. Adesso la parte
-    // locale e' gia partita quando questa funzione ritorna.
-    if (left <= 0) {
-      try { await selfDestruct(null, { uninstall: false }); } catch { /* si prosegue */ }
+  if (unlockPending) return { status: "busy" };
+  unlockPending = true;
+  try {
+    const used = await tries();
+    if (used >= MAX_TRIES) return { status: "wipe" };
+    const r = await verifyPin(pin);
+    if (r === "wrong") {
+      const n = used + 1;
+      await SecureStore.setItemAsync(K_TRIES, String(n));
+      return n >= MAX_TRIES ? { status: "wipe" } : { status: "wrong", left: MAX_TRIES - n };
     }
-    return { status: "wrong", tries: n, left };
+    await SecureStore.setItemAsync(K_TRIES, "0");
+    return await openPinProfile(pin, r);
+  } finally {
+    unlockPending = false;
   }
-  if (r === "panic") {
-    // Il PIN di emergenza NON apre nulla: cancella, subito e qui.
-    try { await selfDestruct(null, { uninstall: false }); } catch { /* si prosegue */ }
-    return { status: "panic" };
-  }
+}
+
+async function openPinProfile(pin, r) {
   const d = await derivePin(pin);
   setMemKey(d.key, d.a2 ? d.ns : "");
-  await ss.set(K_TRIES, "0");
   if (r === "decoy") {
     // Profilo ESCA. Da qui dentro non esiste alcun modo di sapere che il profilo vero
     // esista: nessun contatore, nessun elenco, nessuna scorciatoia. I suoi dati sono
@@ -596,11 +562,9 @@ export async function activateDecoy(realPin, decoyPin) {
     const ok = await upgradeKdf(realPin);
     if (!ok) throw new Error("Aggiornamento della cifratura locale non riuscito: profilo esca non creato.");
   }
-  const pv = await ss.get(K_PANIC_VER);
   const d = await derivePin(decoyPin, migliore);
   const vero = await derivePin(realPin, migliore);
   if (d.ns === vero.ns) throw new Error("PIN esca non utilizzabile.");
-  if (pv && d.ver === pv) throw new Error("Il PIN esca non puo essere uguale al PIN di emergenza.");
 
   const nsBefore = memNs, keyBefore = memKey;
   memNs = d.ns; memKey = d.key;
@@ -663,46 +627,40 @@ export async function clearPlainCache() {
   return n;
 }
 
-export async function panicToken() {
-  return await ss.get(K_PANIC_TOKEN);
+export async function resetTarget() {
+  const raw = await SecureStore.getItemAsync(K_RESET_TARGET);
+  return raw ? JSON.parse(raw) : null;
 }
 
-// ── AUTODISTRUZIONE ──
-// 1) ordina al server la cancellazione totale dell'account (messaggi, chiamate,
-//    metadati, rubrica, gruppi, identità); 2) rade al suolo i dati locali;
-//    3) apre la schermata di disinstallazione (Android chiede un tap di conferma).
-export async function selfDestruct(serverWipeFn, { uninstall = true } = {}) {
-  const report = { server: false, local: false };
+export async function armReset(owner, server, arm) {
+  if (!owner || !server.startsWith("https://") || !(await hasPin())) return false;
+  const previous = await resetTarget();
+  const target = previous?.owner === owner && previous?.server === server
+    ? previous : { owner, server, token: randomHex(32), armed: false };
+  // Conserva il token prima della richiesta, anche se la risposta HTTPS si perde.
+  await SecureStore.setItemAsync(K_RESET_TARGET, JSON.stringify(target));
+  await arm(target.token);
+  await SecureStore.setItemAsync(K_RESET_TARGET, JSON.stringify({ ...target, armed: true }));
+  return true;
+}
+
+export async function forgetResetTarget() {
+  await SecureStore.deleteItemAsync(K_RESET_TARGET);
+  await ss.del("lat.panic.token");
+}
+
+export async function selfDestruct(serverWipeFn) {
+  // Il marcatore resta sul disco se Android termina il processo prima del ripristino.
+  await SecureStore.setItemAsync(K_TRIES, String(MAX_TRIES));
+  lockMemory();
+  devKey = null;
   try {
-    const tok = await ss.get(K_PANIC_TOKEN);
-    if (tok && typeof serverWipeFn === "function") {
-      await serverWipeFn(tok);
-      report.server = true;
-    }
-  } catch { /* si prosegue comunque: la parte locale è la priorità */ }
-  try {
-    await AsyncStorage.clear();
-    // La chiave nel chip e' l'ultima cosa e la piu definitiva: senza di lei nessun dato
-    // locale e' piu leggibile, nemmeno con il PIN giusto.
-    try { await hw.distruggi(); } catch { /* si prosegue */ }
-    for (const k of [K_SALT, K_VER, K_PANIC_VER, K_PANIC_TOKEN, K_TRIES, K_DEV_KEY, K_KDF]) await ss.del(k);
-    derivCache.clear();
-    setMemKey(null, "");
-    devKey = null;
-    for (const dir of [FileSystem.cacheDirectory, FileSystem.documentDirectory]) {
-      try {
-        const names = await FileSystem.readDirectoryAsync(dir);
-        for (const nm of names) {
-          try { await FileSystem.deleteAsync(dir + nm, { idempotent: true }); } catch { /* file in uso */ }
-        }
-      } catch { /* directory non leggibile */ }
-    }
-    report.local = true;
-  } catch { /* best effort */ }
-  if (uninstall) {
-    try {
-      await IntentLauncher.startActivityAsync("android.intent.action.DELETE", { data: "package:" + PACKAGE_NAME });
-    } catch { /* l'utente potrà disinstallare a mano */ }
+    const target = await resetTarget();
+    if (target) await serverWipeFn(target);
+  } catch { /* La rete può mancare. Il ripristino locale deve proseguire. */ }
+
+  try { await hw.distruggi(); } catch { /* Il reset Android rimuove i dati dell’app. */ }
+  if (!await NativeModules.LatticeIntegrity?.clearAppData()) {
+    throw new Error("Ripristino Android non riuscito. Riprova dalla schermata di blocco.");
   }
-  return report;
 }

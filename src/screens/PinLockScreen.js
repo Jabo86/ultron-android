@@ -8,14 +8,14 @@ import * as lock from "../lib/lock";
 const KEYS = [["1", ""], ["2", "ABC"], ["3", "DEF"], ["4", "GHI"], ["5", "JKL"], ["6", "MNO"], ["7", "PQRS"], ["8", "TUV"], ["9", "WXYZ"], ["", ""], ["0", ""], ["del", ""]];
 
 export default function PinLockScreen() {
-  const { unlockWithPin, wipeNow } = useAuth();
+  const { unlockWithPin } = useAuth();
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [left, setLeft] = useState(lock.MAX_TRIES);
   const [warn, setWarn] = useState(false);
 
-  useEffect(() => { lock.triesLeft().then(setLeft).catch(() => {}); }, []);
+  useEffect(() => { lock.triesLeft().then((n) => { setLeft(n); setWarn(n === 1); }).catch(() => {}); }, []);
 
   const submit = useCallback(async (value) => {
     setBusy(true); setErr("");
@@ -25,7 +25,6 @@ export default function PinLockScreen() {
         setPin("");
         setLeft(r.left);
         if (r.left === 1) setWarn(true);
-        else if (r.left <= 0) return; // autodistruzione già in corso
         else setErr("PIN errato.");
       }
     } catch (e) {
@@ -76,8 +75,7 @@ export default function PinLockScreen() {
       </TouchableOpacity>
 
       <Text style={styles.note} testID="pin-forgot-note">
-        PIN dimenticato? Non esiste un modo per aggirarlo: disinstalla e reinstalla l'app,
-        poi rientra con il tuo file chiave.
+        PIN dimenticato? Il file chiave permette di accedere solo finché l’account esiste sul gateway.
       </Text>
 
       {/* Avviso a schermo pieno: ancora un errore e si cancella tutto */}
@@ -90,9 +88,6 @@ export default function PinLockScreen() {
           </Text>
           <TouchableOpacity style={styles.warnBtn} onPress={() => setWarn(false)} testID="pin-warning-ok">
             <Text style={styles.warnBtnTxt}>Ho capito</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => { setWarn(false); wipeNow(); }} style={{ marginTop: 14 }} testID="pin-warning-wipe">
-            <Text style={styles.warnLink}>Cancella subito tutto</Text>
           </TouchableOpacity>
         </View>
       </Modal>

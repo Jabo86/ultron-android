@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, Modal } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { theme } from "../theme";
@@ -15,7 +15,7 @@ const Card = ({ children }) => <View style={styles.card}>{children}</View>;
 export default function PrivacyLockScreen({ navigation }) {
   const { lang } = useI18n();
   const en = lang === "en";
-  const { wipeNow } = useAuth();
+  const { user, decoySession } = useAuth();
   const [pinOn, setPinOn] = useState(false);
   const [devs, setDevs] = useState(null);
   const [myDev, setMyDev] = useState("");
@@ -23,18 +23,19 @@ export default function PrivacyLockScreen({ navigation }) {
   const [form, setForm] = useState(null); // "set" | "off"
   const [pin, setPin] = useState("");
   const [pin2, setPin2] = useState("");
-  const [panic, setPanic] = useState("");
   const [esca, setEsca] = useState("");
   const [err, setErr] = useState("");
-  const [wipeAsk, setWipeAsk] = useState(false);
+  const [remoteReady, setRemoteReady] = useState(false);
   const [mbxSt, setMbxSt] = useState(null);
 
   const refresh = useCallback(async () => {
     setPinOn(await lock.hasPin());
+    const target = decoySession ? null : await lock.resetTarget().catch(() => null);
+    setRemoteReady(!!target?.armed && target.owner === user?.lns && target.server === user?.server);
     setMyDev(await devices.deviceId());
     try { const r = await api.listDevices(); setDevs(Array.isArray(r?.devices) ? r.devices : []); } catch { setDevs([]); }
     try { setMbxSt(await mbx.status()); } catch { setMbxSt(null); }
-  }, []);
+  }, [user, decoySession]);
   useEffect(() => { refresh(); }, [refresh]);
 
   const savePin = async () => {
@@ -42,18 +43,12 @@ export default function PrivacyLockScreen({ navigation }) {
     if (pin !== pin2) { setErr("I due PIN non coincidono."); return; }
     setBusy(true);
     try {
-      await lock.setupPin(pin, panic || null, (tok) => api.panicArm(tok));
+      await lock.setupPin(pin);
+      if (!decoySession && user) await lock.armReset(user.lns, user.server, api.panicArm).catch(() => false);
       if (esca) await lock.activateDecoy(pin, esca);
-      const conEsca = !!esca;
-      setForm(null); setPin(""); setPin2(""); setPanic(""); setEsca("");
+      setForm(null); setPin(""); setPin2(""); setEsca("");
       await refresh();
-      Alert.alert(
-        "PIN attivo",
-        "Da adesso il file chiave e le chiavi di sessione su questo telefono sono cifrati col PIN, con derivazione argon2id (ogni tentativo costa memoria e tempo: un PIN non si prova piu a milioni al secondo). Tre PIN errati avviano la cancellazione locale."
-        + (conEsca
-            ? "\n\nPROFILO ESCA ATTIVO. Inserendo il PIN esca si apre un secondo profilo, vuoto e pronto per un secondo account. Da dentro l'esca il profilo vero non e' raggiungibile e non esiste nulla che ne provi l'esistenza: non e' stato salvato nessun verificatore del PIN esca. Usalo davvero, di tanto in tanto: un'esca senza messaggi e senza contatti non convince nessuno."
-            : "")
-      );
+      Alert.alert("PIN attivo", "Dopo cinque PIN di sblocco errati consecutivi, Android ripristina ULTRON. In questa schermata puoi verificare lo stato della cancellazione sul gateway.");
     } catch (e) { setErr(String(e?.message || e)); }
     finally { setBusy(false); }
   };
@@ -103,29 +98,14 @@ export default function PrivacyLockScreen({ navigation }) {
               <View style={styles.warnBox} testID="pin-backup-warning">
                 <Text style={styles.warnBoxTxt}>
                   Prima di attivare il PIN: tieni una copia del tuo file chiave in un posto sicuro
-                  (fuori dal telefono). Se dimentichi il PIN non esiste recupero, e tre PIN errati
+                  (fuori dal telefono). Se dimentichi il PIN non esiste recupero, e cinque PIN errati
                   avviano la cancellazione dei dati locali.
                 </Text>
               </View>
               <TextInput style={styles.input} placeholder="PIN (4-10 cifre)" placeholderTextColor={theme.textFaint} keyboardType="number-pad" secureTextEntry value={pin} onChangeText={setPin} testID="pin-input" />
               <TextInput style={styles.input} placeholder="Ripeti il PIN" placeholderTextColor={theme.textFaint} keyboardType="number-pad" secureTextEntry value={pin2} onChangeText={setPin2} testID="pin-input-2" />
               <PinStrength pin={pin} />
-              <TextInput style={styles.input} placeholder="PIN di emergenza (opzionale)" placeholderTextColor={theme.textFaint} keyboardType="number-pad" secureTextEntry value={panic} onChangeText={setPanic} testID="panic-pin-input" />
-              <Text style={styles.hint}>
-                USA 8 CIFRE O PIU. Non e' un consiglio generico: e' l'unica cosa che sposta
-                davvero la difesa, ed e' misurata. Con i dati estratti dal telefono e provati
-                su un computer, un PIN di 4 cifre cade in un'ora su un solo processore; 6
-                cifre cadono in un'ora e mezza con 64 processori; 8 cifre chiedono giorni; 10
-                cifre chiedono anni.{"\n\n"}
-                Da questa versione la chiave dei tuoi dati e' legata al chip di sicurezza del
-                telefono e non ne esce: chi porta via l'archivio non puo provare i PIN
-                altrove, perche' senza il chip non arriva alla chiave nemmeno indovinando.
-                Restano possibili i tentativi FATTI SU QUESTO TELEFONO, uno alla volta, con
-                il contatore dei tre errori che scorre. Le cifre in piu servono a quello.
-              </Text>
-              <Text style={styles.hint}>
-                Il PIN di emergenza avvia la procedura di autodistruzione. La rimozione remota dipende dal server.
-              </Text>
+              <Text style={styles.hint}>Usa un PIN lungo e difficile da indovinare. La protezione hardware dipende dal dispositivo e dal metodo di derivazione attivo.</Text>
               <TextInput style={styles.input} placeholder="PIN esca — doppio fondo (opzionale)" placeholderTextColor={theme.textFaint} keyboardType="number-pad" secureTextEntry value={esca} onChangeText={setEsca} testID="decoy-pin-input" />
               <Text style={styles.hint}>
                 Il PIN esca apre un SECONDO profilo, separato: un altro account, altre chat,
@@ -214,30 +194,16 @@ export default function PrivacyLockScreen({ navigation }) {
         <Card>
           <Text style={[styles.h2, { color: theme.danger }]}>Autodistruzione</Text>
           <Text style={styles.p}>
-            Dopo tre PIN errati l’app avvia la cancellazione locale e richiede la disinstallazione. La cancellazione remota richiede un gateway compatibile e raggiungibile. Le copie esportate restano fuori dalla procedura.
+            Dopo cinque PIN di sblocco errati consecutivi, Android cancella i dati di ULTRON e lascia l’app installata. Un PIN corretto azzera il contatore. Il debug USB e gli avvisi di integrità non causano un reset.
           </Text>
-          <TouchableOpacity style={styles.btnDanger} onPress={() => setWipeAsk(true)} testID="wipe-now-btn">
-            <Ionicons name="nuclear-outline" size={18} color="#fff" />
-            <Text style={styles.btnTxt}>  Cancella tutto adesso</Text>
-          </TouchableOpacity>
+          <Text style={styles.hint}>
+            {remoteReady ? "Cancellazione sul gateway registrata per questo account." : "Cancellazione sul gateway non confermata per questo account."}
+          </Text>
+          <Text style={styles.hint}>
+            Il reset locale parte anche offline. Per cancellare l’account sul gateway deve arrivare la richiesta HTTPS. Il nome resta riservato dopo la cancellazione. Le copie esportate, i backup esistenti e le copie già sui telefoni dei destinatari restano fuori dal reset.
+          </Text>
         </Card>
       </ScrollView>
-
-      <Modal visible={wipeAsk} transparent animationType="fade">
-        <View style={styles.warnRoot} testID="wipe-confirm">
-          <Ionicons name="warning-outline" size={62} color="#fff" />
-          <Text style={styles.warnTitle}>Sei sicuro?</Text>
-          <Text style={styles.warnTxt}>
-            Questa operazione può eliminare i dati e le chiavi di questo telefono. Conserva il file chiave se vuoi poter accedere di nuovo. La cancellazione sul server dipende dal gateway.
-          </Text>
-          <TouchableOpacity style={styles.warnBtn} onPress={() => setWipeAsk(false)} testID="wipe-cancel">
-            <Text style={[styles.btnTxt, { color: "#b91c1c" }]}>Annulla</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={{ marginTop: 16 }} onPress={() => { setWipeAsk(false); wipeNow(); }} testID="wipe-confirm-btn">
-            <Text style={styles.warnLink}>Sì, cancella tutto</Text>
-          </TouchableOpacity>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -255,7 +221,6 @@ const styles = StyleSheet.create({
   state: { fontSize: 12, fontWeight: "900", letterSpacing: 1 },
   btn: { backgroundColor: theme.primary, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 16 },
   btnFull: { backgroundColor: theme.primary, borderRadius: 12, paddingVertical: 13, alignItems: "center", marginTop: 12 },
-  btnDanger: { backgroundColor: theme.danger, borderRadius: 12, paddingVertical: 13, alignItems: "center", justifyContent: "center", flexDirection: "row", marginTop: 14 },
   btnTxt: { color: "#fff", fontSize: 14.5, fontWeight: "800" },
   input: { backgroundColor: "transparent", color: theme.text, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10, fontSize: 15 },
   err: { color: theme.danger, fontSize: 12.5, fontWeight: "700", marginTop: 4 },
@@ -265,9 +230,4 @@ const styles = StyleSheet.create({
   devRow: { flexDirection: "row", alignItems: "center", paddingVertical: 11, borderTopWidth: 1, borderTopColor: theme.border, marginTop: 8 },
   devName: { color: theme.text, fontSize: 14, fontWeight: "700" },
   devSub: { color: theme.textFaint, fontSize: 11.5, marginTop: 2 },
-  warnRoot: { flex: 1, backgroundColor: "#b91c1c", alignItems: "center", justifyContent: "center", padding: 32 },
-  warnTitle: { color: "#fff", fontSize: 26, fontWeight: "900", marginTop: 16, marginBottom: 10 },
-  warnTxt: { color: "#ffe4e6", fontSize: 14.5, lineHeight: 21, textAlign: "center" },
-  warnBtn: { backgroundColor: "#fff", borderRadius: 14, paddingVertical: 13, paddingHorizontal: 40, marginTop: 26 },
-  warnLink: { color: "#ffe4e6", fontSize: 13, fontWeight: "800", textDecorationLine: "underline" },
 });

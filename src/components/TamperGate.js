@@ -33,13 +33,11 @@ import { isOwner } from "../lib/canary";
 //  · Il PIN ESCA riceve LA STESSA RISPOSTA del PIN sbagliato. Se dicessimo "questo e'
 //    l'esca" avremmo appena rivelato che esiste un secondo fondo — cioe' distrutto il
 //    doppio fondo con un messaggio di errore.
-//  · Il PIN DI EMERGENZA cancella, anche da qui. E' quello il suo unico compito, e non
-//    cambia perche' e' stato scritto in questa schermata invece che in quella di sblocco.
 //  · L'eccezione vale UNA SESSIONE. Vive in memoria: chiudi l'app e l'avviso torna. Non
 //    si scrive su disco di proposito — una preferenza "ignora la manomissione" salvata sul
 //    telefono e' esattamente il file che un attaccante vorrebbe trovare (e falsificare).
 export default function TamperGate() {
-  const { wipeNow, user } = useAuth();
+  const { user, pinGate } = useAuth();
   const [r, setR] = useState(null);
   const [ignorato, setIgnorato] = useState(false);
   const [pinAperto, setPinAperto] = useState(false);
@@ -51,7 +49,7 @@ export default function TamperGate() {
   useEffect(() => integrity.sorveglia(setR), []);
   useEffect(() => { lock.hasPin().then(setPinEsiste).catch(() => setPinEsiste(false)); }, []);
 
-  if (!r || !r.allarme || ignorato) return null;
+  if (!r || !r.allarme || ignorato || pinGate) return null;
 
   const titolo = r.root
     ? "Rilevato tentativo di estrazione dati"
@@ -65,7 +63,6 @@ export default function TamperGate() {
     try {
       const esito = await lock.verifyPin(pin);
       if (esito === "ok") { setPin(""); setIgnorato(true); return; }
-      if (esito === "panic") { setPin(""); await wipeNow(); return; }
       // "wrong" e "decoy" danno la stessa risposta, parola per parola.
       setPin(""); setPinErr("PIN non valido.");
     } catch { setPinErr("PIN non valido."); } finally { setPinBusy(false); }
@@ -78,7 +75,7 @@ export default function TamperGate() {
         <Text style={s.h1} testID="tamper-title">{titolo}</Text>
         <Text style={s.p}>
           Questo telefono e' in una condizione in cui i dati di ULTRON possono essere letti
-          da fuori dall'app. Vuoi eliminare tutto istantaneamente?
+          da fuori dall’app. I controlli di integrità segnalano anomalie rilevabili.
         </Text>
 
         <View style={s.box}>
@@ -87,14 +84,6 @@ export default function TamperGate() {
             <Text key={i} style={s.li} testID={"tamper-motivo-" + i}>· {m}</Text>
           ))}
         </View>
-
-        <Pressable style={s.rosso} onPress={wipeNow} testID="tamper-wipe">
-          <Text style={s.rossoT}>ELIMINA TUTTO ADESSO</Text>
-          <Text style={s.rossoS}>
-            Chiavi, messaggi, rubrica e la chiave dentro il chip di sicurezza. Definitivo:
-            senza quella chiave nemmeno il PIN giusto riapre piu niente.
-          </Text>
-        </Pressable>
 
         {pinEsiste === false ? (
           // Nessun PIN impostato: non c'e' niente con cui dimostrare di essere il

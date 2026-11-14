@@ -753,6 +753,10 @@ export default function SettingsScreen({ navigation }) {
         {PRIVACY_SUMMARY[en ? "en" : "it"].map((paragraph) => (
           <Text key={paragraph} style={styles.shieldDesc}>{paragraph}</Text>
         ))}
+        <TouchableOpacity onPress={() => navigation.navigate("Security")} style={styles.legalLink} testID="settings-function-inventory">
+          <Ionicons name="list-outline" size={16} color={tint} />
+          <Text style={styles.legalLinkTxt}>{en ? "How ULTRON works" : "Come funziona ULTRON"}</Text>
+        </TouchableOpacity>
         <TouchableOpacity onPress={() => openLegal("privacy")} style={styles.legalLink} testID="settings-open-legal">
           <Ionicons name="document-text-outline" size={16} color={tint} />
           <Text style={styles.legalLinkTxt}>{t("settings.privacy")}</Text>

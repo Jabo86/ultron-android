@@ -39,10 +39,10 @@ export default function SecurityScreen({ navigation }) {
     <Pressable accessibilityRole="button" onPress={() => navigation.goBack()} testID="security-back">
       <Text style={s.link}>{it ? "‹ Impostazioni" : "‹ Settings"}</Text>
     </Pressable>
-    <Text style={s.title}>{it ? "Sicurezza e audit" : "Security and audit"}</Text>
+    <Text style={s.title}>{it ? "Come funziona ULTRON" : "How ULTRON works"}</Text>
     <Text style={s.description}>{it
-      ? "Controlli locali e stato della configurazione."
-      : "Local checks and configuration status."}</Text>
+      ? "Funzioni, dati trattati e controlli di sicurezza. Le voci indicano dove serve una verifica sul telefono o sul gateway."
+      : "Features, data handling and security checks. Entries indicate where the phone or gateway needs verification."}</Text>
     <Pressable accessibilityRole="button" disabled={busy} onPress={run} testID="security-run-local-audit">
       <Text style={s.link}>{busy ? (it ? "Test in corso…" : "Testing…") : (it ? "Esegui test locali" : "Run local tests")}</Text>
     </Pressable>
