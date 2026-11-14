@@ -9,6 +9,7 @@ import PinStrength from "../components/PinStrength";
 import { useI18n } from "../lib/i18n";
 import * as devices from "../lib/devices";
 import * as mbx from "../lib/mailbox";
+import * as MP from "../lib/metaPrivacy";
 
 const Card = ({ children }) => <View style={styles.card}>{children}</View>;
 
@@ -28,12 +29,14 @@ export default function PrivacyLockScreen({ navigation }) {
   const [err, setErr] = useState("");
   const [wipeAsk, setWipeAsk] = useState(false);
   const [mbxSt, setMbxSt] = useState(null);
+  const [mp, setMp] = useState(MP.all());
 
   const refresh = useCallback(async () => {
     setPinOn(await lock.hasPin());
     setMyDev(await devices.deviceId());
     try { const r = await api.listDevices(); setDevs(Array.isArray(r?.devices) ? r.devices : []); } catch { setDevs([]); }
     try { setMbxSt(await mbx.status()); } catch { setMbxSt(null); }
+    try { setMp(await MP.load()); } catch { /* */ }
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -179,6 +182,24 @@ export default function PrivacyLockScreen({ navigation }) {
                   <Ionicons name="close-circle-outline" size={22} color={theme.danger} />
                 </TouchableOpacity>
               )}
+            </View>
+          ))}
+        </Card>
+
+        <Card>
+          <Text style={styles.h2}>Segnali visibili al server</Text>
+          <Text style={styles.p}>
+            Il testo dei messaggi e' cifrato, ma questi tre segnali il server li vede: chi sta
+            scrivendo, chi e' in linea, quando leggi. Spegnili per ridurre i metadati
+            (l'altra persona non vedra' piu' «sta scrivendo», «online» e la doppia spunta di lettura).
+          </Text>
+          {[["typing", "Nascondi «sta scrivendo»"], ["presence", "Nascondi «sono in linea»"], ["read", "Nascondi la conferma di lettura"]].map(([k, label]) => (
+            <View key={k} style={styles.rowBetween}>
+              <Text style={styles.p}>{label}</Text>
+              <TouchableOpacity style={styles.btn} testID={"mp-" + k}
+                onPress={async () => { await MP.setHidden(k, !mp[k]); setMp(MP.all()); }}>
+                <Text style={styles.btnTxt}>{mp[k] ? "Nascosto" : "Visibile"}</Text>
+              </TouchableOpacity>
             </View>
           ))}
         </Card>

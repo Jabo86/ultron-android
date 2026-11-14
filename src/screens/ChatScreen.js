@@ -19,6 +19,7 @@ import { useHeaderHeight } from "@react-navigation/elements";
 import { useAuth } from "../context/AuthContext";
 import { useUnread } from "../context/UnreadContext";
 import * as api from "../lib/api";
+import * as MP from "../lib/metaPrivacy";
 import { decryptAny } from "../lib/devices";
 import { buildEnvelopes } from "../lib/send";
 import * as msh from "../lib/meshchat";
@@ -465,7 +466,7 @@ export default function ChatScreen({ route, navigation }) {
       // Stato del ratchet e chiavi: su disco una volta, non a ogni messaggio.
       flushBlobs().catch(() => {});
       if (mounted.current) {
-        if (!preRaw && !deepMode && navigation.isFocused() && AppState.currentState === "active"
+        if (!preRaw && !deepMode && !MP.isHidden("read") && navigation.isFocused() && AppState.currentState === "active"
             && raw.some((message) => !message.mine && message.read === false)) {
           api.markRead(cid).then(refresh).catch(() => {});
         }
@@ -591,7 +592,7 @@ export default function ChatScreen({ route, navigation }) {
   }, 1000, { runOnFocus: false, active: !!convId && !live });
   usePoll(async () => {
     try { const r = await api.pulseTypingGet(convId); if (mounted.current) setTypers(Array.isArray(r?.typing) ? r.typing : []); } catch { /* */ }
-    try { await api.presencePing(); } catch { /* */ }
+    if (!MP.isHidden("presence")) { try { await api.presencePing(); } catch { /* */ } }
   }, 4000, { runOnFocus: false, active: !!convId && !hostedChat });
   usePoll(async () => {
     if (await mbx.pickup(user) && mounted.current) {
@@ -803,7 +804,7 @@ export default function ChatScreen({ route, navigation }) {
 
   const onChangeText = (t) => {
     const now = Date.now();
-    if (convId && now - typingRef.current > 2500) { typingRef.current = now; api.pulseTyping(convId).catch(() => {}); }
+    if (convId && !MP.isHidden("typing") && now - typingRef.current > 2500) { typingRef.current = now; api.pulseTyping(convId).catch(() => {}); }
     // Invio dalla tastiera: il tasto "invio" spedisce il messaggio.
     if (t.endsWith("\n")) { const clean = t.slice(0, -1); setText(clean); setTimeout(() => onSend(clean), 0); return; }
     setText(t);

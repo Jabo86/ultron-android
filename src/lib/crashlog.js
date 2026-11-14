@@ -15,11 +15,21 @@ async function readAndClear(path) {
   } catch { return ""; }
 }
 
+/// Toglie dal testo cio' che non deve uscire dal telefono: indirizzi Lattice, indirizzi IP,
+/// sequenze esadecimali lunghe (chiavi, hash, token) e percorsi dell'utente.
+export function scrub(t) {
+  return String(t || "")
+    .replace(/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+/g, "<indirizzo>")
+    .replace(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g, "<ip>")
+    .replace(/\b[0-9a-fA-F]{24,}\b/g, "<hex>")
+    .replace(/(file:\/\/)?\/(?:data|storage|sdcard)\/[^\s:)]+/g, "<percorso>");
+}
+
 export async function reportPendingCrash(isEnglish) {
   // Entrambi i file vengono sempre letti E cancellati: nessun residuo che ricompare.
   const nat = await readAndClear(NATIVE);
   const js = await readAndClear(JS);
-  const txt = nat || js;
+  const txt = scrub(nat || js);
   if (!txt) return false;
   const en = !!isEnglish;
   Alert.alert(
