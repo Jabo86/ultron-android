@@ -32,6 +32,10 @@ jobs:
         run: |
           npm ci --legacy-peer-deps --no-fund
           npm audit --audit-level=low
+      - name: Verify ULTRON messaging cryptography
+        run: |
+          node tools/verify-ultron-signed-keys.mjs
+          node tools/verify-ultron-ratchet.mjs
       - name: Verify proprietary notification routing
         run: node tools/verify-ultron-notifications.cjs
       - name: Configure Android signing

@@ -13,7 +13,7 @@ import * as api from "../lib/api";
 import { DEFAULT_SERVER } from "../config";
 import { theme } from "../theme";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { loadAutoTranslate, loadTranslateTarget } from "../lib/store";
+import { loadTranslateTarget } from "../lib/store";
 import { detectLang, langFlag } from "../lib/detectLang";
 import SafeText from "../components/SafeText";
 import LinkPreview from "../components/LinkPreview";
@@ -109,7 +109,6 @@ export default function ChannelDetailScreen({ route, navigation }) {
   const [actionPost, setActionPost] = useState(null); // post under long-press menu
   const [upPct, setUpPct] = useState(null); // avanzamento dell'allegato a pezzi
   const [translations, setTranslations] = useState({}); // post_id -> traduzione
-  const autoTrRef = useRef(false);
   const trTargetRef = useRef(null);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const gk = useRef(null);
@@ -447,12 +446,12 @@ export default function ChannelDetailScreen({ route, navigation }) {
     }).catch((e) => setErr(api.apiErr(e)));
   };
 
-  // Traduzione on-device sovrana (LibreTranslate self-hosted).
   const onTranslate = async (post) => {
     if (!post?.body) return;
     const target = trTargetRef.current || (lang === "en" ? "en" : "it");
     try {
-      const r = await api.translate(post.body, target);
+      const r = await api.translateWithConsent(post.body, target, lang === "en");
+      if (!r) return;
       setTranslations((m) => ({ ...m, [post.post_id]: { text: r?.translated || "", detected: r?.detected || "", show: true, target } }));
     } catch (e) { setErr(api.apiErr(e)); }
   };
@@ -472,12 +471,7 @@ export default function ChannelDetailScreen({ route, navigation }) {
     const chk = async () => { try { const r = await api.gcallActive(chan_id); if (on) setGActive(r && r.room ? r.room : null); } catch {} };
     chk(); const iv = setInterval(chk, 8000); return () => { on = false; clearInterval(iv); };
   }, [chan_id]);
-  useEffect(() => { loadAutoTranslate().then((v) => { autoTrRef.current = v; }); loadTranslateTarget().then((v) => { trTargetRef.current = v; }); }, []);
-  useEffect(() => {
-    if (!autoTrRef.current || !posts.length) return;
-    posts.filter((p) => (p.from_lns || "").toLowerCase() !== me && p.body && p.body.indexOf(CAMBIO_PREFIX) !== 0 && p.body.indexOf(CONCORSO_PREFIX) !== 0 && translations[p.post_id] == null).slice(-30).forEach((p) => onTranslate(p));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [posts]);
+  useEffect(() => { loadTranslateTarget().then((v) => { trTargetRef.current = v; }); }, []);
 
   // ── Modifica messaggio (solo i propri, testo semplice) ──
   const doEditPost = (post) => {

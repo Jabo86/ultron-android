@@ -35,7 +35,7 @@ import ThreatBanner from "../components/ThreatBanner";
 import SafeText from "../components/SafeText";
 import { analyzeMessage } from "../lib/threatEngine";
 import { useI18n } from "../lib/i18n";
-import { loadAutoTranslate, loadTranslateTarget } from "../lib/store";
+import { loadTranslateTarget } from "../lib/store";
 import { detectLang, langFlag } from "../lib/detectLang";
 import { suppressLock, withSystemActivity } from "../lib/lockGuard";
 import { verifyState } from "../lib/verify";
@@ -251,7 +251,8 @@ export default function ChatScreen({ route, navigation }) {
     if (!item?.body) return;
     const target = effTarget;
     try {
-      const r = await api.translate(item.body, target);
+      const r = await api.translateWithConsent(item.body, target, lang === "en");
+      if (!r) return;
       const detected = (r?.detected || "").toLowerCase();
       const sameLang = detected && detected === target.toLowerCase();
       setTranslations((m) => ({ ...m, [item.id]: { text: sameLang ? item.body : (r?.translated || ""), detected, show: true, same: sameLang, target } }));
@@ -259,16 +260,7 @@ export default function ChatScreen({ route, navigation }) {
   };
   const toggleTr = (id) => setTranslations((m) => ({ ...m, [id]: { ...m[id], show: !m[id].show } }));
 
-  const autoTrRef = useRef(false);
-  useEffect(() => {
-    loadAutoTranslate().then((v) => { autoTrRef.current = v; });
-    loadTranslateTarget().then((v) => { setTrTarget(v); });
-  }, []);
-  useEffect(() => {
-    if (!autoTrRef.current || !msgs.length) return;
-    msgs.filter((m) => !m.mine && m.body && translations[m.id] == null).slice(-40).forEach((m) => { onTranslate(m); });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [msgs]);
+  useEffect(() => { loadTranslateTarget().then(setTrTarget); }, []);
 
   const onMessageActions = (item) => setActionItem(item);
   const doReact = async (it, e) => { setActionItem(null); try { await api.pulseReact(it.id, e); await load(convId); } catch (err) { setErr(api.apiErr(err)); } };
@@ -290,7 +282,6 @@ export default function ChatScreen({ route, navigation }) {
   const load = useCallback(async (cid, limit, deepMode, preRaw) => {
     if (!cid) { setMsgs([]); setLoading(false); return; }
     try {
-      const t0 = Date.now();
       // Si chiede UNA riga in più della finestra: se arriva, si sa che esiste cronologia
       // più vecchia (e si mostra "Messaggi precedenti") senza scaricarla.
       const want = (typeof limit === "number" ? limit : winRef.current);
@@ -306,7 +297,6 @@ export default function ChatScreen({ route, navigation }) {
           setServerHasMessages(true);
         }
       }
-      const tNet = Date.now() - t0;
       const more = raw0.length > want;
       const raw = more ? raw0.slice(raw0.length - want) : raw0;
       setHasMore(more);
@@ -434,31 +424,6 @@ export default function ChatScreen({ route, navigation }) {
       // Messaggi appena inviati e ancora in viaggio: restano visibili.
       if (sendingRef.current.length) out.push(...sendingRef.current);
       pendingRef.current = deferred;
-      // Misura reale: se l'apertura ha superato i 2 s manda al nostro server SOLO i numeri
-      // (nessun contenuto, nessun indirizzo). Serve a capire dove va il tempo sul telefono.
-      if (fast && !preRaw) {
-        const tAll = Date.now() - t0;
-        if (tAll > 1500) {
-          try {
-            fetch(api.getServerUrl() + "/api/public/crash", {
-              method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ v: "perf", android: "chat-open", trace: "tot=" + tAll + "ms net=" + tNet + "ms messaggi=" + raw.length + " decifrati=" + heavy }),
-            }).catch(() => {});
-          } catch (e) { /* */ }
-        }
-      } else if (deep) {
-        // Anche la passata di sottofondo si misura: se costa tanto lo sappiamo dai numeri,
-        // non dalle impressioni.
-        const tAll = Date.now() - t0;
-        if (tAll > 2500) {
-          try {
-            fetch(api.getServerUrl() + "/api/public/crash", {
-              method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ v: "perf", android: "chat-deep", trace: "tot=" + tAll + "ms net=" + tNet + "ms messaggi=" + raw.length + " decifrati=" + heavy }),
-            }).catch(() => {});
-          } catch (e) { /* */ }
-        }
-      }
       // Stato del ratchet e chiavi: su disco una volta, non a ogni messaggio.
       flushBlobs().catch(() => {});
       if (mounted.current) {

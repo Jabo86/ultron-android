@@ -14,12 +14,12 @@ export const LEGAL_DOCS = [
 export const PRIVACY_SUMMARY = {
   it: [
     "Sul telefono vengono conservati il verificatore del PIN e i campi privati del profilo. Un’esportazione della chiave o del backup crea una copia separata.",
-    "Il server può trattare account, chiavi pubbliche, profilo pubblico, buste cifrate dove supportate e dati di consegna. Server e proxy possono vedere IP e orari. Traduzioni, segnalazioni e diagnostica possono inviare dati al servizio.",
+    "Il server può trattare account, chiavi pubbliche, profilo pubblico, buste cifrate dove supportate e dati di consegna. Server e proxy possono vedere IP e orari. La traduzione invia solo il testo selezionato dopo una conferma. Segnalazioni e condivisione di rapporti diagnostici possono trasmettere dati.",
     "Il gestore del server deve indicare nell’informativa ufficiale chi tratta i dati, per quali finalità, su quale base e per quanto tempo. Usa i recapiti del gestore per le richieste sui tuoi dati.",
   ],
   en: [
     "The PIN verifier and private profile fields are stored on the phone. Exporting the key or a backup creates a separate copy.",
-    "The server may process account data, public keys, public profiles, encrypted envelopes where supported, and delivery data. Servers and proxies can see IP addresses and connection times. Translation, reports and diagnostics may send data to the service.",
+    "The server may process account data, public keys, public profiles, encrypted envelopes where supported, and delivery data. Servers and proxies can see IP addresses and connection times. Translation sends selected text after confirmation. User reports and shared diagnostics may transmit data.",
     "The server operator's official notice must identify the controller, purposes, legal bases and retention. Use the operator's published contact details for data requests.",
   ],
 };

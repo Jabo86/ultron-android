@@ -620,9 +620,26 @@ export const directorySearch = (q) =>
 
 export const directoryResolve = (lns_list) =>
   withAuth((a) => client.post("/public/directory/resolve", { lns_list }, a).then((r) => r.data));
-// Traduzione on-device sovrana (LibreTranslate self-hosted, nessuna chiave a pagamento).
-export const translate = (text, target = "it", source = "auto") =>
-  withAuth((a) => client.post("/public/translate", { text, target, source }, a).then((r) => r.data));
+// The confirmation names the server that will receive the decrypted text.
+export async function translateWithConsent(text, target, english) {
+  const server = getServerUrl();
+  const { signal } = session;
+  const { Alert } = require("react-native");
+  const accepted = await new Promise((resolve) => {
+    Alert.alert(
+      english ? "Send text for translation?" : "Inviare il testo per la traduzione?",
+      english ? `The selected text will be readable by ${server}.` : `Il testo selezionato sarà leggibile dal server ${server}.`,
+      [
+        { text: english ? "Cancel" : "Annulla", style: "cancel", onPress: () => resolve(false) },
+        { text: english ? "Send and translate" : "Invia e traduci", onPress: () => resolve(true) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) },
+    );
+  });
+  if (!accepted) return null;
+  checkSession(signal);
+  return withAuth((a, transport) => transport.post("/public/translate", { text, target, source: "auto" }, a).then((r) => r.data));
+}
 
 // ── Stato/Storie E2EE 24h ──
 export const statusAudience = () =>

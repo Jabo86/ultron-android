@@ -31,7 +31,7 @@ import * as cover from "../lib/cover";
 import { ICE_SERVERS } from "../config";
 import { threatListSize } from "../lib/threatEngine";
 import { UI_LANGS } from "../lib/locales";
-import { saveAllowDirect, loadAllowDirect, saveAppLock, loadAppLock, loadPreferredServer, savePreferredServer, loadKeyfile, saveAutoTranslate, loadAutoTranslate, saveTranslateTarget, loadTranslateTarget } from "../lib/store";
+import { saveAllowDirect, loadAllowDirect, saveAppLock, loadAppLock, loadPreferredServer, savePreferredServer, loadKeyfile, saveTranslateTarget, loadTranslateTarget } from "../lib/store";
 import { TRANSLATE_LANGS, langName } from "../lib/langs";
 import { getThreatLog, clearThreatLog, getThreatCount } from "../lib/threatLog";
 
@@ -112,7 +112,6 @@ export default function SettingsScreen({ navigation }) {
   const [appLock, setAppLock] = useState(true);
   const [pushOk, setPushOk] = useState(null);
   const [pushBusy, setPushBusy] = useState(false);
-  const [autoTr, setAutoTr] = useState(false);
   const [trTarget, setTrTarget] = useState(null);
   const [showTrLang, setShowTrLang] = useState(false);
   const [trSearch, setTrSearch] = useState("");
@@ -221,7 +220,6 @@ export default function SettingsScreen({ navigation }) {
     (async () => {
       setSecure(await isDeviceSecure());
       const al = await loadAppLock(); setAppLock(al !== false);
-      setAutoTr(await loadAutoTranslate());
       setTrTarget(await loadTranslateTarget());
     })();
   }, []);
@@ -524,10 +522,6 @@ export default function SettingsScreen({ navigation }) {
             </TouchableOpacity>
           ))}
         </View>
-        <View style={styles.divider} />
-        <Row icon="globe-outline" label={t("sm.117")}
-          hint={t("sm.118")}
-          right={<Switch value={autoTr} onValueChange={async (v) => { setAutoTr(v); await saveAutoTranslate(v); }} trackColor={{ true: tint, false: theme.border }} thumbColor="#fff" testID="settings-autotranslate" />} />
         <View style={styles.divider} />
         <Row icon="swap-horizontal-outline" label={t("sm.119")}
           hint={trTarget ? langName(trTarget) : (t("sm.120"))}

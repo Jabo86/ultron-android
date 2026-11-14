@@ -55,9 +55,6 @@ const VIBMODE_KEY = "lattice.pulse.vibmode.v1";
 export async function saveVibMode(m) { await AsyncStorage.setItem(VIBMODE_KEY, m || "standard"); }
 export async function loadVibMode() { return (await AsyncStorage.getItem(VIBMODE_KEY)) || "standard"; }
 
-const AUTOTR_KEY = "lattice.pulse.autotranslate.v1";
-export async function saveAutoTranslate(v) { await AsyncStorage.setItem(AUTOTR_KEY, v ? "1" : "0"); }
-export async function loadAutoTranslate() { return (await AsyncStorage.getItem(AUTOTR_KEY)) === "1"; }
 
 // Lingua di destinazione della traduzione (null = automatico: lingua dell'app).
 const TRTGT_KEY = "lattice.pulse.translatetarget.v1";
