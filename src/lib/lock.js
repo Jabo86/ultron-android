@@ -288,19 +288,25 @@ export function setBlobsDurably(entries) {
 
 /// Con i nomi opachi non si possono piu elencare i blocchi leggendo le chiavi di
 /// AsyncStorage: l'elenco vive dentro un blocco cifrato come tutti gli altri.
-async function noteName(name, { strict = false, checkScope } = {}) {
-  if (!memNs || name === N_INDEX || name === N_PROBE) return;
-  try {
+let indexWrites = Promise.resolve();
+
+function noteName(name, { strict = false, checkScope } = {}) {
+  if (!memNs || name === N_INDEX || name === N_PROBE) return Promise.resolve();
+  const epoch = storageEpoch;
+  const write = indexWrites.then(async () => {
+    if (epoch !== storageEpoch) throw new Error("La sessione locale è cambiata.");
     const idx = (await getBlob(N_INDEX)) || [];
+    if (epoch !== storageEpoch) throw new Error("La sessione locale è cambiata.");
     checkScope?.();
     if (idx.includes(name)) return;
     const updated = [...idx, name];
     await writeBlob(N_INDEX, updated);
+    if (epoch !== storageEpoch) throw new Error("La sessione locale è cambiata.");
     checkScope?.();
     blobCache.set(N_INDEX, updated);
-  } catch (error) {
-    if (strict) throw error;
-  }
+  });
+  indexWrites = write.catch(() => {});
+  return strict ? write : indexWrites;
 }
 
 /// Salvataggio accorpato (entro 250 ms, o subito quando l'app passa in secondo piano):
