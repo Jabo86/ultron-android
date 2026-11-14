@@ -2,8 +2,7 @@ import React, { useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import * as FileSystem from "expo-file-system/legacy";
-import * as Sharing from "expo-sharing";
+import KeyfileExport from "../components/KeyfileExport";
 import { theme } from "../theme";
 import { useAuth } from "../context/AuthContext";
 import * as api from "../lib/api";
@@ -13,28 +12,16 @@ export default function RotateKeyScreen() {
   const [phase, setPhase] = useState("intro"); // intro | done
   const [busy, setBusy] = useState(false);
   const [newKf, setNewKf] = useState(null);
-  const [fname, setFname] = useState("ultron-key.json");
-
-  const saveKeyFile = async (kf, filename) => {
-    try {
-      const path = FileSystem.cacheDirectory + (filename || "ultron-key.json").replace(/[^\w.\-]/g, "_");
-      await FileSystem.writeAsStringAsync(path, JSON.stringify(kf, null, 2), { encoding: FileSystem.EncodingType.UTF8 });
-      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(path, { mimeType: "application/json", dialogTitle: "Salva la tua nuova chiave" });
-      return true;
-    } catch (e) {
-      Alert.alert("Attenzione", "Non è stato possibile aprire il salvataggio. Riprova con 'Salva di nuovo la chiave'.");
-      return false;
-    }
-  };
+  const [showKeyExport, setShowKeyExport] = useState(false);
+  const [shared, setShared] = useState(false);
 
   const onGenerate = async () => {
     setBusy(true);
     try {
       const r = await rotateKey();
       setNewKf(r.keyfile);
-      setFname(r.keyfile_filename || "ultron-key.json");
       setPhase("done");
-      await saveKeyFile(r.keyfile, r.keyfile_filename);
+      setShowKeyExport(true);
     } catch (e) {
       Alert.alert("Errore", api.apiErr(e));
     } finally {
@@ -70,21 +57,23 @@ export default function RotateKeyScreen() {
           <>
             <Text style={styles.title}>Chiave creata ✅</Text>
             <Text style={styles.body}>
-              La tua nuova chiave è attiva. Assicurati di aver salvato il file <Text style={{ fontWeight: "800", color: theme.accent }}>{fname}</Text> in un posto sicuro (Drive, Note, gestore password).
+              La tua nuova chiave è attiva. Salva una copia cifrata e conserva la frase segreta separatamente.
             </Text>
             <View style={styles.note}>
               <Ionicons name="warning-outline" size={16} color="#ff9a9a" />
               <Text style={styles.noteTxt}>Senza questo file NON potrai più accedere. Salvalo ora se non l'hai già fatto.</Text>
             </View>
-            <TouchableOpacity style={styles.secondaryBtn} onPress={() => saveKeyFile(newKf, fname)} testID="rotate-save-again">
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => setShowKeyExport(true)} testID="rotate-save-again">
               <Ionicons name="download-outline" size={18} color={theme.primary} />
               <Text style={styles.secondaryTxt}>Salva di nuovo la chiave</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.primaryBtn} onPress={finishRotation} testID="rotate-continue">
+            <TouchableOpacity style={styles.primaryBtn} onPress={finishRotation} disabled={!shared} testID="rotate-continue">
               <Text style={styles.primaryTxt}>Ho salvato la chiave — Continua</Text>
             </TouchableOpacity>
           </>
         )}
+        {showKeyExport && <KeyfileExport keyfile={newKf}
+          onClose={() => setShowKeyExport(false)} onShared={() => { setShared(true); setShowKeyExport(false); }} />}
       </ScrollView>
     </SafeAreaView>
   );

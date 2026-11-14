@@ -5,8 +5,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import * as FileSystem from "expo-file-system/legacy";
-import * as Sharing from "expo-sharing";
+import KeyfileExport from "../components/KeyfileExport";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../lib/i18n";
 import * as api from "../lib/api";
@@ -28,6 +27,7 @@ export default function MembersScreen({ navigation }) {
   const [dept, setDept] = useState("");
   const [role, setRole] = useState("member");
   const [creating, setCreating] = useState(false);
+  const [showKeyExport, setShowKeyExport] = useState(false);
   const [created, setCreated] = useState(null); // { lns_name, keyfile, keyfile_filename }
 
   const load = useCallback(async () => {
@@ -55,16 +55,6 @@ export default function MembersScreen({ navigation }) {
     finally { setCreating(false); }
   };
 
-  const shareKeyfile = async () => {
-    if (!created?.keyfile) return;
-    try {
-      const fn = (created.keyfile_filename || `ultron-key-${created.lns_name}.json`).replace(/[^\w.\-]/g, "_");
-      const uri = FileSystem.cacheDirectory + fn;
-      await FileSystem.writeAsStringAsync(uri, JSON.stringify(created.keyfile, null, 2), { encoding: FileSystem.EncodingType.UTF8 });
-      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: "application/json", dialogTitle: it ? "Consegna il file chiave" : "Deliver the keyfile" });
-      else Alert.alert(it ? "File salvato" : "File saved", uri);
-    } catch (e) { Alert.alert("Keyfile", String((e && e.message) || e)); }
-  };
 
   const toggleRevoke = (m) => {
     const reactivate = m.status === "REVOKED";
@@ -150,7 +140,7 @@ export default function MembersScreen({ navigation }) {
       </ScrollView>
 
       {/* MODALE KEYFILE (consegna una-tantum) */}
-      <Modal visible={!!created} transparent animationType="fade" onRequestClose={() => setCreated(null)}>
+      <Modal visible={!!created && !showKeyExport} transparent animationType="fade" onRequestClose={() => { setShowKeyExport(false); setCreated(null); }}>
         <View style={st.mask}>
           <View style={st.sheet}>
             <Ionicons name="key-outline" size={34} color={theme.primary} style={{ alignSelf: "center" }} />
@@ -159,7 +149,7 @@ export default function MembersScreen({ navigation }) {
             <Text style={st.sheetWarn}>{it
               ? "⚠️ Consegna questo file chiave al nuovo membro ORA. Non sarà più recuperabile: si vede una sola volta."
               : "⚠️ Deliver this keyfile to the new member NOW. It cannot be retrieved again: shown only once."}</Text>
-            <TouchableOpacity style={st.shareBtn} onPress={shareKeyfile} testID="members-share-keyfile">
+            <TouchableOpacity style={st.shareBtn} onPress={() => setShowKeyExport(true)} testID="members-share-keyfile">
               <Ionicons name="share-outline" size={18} color="#fff" />
               <Text style={st.shareTxt}>{it ? "Condividi / Salva file chiave" : "Share / Save keyfile"}</Text>
             </TouchableOpacity>
@@ -169,6 +159,8 @@ export default function MembersScreen({ navigation }) {
           </View>
         </View>
       </Modal>
+      {showKeyExport && created && <KeyfileExport keyfile={created.keyfile} english={!it}
+        onClose={() => setShowKeyExport(false)} onShared={() => setShowKeyExport(false)} />}
     </View>
   );
 }

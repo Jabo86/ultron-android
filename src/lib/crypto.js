@@ -93,7 +93,7 @@ export function bytesToHex(bytes) {
 }
 
 // Manual UTF-8 (avoids TextEncoder/TextDecoder which Hermes lacks).
-function utf8Encode(str) {
+export function utf8Encode(str) {
   const out = [];
   for (let i = 0; i < str.length; i++) {
     let c = str.charCodeAt(i);
@@ -107,7 +107,7 @@ function utf8Encode(str) {
   }
   return new Uint8Array(out);
 }
-function utf8Decode(bytes) {
+export function utf8Decode(bytes) {
   const codes = [];
   let i = 0;
   while (i < bytes.length) {
@@ -269,8 +269,9 @@ const PAD_BLOCK = 512;
 // Il campo "z" e' ignorato da unpackMessage e dai client vecchi.
 export function padPlaintext(s) {
   const over = 7;
-  const target = Math.ceil((s.length + over) / PAD_BLOCK) * PAD_BLOCK;
-  const n = Math.max(0, target - s.length - over);
+  const length = utf8Encode(s).length + over;
+  const target = Math.ceil(length / PAD_BLOCK) * PAD_BLOCK;
+  const n = target - length;
   return s.slice(0, -1) + ',"z":"' + " ".repeat(n) + '"}';
 }
 export function packMessage(text, attachments, reply, ttl) {

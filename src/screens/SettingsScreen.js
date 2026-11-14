@@ -20,7 +20,7 @@ import { display as displayInfo, fpsLine } from "../lib/display";
 import { useAuth } from "../context/AuthContext";
 import { installUpdate, updatesConfigured } from "../lib/update";
 import { checkAndPrepare, UpdateProgress } from "../components/UpdateBanner";
-import { suppressLock } from "../lib/lockGuard";
+import KeyfileExport from "../components/KeyfileExport";
 import * as wake from "../lib/wake";
 import * as api from "../lib/api";
 import { DEFAULT_SERVER } from "../config";
@@ -180,6 +180,7 @@ export default function SettingsScreen({ navigation }) {
   const [serverBusy, setServerBusy] = useState(false);
   const [serverMessage, setServerMessage] = useState("");
   const [keyBusy, setKeyBusy] = useState(false);
+  const [exportingKeyfile, setExportingKeyfile] = useState(null);
 
   useEffect(() => {
     loadPreferredServer().then((value) => setServer(value || base)).catch(() => {});
@@ -203,20 +204,15 @@ export default function SettingsScreen({ navigation }) {
   };
 
   const exportKey = async () => {
-    let uri;
     setKeyBusy(true);
     try {
       if (!(await authenticate(en ? "Authorize key file export" : "Autorizza la copia del file chiave"))) return;
       const keyfile = await loadKeyfile();
       if (!keyfile || !(await Sharing.isAvailableAsync())) throw new Error();
-      uri = FileSystem.cacheDirectory + "ultron-account-key.json";
-      await FileSystem.writeAsStringAsync(uri, JSON.stringify(keyfile));
-      suppressLock();
-      await Sharing.shareAsync(uri, { mimeType: "application/json" });
+      setExportingKeyfile(keyfile);
     } catch {
       Alert.alert(en ? "Key file" : "File chiave", en ? "Export unavailable." : "Copia non disponibile.");
     } finally {
-      if (uri) await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
       setKeyBusy(false);
     }
   };
@@ -472,7 +468,7 @@ export default function SettingsScreen({ navigation }) {
           {!!serverMessage && <Text accessibilityLiveRegion="polite" style={styles.infoText}>{serverMessage}</Text>}
         </View>}
         <View style={styles.divider} />
-        <Row icon="key-outline" label={en ? "Export key file" : "Esporta file chiave"}
+        <Row icon="key-outline" label={en ? "Export encrypted keyfile" : "Esporta file chiave cifrato"}
           onPress={keyBusy ? null : exportKey} testID="settings-export-key" />
       </View>
 
@@ -901,6 +897,8 @@ export default function SettingsScreen({ navigation }) {
         <Text style={styles.signoutText}>{t("signout")}</Text>
       </TouchableOpacity>
 
+      {exportingKeyfile && <KeyfileExport keyfile={exportingKeyfile} english={en}
+        onClose={() => setExportingKeyfile(null)} onShared={() => setExportingKeyfile(null)} />}
       <Modal visible={showDelete} transparent animationType="fade" onRequestClose={() => setShowDelete(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>

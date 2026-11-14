@@ -3,7 +3,7 @@
     "name": "ULTRON",
     "slug": "ultron-messenger",
     "scheme": "ultron",
-    "version": "3.5.17",
+    "version": "3.5.18",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -19,7 +19,7 @@
     },
     "android": {
       "package": "com.ultron.messenger",
-      "versionCode": 184,
+      "versionCode": 185,
       "edgeToEdgeEnabled": true,
       "adaptiveIcon": {
         "backgroundColor": "#000000",

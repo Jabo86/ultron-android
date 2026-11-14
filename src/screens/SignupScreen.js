@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator,
-  ScrollView, Switch, Alert, KeyboardAvoidingView, Platform,
+  ScrollView, Switch, KeyboardAvoidingView, Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import * as FileSystem from "expo-file-system/legacy";
-import * as Sharing from "expo-sharing";
+import KeyfileExport from "../components/KeyfileExport";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../lib/i18n";
 import * as api from "../lib/api";
@@ -32,6 +31,7 @@ export default function SignupScreen({ navigation, route }) {
   const [signupUnavailable, setSignupUnavailable] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [showKeyExport, setShowKeyExport] = useState(false);
   const [created, setCreated] = useState(null); // { keyfile, lns_name }
   const [saved, setSaved] = useState(false);
   const tRef = useRef(null);
@@ -83,19 +83,6 @@ export default function SignupScreen({ navigation, route }) {
     } finally { setBusy(false); }
   };
 
-  const shareKeyfile = async () => {
-    if (!created) return;
-    let uri;
-    try {
-      const fn = `ultron-key-${created.lns_name.replace(/[^\w.\-]/g, "_")}.json`;
-      uri = FileSystem.cacheDirectory + fn;
-      await FileSystem.writeAsStringAsync(uri, JSON.stringify(created.keyfile, null, 2), { encoding: FileSystem.EncodingType.UTF8 });
-      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: "application/json", dialogTitle: it ? "Salva il tuo file chiave" : "Save your keyfile" });
-      else throw new Error(it ? "Salvataggio non disponibile su questo dispositivo." : "Saving is unavailable on this device.");
-      setSaved(true);
-    } catch (e) { Alert.alert(it ? "File chiave" : "Key file", e.message); }
-    finally { if (uri) await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {}); }
-  };
 
   const enter = async () => {
     if (!created || busy) return;
@@ -116,12 +103,12 @@ export default function SignupScreen({ navigation, route }) {
         <View style={styles.warnBox}>
           <Text style={styles.warnTxt}>
             {it
-              ? "La tua chiave privata esiste SOLO su questo telefono: il server non la ha e non può recuperarla. Salvane una copia adesso: senza il file chiave perdi l'accesso all'account."
-              : "Your private key exists ONLY on this phone: the server does not have it and cannot recover it. Save a copy now: without the keyfile you lose access."}
+              ? "ULTRON genera la chiave privata sul telefono. Se perdi l’accesso al dispositivo, puoi rientrare con il file chiave cifrato e la sua frase segreta."
+              : "ULTRON generates your private key on the phone. If you lose access to the device, use the encrypted keyfile and its passphrase to sign in again."}
           </Text>
         </View>
-        <TouchableOpacity style={styles.primaryBtn} onPress={shareKeyfile} testID="signup-save-keyfile">
-          <Text style={styles.primaryBtnTxt}>{it ? "Salva il file chiave" : "Save the keyfile"}</Text>
+        <TouchableOpacity style={styles.primaryBtn} onPress={() => setShowKeyExport(true)} testID="signup-save-keyfile">
+          <Text style={styles.primaryBtnTxt}>{it ? "Salva una copia cifrata" : "Save an encrypted copy"}</Text>
         </TouchableOpacity>
         {secure && (
           <View style={styles.switchRow}>
@@ -137,6 +124,8 @@ export default function SignupScreen({ navigation, route }) {
         <TouchableOpacity style={[styles.primaryBtn, !saved && styles.btnDim]} onPress={enter} disabled={!saved || busy} testID="signup-enter">
           {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnTxt}>{it ? "Entra in ULTRON" : "Enter ULTRON"}</Text>}
         </TouchableOpacity>
+        {showKeyExport && <KeyfileExport keyfile={created.keyfile} english={!it}
+          onClose={() => setShowKeyExport(false)} onShared={() => { setSaved(true); setShowKeyExport(false); }} />}
         {!saved && <Text style={styles.hintCenter}>{it ? "Salva prima il file chiave per continuare." : "Save the keyfile first to continue."}</Text>}
 
       </ScrollView>

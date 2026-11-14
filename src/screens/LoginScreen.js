@@ -4,6 +4,8 @@ import {
   KeyboardAvoidingView, Platform, ScrollView, Alert, Image,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system/legacy";
+import { KEYFILE_FORMAT, MAX_KEYFILE_BYTES, MAX_KEY_PASSWORD, openProtectedKeyfile } from "../lib/keyfileProtection";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../lib/i18n";
 import { UI_LANGS } from "../lib/locales";
@@ -18,6 +20,9 @@ export default function LoginScreen({ navigation }) {
   const [err, setErr] = useState("");
   const [showPaste, setShowPaste] = useState(false);
   const [pasted, setPasted] = useState("");
+  const [lockedFile, setLockedFile] = useState(null);
+  const [password, setPassword] = useState("");
+  const en = lang === "en";
   const [showServer, setShowServer] = useState(false);
   const [server, setServer] = useState(api.getServerUrl());
   const [customServer, setCustomServer] = useState(false);
@@ -40,24 +45,55 @@ export default function LoginScreen({ navigation }) {
     finally { setBusy(false); }
   };
 
+  const importKey = async (content) => {
+    if (content.length > MAX_KEYFILE_BYTES) throw new Error();
+    const obj = JSON.parse(content);
+    setLockedFile(null); setPassword("");
+    if (obj?.fmt === KEYFILE_FORMAT) {
+      setErr(""); setLockedFile(obj);
+    } else await doSignIn(obj);
+  };
+
+  const openKey = async () => {
+    if (!lockedFile || !password || busy) return;
+    setBusy(true); setErr("");
+    try {
+      const key = await openProtectedKeyfile(lockedFile, password);
+      setLockedFile(null); setPassword("");
+      await doSignIn(key);
+    } catch {
+      setErr(en ? "Wrong passphrase or damaged keyfile." : "Frase segreta errata o file chiave danneggiato.");
+    } finally { setBusy(false); }
+  };
+
   const pickFile = async () => {
+    setBusy(true); setErr("");
+    let uri;
     try {
       const res = await DocumentPicker.getDocumentAsync({ type: ["application/json", "*/*"], copyToCacheDirectory: true });
       if (res.canceled) return;
-      const uri = res.assets?.[0]?.uri;
+      const asset = res.assets?.[0];
+      uri = asset?.uri;
       if (!uri) return;
-      let content;
-      try { content = await (await fetch(uri)).text(); }
-      catch { const FileSystem = await import("expo-file-system/legacy"); content = await FileSystem.readAsStringAsync(uri); }
-      await doSignIn(JSON.parse(content));
+      const info = await FileSystem.getInfoAsync(uri);
+      if (!info.exists || !info.size || info.size > MAX_KEYFILE_BYTES) throw new Error();
+      await importKey(await FileSystem.readAsStringAsync(uri));
     } catch {
       Alert.alert(t("login.error"), t("login.readfail"));
+    } finally {
+      if (uri?.startsWith(FileSystem.cacheDirectory + "DocumentPicker/")) {
+        await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+      }
+      setBusy(false);
     }
   };
 
   const usePasted = async () => {
-    try { await doSignIn(JSON.parse(pasted.trim())); }
-    catch { setErr(t("login.badjson")); }
+    try {
+      const content = pasted.trim();
+      setPasted("");
+      await importKey(content);
+    } catch { setErr(t("login.badjson")); }
   };
 
   const openSignup = () => {
@@ -100,11 +136,23 @@ export default function LoginScreen({ navigation }) {
               style={styles.paste}
               placeholder='{ "lns_name": "...", "secret_key_hex": "..." }'
               placeholderTextColor={theme.textFaint}
-              multiline value={pasted} onChangeText={setPasted}
+              multiline maxLength={MAX_KEYFILE_BYTES} value={pasted} onChangeText={setPasted}
               testID="login-paste-input" autoCapitalize="none" autoCorrect={false}
             />
             <TouchableOpacity style={styles.secondaryBtn} onPress={usePasted} disabled={busy} testID="login-paste-submit">
               <Text style={styles.secondaryBtnText}>{t("login.signin")}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {lockedFile && (
+          <View style={{ width: "100%" }}>
+            <TextInput style={styles.serverInput} secureTextEntry autoCapitalize="none" autoCorrect={false}
+              placeholder={en ? "Keyfile passphrase" : "Frase segreta del file chiave"}
+              placeholderTextColor={theme.textFaint} maxLength={MAX_KEY_PASSWORD}
+              editable={!busy} value={password} onChangeText={setPassword} testID="login-keyfile-passphrase" />
+            <TouchableOpacity style={styles.secondaryBtn} onPress={openKey} disabled={!password || busy} testID="login-open-keyfile">
+              <Text style={styles.secondaryBtnText}>{en ? "Open encrypted keyfile" : "Apri il file chiave cifrato"}</Text>
             </TouchableOpacity>
           </View>
         )}

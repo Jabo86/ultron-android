@@ -11,7 +11,7 @@ import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../lib/i18n";
 import { theme } from "../theme";
 import { suppressLock } from "../lib/lockGuard";
-import { hasPin, verifyPin } from "../lib/lock";
+import { MIN_KEY_PASSWORD, MAX_KEY_PASSWORD } from "../lib/keyfileProtection";
 import * as bkp from "../lib/backup";
 
 const MODES = ["off", "weekly", "monthly"];
@@ -20,11 +20,8 @@ export default function BackupScreen({ route, navigation }) {
   const { user, signIn } = useAuth();
   const { lang } = useI18n();
   const en = lang === "en";
-  const [pinAvail, setPinAvail] = useState(false);
-  const [mode, setMode] = useState("password"); // "pin" | "password"
   const [pwd, setPwd] = useState("");
   const [pwd2, setPwd2] = useState("");
-  const [pin, setPin] = useState("");
   const [withAtts, setWithAtts] = useState(false);
   const [busy, setBusy] = useState("");
   const [step, setStep] = useState("");
@@ -35,34 +32,25 @@ export default function BackupScreen({ route, navigation }) {
   const [files, setFiles] = useState([]);
 
   const refresh = useCallback(async () => {
-    setPinAvail(await hasPin());
     setLast(await bkp.lastBackupAt());
     setSched(await bkp.getSchedule());
     setFiles(await bkp.restoredFiles());
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
-  useEffect(() => { if (pinAvail && !user) setMode("password"); }, [pinAvail, user]);
-
-  const secret = async () => {
-    if (mode === "pin") {
-      if (!/^\d{4,10}$/.test(pin)) throw new Error(en ? "Type your app PIN." : "Digita il PIN dell'app.");
-      const r = await verifyPin(pin);
-      if (r !== "ok") throw new Error(en ? "Wrong PIN." : "PIN errato.");
-      return { password: "pin:" + pin, hint: "pin" };
+  const validateBackupPassword = () => {
+    if (pwd.trim().length < MIN_KEY_PASSWORD || pwd.length > MAX_KEY_PASSWORD) {
+      throw new Error(en ? "Use a unique passphrase of at least 16 characters." : "Usa una frase segreta unica di almeno 16 caratteri.");
     }
-    if (pwd.length < 8) throw new Error(en ? "The password must be at least 8 characters." : "La password deve avere almeno 8 caratteri.");
-    if (pwd !== pwd2) throw new Error(en ? "The two passwords are different." : "Le due password non coincidono.");
-    return { password: pwd, hint: "password" };
+    if (pwd !== pwd2) throw new Error(en ? "The two passphrases do not match." : "Le due frasi segrete non coincidono.");
   };
 
   const doExport = async () => {
-    let s;
-    try { s = await secret(); } catch (e) { Alert.alert(en ? "Wait" : "Un momento", String(e.message || e)); return; }
+    try { validateBackupPassword(); } catch (e) { Alert.alert(en ? "Wait" : "Un momento", String(e.message || e)); return; }
     setBusy("export"); setStep("");
     try {
       suppressLock();
       const r = await bkp.exportBackup({
-        user, includeAtts: withAtts, password: s.password, hint: s.hint,
+        user, includeAtts: withAtts, password: pwd,
         onStep: (x) => setStep(x),
       });
       await refresh();
@@ -79,7 +67,7 @@ export default function BackupScreen({ route, navigation }) {
         (en ? "Keep it somewhere safe: without the password it is unreadable, and nobody can recover it for you."
             : "Conservalo in un posto sicuro: senza la password è illeggibile e nessuno può recuperarlo per te.")
       );
-      setPwd(""); setPwd2(""); setPin("");
+      setPwd(""); setPwd2("");
     } catch (e) {
       Alert.alert(en ? "Backup failed" : "Backup non riuscito", String((e && e.message) || e));
     } finally { setBusy(""); setStep(""); }
@@ -198,44 +186,16 @@ export default function BackupScreen({ route, navigation }) {
                 trackColor={{ true: theme.primary, false: theme.border }} thumbColor="#fff" />
             </View>
 
-            <Text style={styles.cardHint}>{en ? "Protection" : "Protezione"}</Text>
-            <View style={styles.chips}>
-              <TouchableOpacity style={[styles.chip, mode === "password" && styles.chipOn]} onPress={() => setMode("password")} testID="backup-mode-password">
-                <Text style={[styles.chipTxt, mode === "password" && styles.chipTxtOn]}>{en ? "Dedicated password" : "Password dedicata"}</Text>
-              </TouchableOpacity>
-              {pinAvail && (
-                <TouchableOpacity style={[styles.chip, mode === "pin" && styles.chipOn]} onPress={() => setMode("pin")} testID="backup-mode-pin">
-                  <Text style={[styles.chipTxt, mode === "pin" && styles.chipTxtOn]}>{en ? "App PIN" : "PIN dell'app"}</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {mode === "pin" ? (
-              <>
-                <TextInput
-                  style={styles.input} value={pin} onChangeText={setPin} placeholder={en ? "App PIN" : "PIN dell'app"}
-                  placeholderTextColor={theme.textFaint} keyboardType="number-pad" secureTextEntry maxLength={10}
-                  testID="backup-pin-input"
-                />
-                <Text style={styles.warn}>
-                  {en ? "A 4-6 digit PIN is weak for a file that leaves the phone: prefer a long password for backups you keep for years."
-                      : "Un PIN di 4-6 cifre è debole per un file che esce dal telefono: per i backup che conservi per anni è meglio una password lunga."}
-                </Text>
-              </>
-            ) : (
-              <>
-                <TextInput
-                  style={styles.input} value={pwd} onChangeText={setPwd} placeholder={en ? "Backup password (min 8)" : "Password del backup (min 8)"}
-                  placeholderTextColor={theme.textFaint} secureTextEntry autoCapitalize="none" autoCorrect={false}
-                  testID="backup-pwd-input"
-                />
-                <TextInput
-                  style={styles.input} value={pwd2} onChangeText={setPwd2} placeholder={en ? "Repeat the password" : "Ripeti la password"}
-                  placeholderTextColor={theme.textFaint} secureTextEntry autoCapitalize="none" autoCorrect={false}
-                  testID="backup-pwd2-input"
-                />
-              </>
-            )}
+            <TextInput
+              style={styles.input} value={pwd} onChangeText={setPwd} placeholder={en ? "Backup passphrase (min 16)" : "Frase segreta del backup (min 16)"}
+              placeholderTextColor={theme.textFaint} secureTextEntry autoCapitalize="none" autoCorrect={false}
+              maxLength={MAX_KEY_PASSWORD} testID="backup-pwd-input"
+            />
+            <TextInput
+              style={styles.input} value={pwd2} onChangeText={setPwd2} placeholder={en ? "Repeat the password" : "Ripeti la password"}
+              placeholderTextColor={theme.textFaint} secureTextEntry autoCapitalize="none" autoCorrect={false}
+              maxLength={MAX_KEY_PASSWORD} testID="backup-pwd2-input"
+            />
 
             <TouchableOpacity style={[styles.btn, busy && { opacity: 0.6 }]} onPress={doExport} disabled={!!busy} testID="backup-export-btn">
               {busy === "export" ? <ActivityIndicator color="#fff" /> : <Ionicons name="lock-closed-outline" size={17} color="#fff" />}
@@ -258,10 +218,10 @@ export default function BackupScreen({ route, navigation }) {
           </TouchableOpacity>
           {!!picked && (
             <>
-              <Text style={styles.row} testID="backup-picked-info">
+              {picked.container.at && <Text style={styles.row} testID="backup-picked-info">
                 {(en ? "Created on " : "Creato il ") + new Date(picked.container.at).toLocaleString() +
                   (picked.container.lns ? " · " + picked.container.lns : "")}
-              </Text>
+              </Text>}
               <TextInput
                 style={styles.input} value={restorePwd} onChangeText={setRestorePwd}
                 placeholder={picked.container.hint === "pin" ? (en ? "App PIN of that backup" : "PIN dell'app di quel backup") : (en ? "Backup password" : "Password del backup")}

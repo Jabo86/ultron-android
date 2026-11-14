@@ -18,6 +18,7 @@ import * as store from "./store";
 import { getBlob, setBlob } from "./lock";
 import { decryptAny } from "./devices";
 import * as mbx from "./mailbox";
+import { MAX_KEY_PASSWORD, MIN_KEY_PASSWORD } from "./keyfileProtection";
 
 export const FMT = "lattice-backup-1";
 const KDF = { N: 1 << 14, r: 8, p: 1 };
@@ -156,7 +157,7 @@ export function encryptContainer(payload, password, hint) {
   const iv = randomHex(12);
   const ct = gcm(key, hexToBytes(iv)).encrypt(enc8(JSON.stringify(payload)));
   return {
-    fmt: FMT, at: payload.at, lns: payload.lns, hint: hint || "password",
+    fmt: FMT, hint: hint || "password",
     kdf: { alg: "scrypt", N: KDF.N, r: KDF.r, p: KDF.p, salt },
     iv, ct: bytesToBase64(ct),
   };
@@ -165,7 +166,11 @@ export function encryptContainer(payload, password, hint) {
 export function decryptContainer(container, password) {
   if (!container || container.fmt !== FMT) throw new Error("Questo file non è un backup ULTRON.");
   const k = container.kdf || {};
-  const key = scrypt(enc8(password), hexToBytes(k.salt || ""), { N: k.N || KDF.N, r: k.r || KDF.r, p: k.p || KDF.p, dkLen: 32 });
+  if (k.alg !== "scrypt" || !/^[0-9a-f]{32}$/i.test(k.salt || "") ||
+      k.N !== KDF.N || k.r !== KDF.r || k.p !== KDF.p || !/^[0-9a-f]{24}$/i.test(container.iv || "")) {
+    throw new Error("Parametri del backup non validi.");
+  }
+  const key = scrypt(enc8(password), hexToBytes(k.salt), { ...KDF, dkLen: 32 });
   let pt;
   try {
     pt = gcm(key, hexToBytes(container.iv)).decrypt(base64ToBytes(container.ct));
@@ -175,18 +180,14 @@ export function decryptContainer(container, password) {
   return JSON.parse(dec8(pt));
 }
 
-function fileName(lns, at) {
-  const d = String(at || new Date().toISOString()).slice(0, 16).replace(/[:T]/g, "-");
-  const who = String(lns || "lattice").split("@")[0].replace(/[^a-zA-Z0-9._-]/g, "");
-  return `lattice-backup-${who}-${d}.lattice`;
-}
-
-export async function exportBackup({ user, includeAtts, password, hint, onStep } = {}) {
-  if (!password || String(password).length < 4) throw new Error("Serve una password (o il PIN) per cifrare il backup.");
+export async function exportBackup({ user, includeAtts, password, onStep } = {}) {
+  if (typeof password !== "string" || password.trim().length < MIN_KEY_PASSWORD || password.length > MAX_KEY_PASSWORD) {
+    throw new Error("Serve una frase segreta di almeno 16 caratteri.");
+  }
   const { payload, counts } = await buildPayload({ user, includeAtts, onStep });
   onStep && onStep("Cifratura del file");
-  const container = encryptContainer(payload, String(password), hint);
-  const name = fileName(payload.lns, payload.at);
+  const container = encryptContainer(payload, password, "password");
+  const name = `ultron-backup-${randomHex(8)}.ultron`;
   const uri = FileSystem.documentDirectory + name;
   await FileSystem.writeAsStringAsync(uri, JSON.stringify(container));
   const info = await FileSystem.getInfoAsync(uri);
@@ -217,7 +218,7 @@ export async function restorePayload(payload) {
   const report = { prefs: 0, convs: 0, msgs: 0, files: 0, keyfile: false, mbx: false };
   if (!payload || payload.v !== 1) throw new Error("Versione del backup non supportata.");
   if (payload.prefs) {
-    const pairs = Object.entries(payload.prefs).filter(([k]) => k !== K_LAST);
+    const pairs = Object.entries(payload.prefs).filter(([k]) => k !== K_LAST && k !== "lattice.pulse.keyfile.v1" && !k.startsWith("lat.enc."));
     if (pairs.length) { try { await AsyncStorage.multiSet(pairs); report.prefs = pairs.length; } catch { /* */ } }
   }
   if (payload.mbx) { try { await setBlob("mbx", payload.mbx); report.mbx = true; } catch { /* */ } }
