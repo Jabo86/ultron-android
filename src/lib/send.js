@@ -9,11 +9,13 @@ import { addSelfKeys } from "./devices";
 import { ratchetEnvelopesFor } from "./ratchet";
 import * as api from "./api";
 import * as SA from "./senderAuth";
+import { assertPeerKeys } from "./keyauth";
 
 export async function buildEnvelopes(payload, others, user) {
   // The hosted gateway exposes static ML-KEM keys for individual chat.
   if (others.length === 1 && api.getServerUrl() === DEFAULT_SERVER) {
     const [peer] = others;
+    const ka = await assertPeerKeys(peer); // chiavi firmate: blocca se il server le ha sostituite
     const pinned = await getVerified(peer);
     const [keys, dhKeys] = await Promise.all([
       api.pulseStaticKeys([peer]), pinned ? api.pulseDhKeys([peer]) : null,
@@ -22,6 +24,9 @@ export async function buildEnvelopes(payload, others, user) {
       throw new Error("Le chiavi del contatto verificato sono cambiate. Verifica di nuovo il QR prima di inviare.");
     }
     if (!keys?.[peer]) throw new Error(peer);
+    if (ka.signed && String(keys[peer]).toLowerCase() !== ka.kem) {
+      throw new Error("Le chiavi del contatto non corrispondono alla firma. Invio bloccato.");
+    }
     // AUTENTICAZIONE: con l'interruttore acceso la busta si apre solo con la chiave d'identita'
     // di chi la manda (stesso formato, nessun campo in piu'). Senza chiave del contatto in
     // cassaforte si ripiega sul vecchio modo, a meno che il rigore non sia acceso.

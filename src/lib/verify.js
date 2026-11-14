@@ -105,6 +105,9 @@ export async function getVerified(lns) {
   } catch { return null; }
 }
 export async function setVerified(lns, fp, method) {
+  // Verifica di persona fatta di nuovo: si accetta anche la nuova chiave di firma del contatto
+  // (altrimenti dopo un cambio d'identita' voluto la chat resterebbe bloccata per sempre).
+  try { await require("./keyauth").forget(lns); } catch { /* */ }
   try { await AsyncStorage.setItem(K(lns), JSON.stringify({ fp, at: new Date().toISOString(), method: method || "qr" })); } catch { /* */ }
 }
 /// Chi è stato verificato, su questo telefono. Serve al pulsante "Dopo la dogana" per

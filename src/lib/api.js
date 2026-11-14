@@ -3,7 +3,7 @@
 // so the same code path is exercised by the Node E2E test.
 import axios from "axios";
 import { DEFAULT_SERVER } from "../config";
-import { signChallenge } from "./crypto";
+import { signChallenge, signMessage } from "./crypto";
 import { randPad } from "./pad";
 
 export function normalizeServer(url) {
@@ -145,10 +145,21 @@ export async function rotateKey() {
   return r; // { ok, keyfile, keyfile_filename, user }
 }
 
-export const publishKey = (kem_pk_hex, dh_pk_hex, kem1024_pk_hex, hdh_pk_hex) =>
-  withAuth((a) => client.post("/public/pulse/publish-key",
-    { kem_pk_hex, dh_pk_hex, kem1024_pk_hex: kem1024_pk_hex || "", hdh_pk_hex: hdh_pk_hex || "" }, a)
+export const publishKey = (kem_pk_hex, dh_pk_hex, kem1024_pk_hex, hdh_pk_hex) => {
+  // FIRMA: l'identita' (ML-DSA) firma le due chiavi con cui si cifra per te, legate al tuo
+  // indirizzo. Chi scrive puo' cosi' accorgersi se un server le sostituisse. Un server vecchio
+  // che non conosce il campo lo ignora.
+  let sig_hex = "";
+  try {
+    if (_kf && _kf.sk) sig_hex = signMessage(`lattice-keys-v1\n${String(_kf.lns).toLowerCase()}\n${String(kem_pk_hex).toLowerCase()}\n${String(dh_pk_hex).toLowerCase()}`, _kf.sk);
+  } catch { sig_hex = ""; }
+  return withAuth((a) => client.post("/public/pulse/publish-key",
+    { kem_pk_hex, dh_pk_hex, kem1024_pk_hex: kem1024_pk_hex || "", hdh_pk_hex: hdh_pk_hex || "", sig_hex }, a)
     .then((r) => r.data));
+};
+/// Chiavi + firma + chiave di firma dei contatti, per il controllo (keyauth.js).
+export const pulseKeySigs = (lns_list) =>
+  withAuth((a) => client.post("/public/pulse/keysigs", { lns_list }, a).then((r) => r.data));
 
 /// Curva d'aggancio dei contatti: quella che si può ruotare. Se un contatto non l'ha
 /// pubblicata si usa la sua curva d'identità, cioè la generazione 0.
