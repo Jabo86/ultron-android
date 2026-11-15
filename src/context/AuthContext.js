@@ -11,6 +11,7 @@ import { isDeviceSecure } from "../lib/biometrics";
 import * as lock from "../lib/lock";
 import { publishSignedChatKeys } from "../lib/signedChatKeys";
 import * as devices from "../lib/devices";
+import { setVerificationScope } from "../lib/verify";
 import { selectWakeProfile } from "../lib/wake";
 
 const Ctx = createContext(null);
@@ -32,7 +33,10 @@ export function AuthProvider({ children }) {
   const [pinGate, setPinGate] = useState(false); // PIN dell'app da inserire (dati locali cifrati)
 
   const unlock = useCallback(() => {
-    if (user) api.setKeyfile({ lns: user.lns, sk: user.sk, pk: user.pk });
+    if (user) {
+      api.setKeyfile({ lns: user.lns, sk: user.sk, pk: user.pk });
+      if (RATCHET_PILOT) setVerificationScope(user);
+    }
     setLocked(false);
   }, [user]);
   const lockApp = useCallback(async () => {
@@ -42,6 +46,7 @@ export function AuthProvider({ children }) {
     // eventuale sblocco con il PIN di copertura, non resta viva in memoria nessuna sessione
     // vera — la si rideriva dal file chiave (esca o reale) solo dopo il PIN.
     try { api.clearAuth(); } catch { /* */ }
+    if (RATCHET_PILOT) setVerificationScope(null);
     const hasPin = await lock.hasPin();
     try { lock.lockMemory(); } catch { /* */ }
     if (hasPin) {
@@ -88,6 +93,7 @@ export function AuthProvider({ children }) {
     const u = { lns: kf.lns, sk: kf.sk, pk: kf.pk, tenant_id: kf.tenant_id, kem, kem1024, dh, server: api.getServerUrl() };
     decoyProfile.current = decoy;
     setDecoySession(decoy);
+    if (RATCHET_PILOT) setVerificationScope(u);
     setUser(u);
     // La cassetta anonima ha bisogno di sapere chi siamo per aprire le buste del ratchet.
     try { require("../lib/mailbox").setIdentity(u); } catch { /* modulo assente */ }
@@ -214,6 +220,7 @@ export function AuthProvider({ children }) {
     await clearStoredKeyfile();
     if (!decoyProfile.current) await lock.forgetResetTarget().catch(() => {});
     api.clearAuth();
+    if (RATCHET_PILOT) setVerificationScope(null);
     msgCache.clearAll(); // le decifrature in memoria non sopravvivono all uscita
     try { require("../lib/book").setUser(null); } catch { /* */ }
     try { require("../lib/mailbox").setIdentity(null); } catch { /* */ }

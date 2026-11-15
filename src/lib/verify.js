@@ -3,7 +3,9 @@
 // sa quali contatti hai verificato (lo stato resta solo in locale).
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { sha3_256 } from "@noble/hashes/sha3.js";
-import { bytesToHex, hexToBytes } from "./crypto";
+import { RATCHET_PILOT } from "../config";
+import { getBlob, setBlobDurably } from "./lock";
+import { bytesToHex, hexToBytes, sha256Hex } from "./crypto";
 import * as api from "./api";
 
 const ITER = 600; // rende inutile una ricerca di collisioni sul numero corto
@@ -98,18 +100,52 @@ export async function peerFingerprint(lns) {
 
 const K = (lns) => "vfy:" + String(lns || "");
 
+let verificationScope = null;
+let verificationWrites = Promise.resolve();
+
+export function setVerificationScope(user) {
+  verificationScope = user
+    ? "verified-contacts:" + sha256Hex(JSON.stringify([user.server, user.lns]))
+    : null;
+}
+
+function mutatePilotVerification(change) {
+  const scope = verificationScope;
+  const task = verificationWrites.then(async () => {
+    if (!scope || scope !== verificationScope) throw new Error("Riapri il profilo per verificare questo contatto.");
+    const all = (await getBlob(scope)) || {};
+    if (scope !== verificationScope) throw new Error("Il profilo è cambiato.");
+    change(all);
+    await setBlobDurably(scope, all);
+  });
+  verificationWrites = task.catch(() => {});
+  return task;
+}
+
 export async function getVerified(lns) {
+  if (RATCHET_PILOT) {
+    const scope = verificationScope;
+    const all = scope ? await getBlob(scope) : null;
+    return scope === verificationScope ? all?.[lns] || null : null;
+  }
   try {
     const s = await AsyncStorage.getItem(K(lns));
     return s ? JSON.parse(s) : null;
   } catch { return null; }
 }
 export async function setVerified(lns, fp, method) {
-  try { await AsyncStorage.setItem(K(lns), JSON.stringify({ fp, at: new Date().toISOString(), method: method || "qr" })); } catch { /* */ }
+  const record = { fp, at: new Date().toISOString(), method: method || "qr" };
+  if (RATCHET_PILOT) return mutatePilotVerification((all) => { all[lns] = record; });
+  try { await AsyncStorage.setItem(K(lns), JSON.stringify(record)); } catch { /* */ }
 }
 /// Chi è stato verificato, su questo telefono. Serve al pulsante "Dopo la dogana" per
 /// ricontrollare tutte le impronte in un colpo.
 export async function verifiedList() {
+  if (RATCHET_PILOT) {
+    const scope = verificationScope;
+    const all = scope ? await getBlob(scope) : null;
+    return scope === verificationScope ? Object.keys(all || {}) : [];
+  }
   try {
     const keys = await AsyncStorage.getAllKeys();
     return (keys || []).filter((k) => k.startsWith("vfy:")).map((k) => k.slice(4)).filter(Boolean);
@@ -117,6 +153,7 @@ export async function verifiedList() {
 }
 
 export async function clearVerified(lns) {
+  if (RATCHET_PILOT) return mutatePilotVerification((all) => { delete all[lns]; });
   try { await AsyncStorage.removeItem(K(lns)); } catch { /* */ }
 }
 

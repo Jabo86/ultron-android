@@ -1,3 +1,4 @@
+import { RATCHET_PILOT } from "../config";
 // Verifica contatto: numero di sicurezza a 60 cifre + QR (anti man-in-the-middle).
 //
 // v1.5.1 — APERTURA ISTANTANEA. Prima la schermata compariva dopo diversi secondi: si
@@ -47,8 +48,8 @@ export default function VerifyContactScreen({ route, navigation }) {
 
   const [err, setErr] = useState("");
   const [myFp, setMyFp] = useState("");
-  const [peerFp, setPeerFp] = useState(mem.get(peer) || "");
-  const [fresh, setFresh] = useState(mem.has(peer)); // impronta confermata dal server ora
+  const [peerFp, setPeerFp] = useState(!RATCHET_PILOT && mem.get(peer) || "");
+  const [fresh, setFresh] = useState(!RATCHET_PILOT && mem.has(peer)); // impronta confermata dal server ora
   const [rec, setRec] = useState(null);
   const [rat, setRat] = useState(null);
   const [pasteOpen, setPasteOpen] = useState(false);
@@ -62,7 +63,7 @@ export default function VerifyContactScreen({ route, navigation }) {
   useEffect(() => {
     mounted.current = true;
     getVerified(peer).then((saved) => { if (mounted.current) setRec(saved); }).catch(() => {});
-    if (!mem.has(peer)) {
+    if (!RATCHET_PILOT && !mem.has(peer)) {
       AsyncStorage.getItem(PFP(peer)).then((v) => {
         if (v && mounted.current) setPeerFp((cur) => cur || v);
       }).catch(() => {});
@@ -82,12 +83,14 @@ export default function VerifyContactScreen({ route, navigation }) {
     try {
       const p = await peerFingerprint(peer);
       if (p && p.fp) {
-        mem.set(peer, p.fp);
-        AsyncStorage.setItem(PFP(peer), p.fp).catch(() => {});
+        if (!RATCHET_PILOT) {
+          mem.set(peer, p.fp);
+          AsyncStorage.setItem(PFP(peer), p.fp).catch(() => {});
+        }
         if (mounted.current) { setPeerFp(p.fp); setFresh(true); }
       }
     } catch (e) {
-      if (mounted.current && !mem.has(peer)) setErr(String((e && e.message) || e));
+      if (mounted.current && (RATCHET_PILOT || !mem.has(peer))) setErr(String((e && e.message) || e));
     }
     try {
       const rs = await ratchetStats(peer);
