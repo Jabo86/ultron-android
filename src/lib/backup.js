@@ -1,5 +1,5 @@
 // BACKUP CIFRATO LOCALE — il file non passa MAI dal server: viene creato sul telefono,
-// cifrato con AES-256-GCM (chiave da scrypt) e consegnato al sistema (Condividi/Salva) così
+// cifrato con AES-256-GCM (chiave da Argon2id) e consegnato al sistema (Condividi/Salva) così
 // lo metti dove vuoi tu. Nessun upload, nessuna copia in cloud fatta dall'app.
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system/legacy";
@@ -7,6 +7,8 @@ import * as Sharing from "expo-sharing";
 import * as DocumentPicker from "expo-document-picker";
 import { Platform } from "react-native";
 import notifee, { AndroidImportance, TimeUnit, TriggerType } from "react-native-notify-kit";
+import { argon2idAsync } from "@noble/hashes/argon2.js";
+import { readPilotMessage } from "./hostedRatchetChat";
 import { scrypt } from "@noble/hashes/scrypt.js";
 import { gcm } from "@noble/ciphers/aes.js";
 import {
@@ -20,7 +22,13 @@ import { decryptAny } from "./devices";
 import * as mbx from "./mailbox";
 import { MAX_KEY_PASSWORD, MIN_KEY_PASSWORD } from "./keyfileProtection";
 
-export const FMT = "lattice-backup-1";
+export const FMT = "ultron-backup-2";
+const LEGACY_FMT = "lattice-backup-1";
+const ARGON = { m: 65536, t: 3, p: 1 };
+const prefsToCopy = new Set([
+  "lattice.pulse.applock.v1", "lattice.pulse.notif.v1", "lattice.pulse.ringtone.v1",
+  "lattice.pulse.ringvol.v1", "lattice.pulse.vibmode.v1", "lattice.pulse.tradtarget.v1",
+]);
 const KDF = { N: 1 << 14, r: 8, p: 1 };
 const ARC_BLOB = "arc";
 const K_LAST = "lat.bkp.last";
@@ -73,7 +81,7 @@ export async function buildPayload({ user, includeAtts = false, onStep } = {}) {
   const prefs = {};
   try {
     const keys = await AsyncStorage.getAllKeys();
-    const wanted = keys.filter((k) => !k.startsWith("lat.enc.") && k !== "lattice.pulse.keyfile.v1");
+    const wanted = keys.filter((k) => prefsToCopy.has(k));
     const pairs = await AsyncStorage.multiGet(wanted);
     for (const [k, v] of pairs) if (v != null) prefs[k] = v;
     counts.prefs = Object.keys(prefs).length;
@@ -96,10 +104,11 @@ export async function buildPayload({ user, includeAtts = false, onStep } = {}) {
       try { raw = await api.messages(c.conv_id); } catch { continue; }
       const msgs = [];
       for (const m of Array.isArray(raw) ? raw : []) {
+        if (m.hidden === true) continue;
         let body = "";
         let atts = [];
-        if (m.envelope && user.kem) {
-          const pt = await decryptAny(m, user);
+        if ((m.envelope || m.ratchet) && user.kem) {
+          const pt = m.ratchet ? await readPilotMessage(m, user).catch(() => null) : await decryptAny(m, user);
           if (pt == null) continue;
           const u = unpackMessage(pt);
           // Messaggi a scomparsa: NON entrano nel backup. Se devono svanire, svaniscono
@@ -151,33 +160,47 @@ export async function buildPayload({ user, includeAtts = false, onStep } = {}) {
 }
 
 // ── Container cifrato ──
-export function encryptContainer(payload, password, hint) {
+export async function encryptContainer(payload, password) {
   const salt = randomHex(16);
-  const key = scrypt(enc8(password), hexToBytes(salt), { N: KDF.N, r: KDF.r, p: KDF.p, dkLen: 32 });
   const iv = randomHex(12);
-  const ct = gcm(key, hexToBytes(iv)).encrypt(enc8(JSON.stringify(payload)));
-  return {
-    fmt: FMT, hint: hint || "password",
-    kdf: { alg: "scrypt", N: KDF.N, r: KDF.r, p: KDF.p, salt },
-    iv, ct: bytesToBase64(ct),
-  };
+  const secret = enc8(password);
+  const plain = enc8(JSON.stringify(payload));
+  let key;
+  try {
+    key = await argon2idAsync(secret, hexToBytes(salt), { ...ARGON, dkLen: 32 });
+    const ct = gcm(key, hexToBytes(iv), enc8(FMT)).encrypt(plain);
+    return { fmt: FMT, hint: "password", kdf: { alg: "argon2id", ...ARGON, salt }, iv, ct: bytesToBase64(ct) };
+  } finally {
+    secret.fill(0);
+    plain.fill(0);
+    key?.fill(0);
+  }
 }
 
-export function decryptContainer(container, password) {
-  if (!container || container.fmt !== FMT) throw new Error("Questo file non è un backup ULTRON.");
+export async function decryptContainer(container, password) {
+  const legacy = container?.fmt === LEGACY_FMT;
+  if (!legacy && container?.fmt !== FMT) throw new Error("Questo file non è un backup ULTRON.");
   const k = container.kdf || {};
-  if (k.alg !== "scrypt" || !/^[0-9a-f]{32}$/i.test(k.salt || "") ||
-      k.N !== KDF.N || k.r !== KDF.r || k.p !== KDF.p || !/^[0-9a-f]{24}$/i.test(container.iv || "")) {
+  const validKdf = legacy
+    ? k.alg === "scrypt" && k.N === KDF.N && k.r === KDF.r && k.p === KDF.p
+    : k.alg === "argon2id" && k.m === ARGON.m && k.t === ARGON.t && k.p === ARGON.p;
+  if (!validKdf || !/^[0-9a-f]{32}$/i.test(k.salt || "") || !/^[0-9a-f]{24}$/i.test(container.iv || "")) {
     throw new Error("Parametri del backup non validi.");
   }
-  const key = scrypt(enc8(password), hexToBytes(k.salt), { ...KDF, dkLen: 32 });
-  let pt;
+  const secret = enc8(password);
+  let key, plain;
   try {
-    pt = gcm(key, hexToBytes(container.iv)).decrypt(base64ToBytes(container.ct));
+    const salt = hexToBytes(k.salt);
+    key = legacy ? scrypt(secret, salt, { ...KDF, dkLen: 32 }) : await argon2idAsync(secret, salt, { ...ARGON, dkLen: 32 });
+    plain = gcm(key, hexToBytes(container.iv), legacy ? undefined : enc8(FMT)).decrypt(base64ToBytes(container.ct));
+    return JSON.parse(dec8(plain));
   } catch {
     throw new Error("Password errata (oppure il file è danneggiato).");
+  } finally {
+    secret.fill(0);
+    key?.fill(0);
+    plain?.fill(0);
   }
-  return JSON.parse(dec8(pt));
 }
 
 export async function exportBackup({ user, includeAtts, password, onStep } = {}) {
@@ -186,7 +209,7 @@ export async function exportBackup({ user, includeAtts, password, onStep } = {})
   }
   const { payload, counts } = await buildPayload({ user, includeAtts, onStep });
   onStep && onStep("Cifratura del file");
-  const container = encryptContainer(payload, password, "password");
+  const container = await encryptContainer(payload, password);
   const name = `ultron-backup-${randomHex(8)}.ultron`;
   const uri = FileSystem.documentDirectory + name;
   await FileSystem.writeAsStringAsync(uri, JSON.stringify(container));
@@ -209,7 +232,7 @@ export async function pickBackupFile() {
   const txt = await FileSystem.readAsStringAsync(asset.uri);
   let container;
   try { container = JSON.parse(txt); } catch { throw new Error("File illeggibile: non è un backup ULTRON."); }
-  if (container.fmt !== FMT) throw new Error("Questo file non è un backup ULTRON.");
+  if (container?.fmt !== FMT && container?.fmt !== LEGACY_FMT) throw new Error("Questo file non è un backup ULTRON.");
   return { container, name: asset.name || "backup" };
 }
 
@@ -218,7 +241,7 @@ export async function restorePayload(payload) {
   const report = { prefs: 0, convs: 0, msgs: 0, files: 0, keyfile: false, mbx: false };
   if (!payload || payload.v !== 1) throw new Error("Versione del backup non supportata.");
   if (payload.prefs) {
-    const pairs = Object.entries(payload.prefs).filter(([k]) => k !== K_LAST && k !== "lattice.pulse.keyfile.v1" && !k.startsWith("lat.enc.") && !k.startsWith("ultron.signed-identity:"));
+    const pairs = Object.entries(payload.prefs).filter(([k, value]) => prefsToCopy.has(k) && typeof value === "string");
     if (pairs.length) { try { await AsyncStorage.multiSet(pairs); report.prefs = pairs.length; } catch { /* */ } }
   }
   if (payload.mbx) { try { await setBlob("mbx", payload.mbx); report.mbx = true; } catch { /* */ } }

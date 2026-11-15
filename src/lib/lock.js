@@ -34,6 +34,8 @@ const N_PROBE = "\u0001p";
 const N_INDEX = "\u0001i";
 const PROBE_MAGIC = "L2V";
 export const MAX_TRIES = 5;
+export const MIN_NEW_PIN_DIGITS = 6;
+const PIN_DELAYS = [0, 0, 5000, 15000, 30000];
 let unlockPending = false;
 
 let memKey = null; // chiave AES derivata dal PIN, solo in RAM
@@ -398,7 +400,7 @@ export async function removeBlob(name) {
 
 // ── Impostazione / modifica del PIN ──
 export async function setupPin(pin) {
-  if (!/^\d{4,10}$/.test(String(pin || ""))) throw new Error("Il PIN deve avere da 4 a 10 cifre.");
+  if (!/^\d{6,10}$/.test(String(pin || ""))) throw new Error("Il nuovo PIN deve avere da 6 a 10 cifre.");
   const salt = randomHex(16);
   // I blob esistenti sono cifrati con la chiave del dispositivo: si rileggono PRIMA di
   // cambiare chiave e si riscrivono dopo, altrimenti chiavi usa-e-getta e stato del
@@ -512,12 +514,16 @@ export async function unlockWithPin(pin) {
   if (unlockPending) return { status: "busy" };
   unlockPending = true;
   try {
-    const used = await tries();
+    const stored = (await SecureStore.getItemAsync(K_TRIES)) || "0";
+    const [count, deadline] = stored.split(":");
+    const used = Math.max(0, Number.parseInt(count, 10) || 0);
     if (used >= MAX_TRIES) return { status: "wipe" };
+    const wait = Math.min(PIN_DELAYS[used], Number(deadline) - Date.now());
+    if (wait > 0) return { status: "wait", seconds: Math.ceil(wait / 1000) };
     const r = await verifyPin(pin);
     if (r === "wrong") {
       const n = used + 1;
-      await SecureStore.setItemAsync(K_TRIES, String(n));
+      await SecureStore.setItemAsync(K_TRIES, n >= MAX_TRIES ? String(n) : `${n}:${Date.now() + PIN_DELAYS[n]}`);
       return n >= MAX_TRIES ? { status: "wipe" } : { status: "wrong", left: MAX_TRIES - n };
     }
     await SecureStore.setItemAsync(K_TRIES, "0");
@@ -609,7 +615,7 @@ export async function upgradeKdf(pin) {
 /// Non scrive NESSUN verificatore: l'unica traccia dell'esca e' la sua sonda, che senza
 /// il PIN esca e' indistinguibile da un blocco qualunque di dati cifrati.
 export async function activateDecoy(realPin, decoyPin) {
-  if (!/^\d{4,10}$/.test(String(decoyPin || ""))) throw new Error("Il PIN esca deve avere da 4 a 10 cifre.");
+  if (!/^\d{6,10}$/.test(String(decoyPin || ""))) throw new Error("Il nuovo PIN esca deve avere da 6 a 10 cifre.");
   if (String(decoyPin) === String(realPin)) throw new Error("Il PIN esca deve essere diverso dal PIN normale.");
   const r = await verifyPin(realPin);
   if (r !== "ok") throw new Error("PIN attuale errato.");

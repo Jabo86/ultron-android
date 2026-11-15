@@ -40,14 +40,14 @@ export function checkMeshPacket() {
   return { hops: hops.length };
 }
 
-export function checkBackupEncryption() {
+export async function checkBackupEncryption() {
   const password = "ultron-audit-test-only";
   const payload = { audit: "ultron-backup-round-trip" };
-  const encrypted = encryptContainer(payload, password, "password");
+  const encrypted = await encryptContainer(payload, password);
   assert(!JSON.stringify(encrypted).includes(payload.audit));
-  assert(decryptContainer(encrypted, password).audit === payload.audit);
+  assert((await decryptContainer(encrypted, password)).audit === payload.audit);
   let rejected = false;
-  try { decryptContainer(encrypted, "wrong-audit-password"); } catch { rejected = true; }
+  try { await decryptContainer(encrypted, "wrong-audit-password"); } catch { rejected = true; }
   assert(rejected);
   return true;
 }

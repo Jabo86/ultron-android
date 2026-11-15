@@ -26,12 +26,13 @@ export default function SecurityScreen({ navigation }) {
         const { domains } = checkShield();
         return it ? `${domains} domini caricati` : `${domains} domains loaded`;
       }],
-      [it ? "Cifratura backup" : "Backup encryption", () => { checkBackupEncryption(); return it ? "password errata rifiutata" : "wrong password rejected"; }],
+      [it ? "Cifratura backup" : "Backup encryption", async () => { await checkBackupEncryption(); return it ? "password errata rifiutata" : "wrong password rejected"; }],
     ];
-    const lines = checks.map(([title, check]) => {
-      try { return title + " · OK · " + check(); }
-      catch { return title + (it ? " · test fallito" : " · test failed"); }
-    });
+    const lines = [];
+    for (const [title, check] of checks) {
+      try { lines.push(title + " · OK · " + await check()); }
+      catch { lines.push(title + (it ? " · test fallito" : " · test failed")); }
+    }
     setResult(lines.join("\n"));
     setBusy(false);
   };

@@ -40,6 +40,7 @@ export default function PrivacyLockScreen({ navigation }) {
 
   const savePin = async () => {
     setErr("");
+    if (esca && (!/^\d{6,10}$/.test(esca) || esca === pin)) { setErr("Scegli un PIN esca diverso, da 6 a 10 cifre."); return; }
     if (pin !== pin2) { setErr("I due PIN non coincidono."); return; }
     setBusy(true);
     try {
@@ -82,8 +83,7 @@ export default function PrivacyLockScreen({ navigation }) {
         <Card>
           <Text style={styles.h2}>PIN dell'app e cifratura locale</Text>
           <Text style={styles.p}>
-            Con il PIN attivo, il file chiave e le chiavi di sessione vengono cifrati sul telefono (AES-256):
-            a telefono bloccato o spento non sono leggibili nemmeno estraendo la memoria dell'app.
+            Con il PIN attivo, il file chiave e le chiavi di sessione sono cifrati sul telefono. I nuovi PIN richiedono 6–10 cifre. I PIN già configurati continuano a sbloccare il profilo. Dopo errori consecutivi, lo sblocco applica un’attesa progressiva.
           </Text>
           <View style={styles.rowBetween}>
             <Text style={[styles.state, { color: pinOn ? theme.accent : theme.textDim }]} testID="pin-state">
@@ -102,25 +102,17 @@ export default function PrivacyLockScreen({ navigation }) {
                   avviano la cancellazione dei dati locali.
                 </Text>
               </View>
-              <TextInput style={styles.input} placeholder="PIN (4-10 cifre)" placeholderTextColor={theme.textFaint} keyboardType="number-pad" secureTextEntry value={pin} onChangeText={setPin} testID="pin-input" />
+              <TextInput style={styles.input} placeholder="Nuovo PIN (6-10 cifre)" placeholderTextColor={theme.textFaint} keyboardType="number-pad" secureTextEntry value={pin} onChangeText={setPin} testID="pin-input" />
               <TextInput style={styles.input} placeholder="Ripeti il PIN" placeholderTextColor={theme.textFaint} keyboardType="number-pad" secureTextEntry value={pin2} onChangeText={setPin2} testID="pin-input-2" />
               <PinStrength pin={pin} />
               <Text style={styles.hint}>Usa un PIN lungo e difficile da indovinare. La protezione hardware dipende dal dispositivo e dal metodo di derivazione attivo.</Text>
               <TextInput style={styles.input} placeholder="PIN esca — doppio fondo (opzionale)" placeholderTextColor={theme.textFaint} keyboardType="number-pad" secureTextEntry value={esca} onChangeText={setEsca} testID="decoy-pin-input" />
               <Text style={styles.hint}>
-                Il PIN esca apre un SECONDO profilo, separato: un altro account, altre chat,
-                altri contatti. Se qualcuno ti costringe a sbloccare, apri quello: l'app
-                funziona, e' viva, e del profilo vero non c'e' traccia. Nel telefono non
-                viene salvato nessun verificatore del PIN esca, quindi non esiste un dato
-                che provi che un secondo profilo esista.{"\n\n"}
-                Due avvertenze, perche' contano piu della funzione: un'esca CREDIBILE va
-                usata davvero, ogni tanto, altrimenti un profilo vuoto e appena creato dice
-                da solo che stai nascondendo qualcosa. E la negazione plausibile difende da
-                chi ti chiede di sbloccare il telefono, non da un'analisi forense fatta da
-                chi conosce come e' costruita questa app.
+                Il PIN esca apre un secondo profilo cifrato. Usa un account diverso per separare chat, rubrica e notifiche.
+                L’isolamento va verificato sul dispositivo. Un’analisi forense o un sistema compromesso può trovare tracce.
               </Text>
               {!!err && <Text style={styles.err}>{err}</Text>}
-              <TouchableOpacity style={[styles.btnFull, busy && { opacity: 0.6 }]} disabled={busy || pin.length < 4} onPress={savePin} testID="pin-save-btn">
+              <TouchableOpacity style={[styles.btnFull, busy && { opacity: 0.6 }]} disabled={busy || pin.length < lock.MIN_NEW_PIN_DIGITS} onPress={savePin} testID="pin-save-btn">
                 {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnTxt}>Salva PIN</Text>}
               </TouchableOpacity>
             </View>

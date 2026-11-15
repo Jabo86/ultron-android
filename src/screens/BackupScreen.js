@@ -89,7 +89,7 @@ export default function BackupScreen({ route, navigation }) {
     const pass = picked.container.hint === "pin" ? "pin:" + restorePwd : restorePwd;
     setBusy("restore");
     try {
-      const payload = bkp.decryptContainer(picked.container, pass);
+      const payload = await bkp.decryptContainer(picked.container, pass);
       const rep = await bkp.restorePayload(payload);
       await refresh();
       setPicked(null); setRestorePwd("");
@@ -254,8 +254,8 @@ export default function BackupScreen({ route, navigation }) {
         )}
 
         <Text style={styles.note}>
-          {en ? "How it works: the file is built on the phone and encrypted with AES-256-GCM, key derived with scrypt from your password. The app never uploads it: the share sheet lets you choose where it goes. Lose the password and the backup is gone forever — that is the point."
-              : "Come funziona: il file viene creato sul telefono e cifrato con AES-256-GCM, chiave derivata con scrypt dalla tua password. L'app non lo carica da nessuna parte: la finestra di condivisione ti fa scegliere dove finisce. Se perdi la password il backup è perso per sempre — è proprio questo il punto."}
+          {en ? "How it works: the file is built on the phone and encrypted with AES-256-GCM, key derived with Argon2id from your password. The app never uploads it: the share sheet lets you choose where it goes. Lose the password and the backup is gone forever — that is the point."
+              : "Come funziona: il file viene creato sul telefono e cifrato con AES-256-GCM, chiave derivata con Argon2id dalla tua password. L'app non lo carica da nessuna parte: la finestra di condivisione ti fa scegliere dove finisce. Se perdi la password il backup è perso per sempre — è proprio questo il punto."}
         </Text>
       </ScrollView>
     </SafeAreaView>

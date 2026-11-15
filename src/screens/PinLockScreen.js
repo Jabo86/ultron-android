@@ -21,6 +21,7 @@ export default function PinLockScreen() {
     setBusy(true); setErr("");
     try {
       const r = await unlockWithPin(value);
+      if (r.status === "wait") { setErr(`Attendi ${r.seconds} s prima di riprovare.`); return; }
       if (r.status === "wrong") {
         setPin("");
         setLeft(r.left);

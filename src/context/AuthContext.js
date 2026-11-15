@@ -177,7 +177,7 @@ export function AuthProvider({ children }) {
   const unlockWithPin = useCallback(async (pin) => {
     const r = await lock.unlockWithPin(pin);
     if (r.status === "wipe") { await wipeNow(); return { status: "wiped" }; }
-    if (r.status === "wrong" || r.status === "busy") return r;
+    if (r.status === "wrong" || r.status === "busy" || r.status === "wait") return r;
     if (RATCHET_PILOT) {
       await selectWakeProfile(null);
       await lock.clearPlainCache();
