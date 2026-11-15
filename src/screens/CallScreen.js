@@ -1,6 +1,6 @@
 import { hostedRatchetPilot, verifiedContact } from "../lib/hostedRatchetChat";
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Vibration, Alert, AppState } from "react-native";
+import { View, Text, Image, ScrollView, StyleSheet, TouchableOpacity, Vibration, Alert, AppState } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription, mediaDevices } from "react-native-webrtc";
 import { useAudioPlayer } from "expo-audio";
@@ -154,11 +154,10 @@ export default function CallScreen({ route, navigation }) {
       send().catch(() => send()).catch(() => {});
     }
     if (navigation.isFocused()) {
-      navigation.goBack();
-      if (notice === "declined") Alert.alert(lang === "en" ? "Call declined" : "Chiamata rifiutata");
-      if (notice === "unanswered") Alert.alert(lang === "en" ? "No answer" : "Nessuna risposta");
+      if (notice) setStatus(notice);
+      else navigation.goBack();
     }
-  }, [cleanup, navigation, ringback, stopRing, lang]);
+  }, [cleanup, navigation, ringback, stopRing]);
 
   useEffect(() => () => {
     if (ended.current) return;
@@ -505,6 +504,31 @@ export default function CallScreen({ route, navigation }) {
     );
   }, [lang]);
 
+  if (status === "declined" || status === "unanswered") {
+    const declined = status === "declined";
+    const title = declined
+      ? (lang === "en" ? "Call declined" : "Chiamata rifiutata")
+      : (lang === "en" ? "No answer" : "Nessuna risposta");
+    return (
+      <ScrollView style={styles.outcomePage} contentContainerStyle={styles.outcomeLayout} testID="call-outcome">
+        <View style={styles.outcomeCard}>
+          <Image source={require("../../assets/ultron-logo.png")} style={styles.outcomeLogo}
+            resizeMode="contain" accessibilityLabel="ULTRON" />
+          <View style={styles.outcomeIcon}>
+            <Ionicons name={declined ? "call-outline" : "time-outline"} size={22} color={tint}
+              style={declined ? { transform: [{ rotate: "135deg" }] } : undefined} />
+          </View>
+          <Text style={styles.outcomeTitle} accessibilityRole="header" accessibilityLiveRegion="polite" testID="call-outcome-title">{title}</Text>
+          {!!peerName && <Text style={styles.outcomePeer}>{peerName}</Text>}
+          <TouchableOpacity style={styles.outcomeClose} onPress={() => navigation.goBack()}
+            accessibilityRole="button" testID="call-outcome-close">
+            <Text style={styles.outcomeCloseText}>{lang === "en" ? "Close" : "Chiudi"}</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    );
+  }
+
   if (incoming && !accepted) {
     return (
       <View style={styles.root} testID="call-incoming">
@@ -580,6 +604,17 @@ export default function CallScreen({ route, navigation }) {
 
 const makeStyles = (tint) => StyleSheet.create({
   root: { flex: 1, backgroundColor: "#05070d" },
+  outcomePage: { flex: 1, backgroundColor: theme.bg },
+  outcomeLayout: { flexGrow: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 24, paddingVertical: 64 },
+  outcomeCard: { width: "100%", maxWidth: 420, padding: 24, alignItems: "center", borderRadius: 28,
+    backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border },
+  outcomeLogo: { width: 104, height: 104, marginBottom: 12 },
+  outcomeIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: tint + "1A", justifyContent: "center", alignItems: "center", marginBottom: 12 },
+  outcomeTitle: { color: theme.text, fontSize: 26, fontWeight: "800", textAlign: "center" },
+  outcomePeer: { color: theme.textDim, marginTop: 8, fontSize: 16, textAlign: "center" },
+  outcomeClose: { alignSelf: "stretch", minHeight: 52, marginTop: 24, borderRadius: 14, backgroundColor: tint,
+    justifyContent: "center", alignItems: "center", paddingVertical: 12, paddingHorizontal: 16 },
+  outcomeCloseText: { color: "#04120a", fontWeight: "800", fontSize: 16 },
   remoteVideo: { ...StyleSheet.absoluteFillObject, backgroundColor: "#000" },
   audioBg: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center", backgroundColor: "#0a0f1c" },
   avatar: { width: 120, height: 120, borderRadius: 60, backgroundColor: tint, alignItems: "center", justifyContent: "center" },
