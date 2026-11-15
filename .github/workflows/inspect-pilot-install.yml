@@ -1,0 +1,37 @@
+name: Inspect signed pilot APKs
+on:
+  push:
+    branches: [apk-install-diagnostics]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools build-tools;36.0.0"
+      - name: Compare published artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          for version in 5 6; do
+            mkdir -p "pilot-$version"
+            gh release download "ratchet-pilot-$version" -R "$GITHUB_REPOSITORY" -p ULTRON-Ratchet-Pilota.apk -D "pilot-$version"
+            apk="pilot-$version/ULTRON-Ratchet-Pilota.apk"
+            sha256sum "$apk"
+            unzip -tq "$apk"
+            "$tools/apksigner" verify --verbose --print-certs "$apk" | tee "pilot-$version/signing.txt"
+            "$tools/zipalign" -c -P 16 4 "$apk"
+            "$tools/aapt" dump badging "$apk" | sed -n '/^package:/p; /^sdkVersion:/p; /^targetSdkVersion:/p; /^native-code:/p'
+            sed -n 's/^Signer #[0-9]* certificate SHA-256 digest: //p' "pilot-$version/signing.txt" > "pilot-$version/cert.txt"
+            test -s "pilot-$version/cert.txt"
+          done
+          diff -u pilot-5/cert.txt pilot-6/cert.txt
+          echo "Both releases use the same APK signing certificates."
