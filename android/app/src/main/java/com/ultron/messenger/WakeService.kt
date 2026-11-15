@@ -30,6 +30,7 @@ class WakeService : Service() {
     const val CH_CALL = "ultron-incoming-call"
     const val CALL_ID = 4713
     const val MESSAGE_ID = 4712
+    const val CONTACT_ID = 4714
     const val CALL_RID = "com.ultron.messenger.CALL_RID"
     const val CH_MSG = "lattice-wake-msg"
     const val FG_ID = 4711
@@ -129,6 +130,20 @@ class WakeService : Service() {
     } catch (e: Exception) { /* notifiche non concesse */ }
   }
 
+  private fun notifyContact() {
+    try {
+      val alert = NotificationCompat.Builder(this, CH_MSG)
+        .setContentTitle("Richiesta di contatto ULTRON")
+        .setContentText("Una persona ti sta cercando. Apri la Rubrica per vedere la richiesta.")
+        .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+        .setSmallIcon(applicationInfo.icon)
+        .setAutoCancel(true)
+        .setContentIntent(openAppIntent())
+        .build()
+      getSystemService(NotificationManager::class.java).notify(CONTACT_ID, alert)
+    } catch (e: Exception) { /* notifiche non concesse */ }
+  }
+
   private fun notifyCall(rid: String) {
     try {
       val nm = getSystemService(NotificationManager::class.java)
@@ -158,6 +173,7 @@ class WakeService : Service() {
     var previousRid = ""
     var previousCount = 0
     var previousCall = ""
+    var previousContact = ""
     var backoff = 5000L
     while (running) {
       val cfg = config(this)
@@ -175,9 +191,10 @@ class WakeService : Service() {
         previousRid = rid
         previousCount = 0
         previousCall = ""
+        previousContact = ""
       }
       try {
-        val url = URL("$base/api/public/wake/poll?rid=$rid&wait=25")
+        val url = URL("$base/api/public/wake/poll?rid=$rid&wait=25&contact=$previousContact")
         val c = url.openConnection() as HttpURLConnection
         c.requestMethod = "GET"
         c.connectTimeout = 15000
@@ -190,6 +207,7 @@ class WakeService : Service() {
           backoff = 5000L
           val event = try { JSONObject(body) } catch (e: Exception) { JSONObject() }
           val n = event.optInt("n", 0)
+          val contact = event.optString("contact", "").takeIf { it.matches(Regex("[a-f0-9]{24}")) }.orEmpty()
           val incoming = event.optString("call", "").takeIf { it.matches(Regex("[a-f0-9]{32}")) }.orEmpty()
           val current = config(this)
           if (running && current?.optBoolean("on", false) == true && current.optString("rid") == rid) {
@@ -200,6 +218,9 @@ class WakeService : Service() {
             previousCall = incoming
             if (n > previousCount) notifyMessages(n)
             previousCount = n
+            if (contact.isNotEmpty() && contact != previousContact) notifyContact()
+            if (contact.isEmpty() && previousContact.isNotEmpty()) getSystemService(NotificationManager::class.java).cancel(CONTACT_ID)
+            previousContact = contact
           }
           // A nonzero count returns immediately even when it has not changed.
           if (n > 0 || incoming.isNotEmpty()) Thread.sleep(1000)

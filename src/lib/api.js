@@ -279,6 +279,15 @@ export const dropPlainContacts = () =>
 // l'app (senza il suo gettone la reciprocità si verifica solo così).
 export const contactAddServer = (lns) =>
   withAuth((a) => client.post("/public/pulse/contacts/add", { lns }, a).then((r) => r.data));
+export const contactState = (lns) =>
+  withAuth((a, transport) => transport.get(`/public/pulse/contacts/state/${encodeURIComponent(lns)}`, a).then((r) => r.data));
+export const acceptContact = async (lns, info) => {
+  if (!RATCHET_PILOT) return addContact(lns, info);
+  const result = await withAuth((a, transport) => transport.post("/public/pulse/contacts/accept", { lns }, a).then((r) => r.data));
+  await require("./book").put(lns, { has_key: true, ...info });
+  return result;
+};
+
 export const contactRemoveServer = (lns) =>
   withAuth((a) => client.delete(`/public/pulse/contacts/${encodeURIComponent(lns)}`, a).then((r) => r.data));
 export const blockServer = (lns, on) =>
@@ -289,7 +298,7 @@ export const contactsRaw = () =>
 
 export const contacts = async () => {
   const book = require("./book");
-  const server = await contactsRaw().catch(() => []);
+  const server = RATCHET_PILOT ? await contactsRaw() : await contactsRaw().catch(() => []);
   const rows = Array.isArray(server) ? server.slice() : [];
   const seen = new Set(rows.map((c) => String(c.lns || "").toLowerCase()));
   let local = [];
@@ -301,9 +310,10 @@ export const contacts = async () => {
       // Il server lo conosce già (collega d'azienda): il nome locale ha la precedenza.
       const row = rows.find((c) => String(c.lns || "").toLowerCase() === lns);
       if (row && e.name) row.display_name = e.name;
-      if (row) { row.blocked = !!e.blocked; row.favorite = !!e.favorite; }
+      if (row) { row.blocked = !!row.blocked || !!e.blocked; row.favorite = !!e.favorite; }
       continue;
     }
+    if (RATCHET_PILOT) continue;
     rows.push({
       lns, display_name: e.name || lns.split("@")[0], avatar: e.avatar || null,
       role: null, department: null, company_name: null,
@@ -318,6 +328,11 @@ export const contacts = async () => {
   return rows;
 };
 export const addContact = async (lns, info) => {
+  if (RATCHET_PILOT) {
+    const result = await contactAddServer(lns);
+    if (result?.mutual) await require("./book").put(lns, { has_key: true, ...info });
+    return result;
+  }
   const book = require("./book");
   await book.put(lns, Object.assign({ has_key: true }, info || {}));
   // Doppia scrittura durante il passaggio: in locale (rubrica cieca) e in chiaro sul server,
@@ -333,6 +348,11 @@ export const favoriteContact = async (lns, on) => {
   return { ok: true };
 };
 export const removeContact = async (lns) => {
+  if (RATCHET_PILOT) {
+    await contactRemoveServer(lns);
+    await require("./book").remove(lns);
+    return { ok: true };
+  }
   const book = require("./book");
   await book.remove(lns);
   try { await contactRemoveServer(lns); } catch { /* poteva già essere solo locale */ }
@@ -343,6 +363,11 @@ export const blocksList = () =>
   withAuth((a) => client.get("/public/pulse/blocks", a).then((r) => r.data));
 export const blockContact = async (lns, on) => {
   const book = require("./book");
+  if (RATCHET_PILOT) {
+    await blockServer(lns, on);
+    await book.setBlocked(lns, on);
+    return { ok: true };
+  }
   await book.setBlocked(lns, on);
   try { await blockServer(lns, on); } catch { /* vale comunque il blocco col gettone */ }
   book.syncSoon();

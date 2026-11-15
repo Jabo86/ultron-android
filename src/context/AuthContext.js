@@ -119,7 +119,7 @@ export function AuthProvider({ children }) {
       // RICONCILIAZIONE AUTOMATICA: porta la rubrica sul telefono, rimette in chiaro sul
       // server gli indirizzi di chi non ha ancora i gettoni (senza questo non ci si può
       // scrivere) e pota solo quelli diventati superflui.
-      book.reconcile(u).catch(() => {});
+      if (!RATCHET_PILOT) book.reconcile(u).catch(() => {});
       // Manutenzione automatica: chiavi orfane sul server, vecchie installazioni,
       // chiavi statiche in cassaforte. Non blocca l'avvio e non chiede nulla.
       try { require("../lib/maintenance").run([]); } catch { /* */ }

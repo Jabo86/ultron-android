@@ -1,3 +1,4 @@
+import { RATCHET_PILOT } from "../config";
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { AppState } from "react-native";
 import { useAuth } from "./AuthContext";
@@ -35,7 +36,7 @@ export function UnreadProvider({ children }) {
     // Richieste di contatto in arrivo → pallino sul tab Rubrica.
     try {
       const cs = await api.contactsRaw();
-      setBookRequests((Array.isArray(cs) ? cs : []).filter((c) => c.they_have_me && c.in_my_book === false && !c.blocked).length);
+      setBookRequests((Array.isArray(cs) ? cs : []).filter((c) => !c.blocked && (RATCHET_PILOT ? c.contact_request === "incoming" : c.they_have_me && c.in_my_book === false)).length);
     } catch {}
     // Licenze in scadenza/scadute (solo owner) → pallino sul tab Impostazioni.
     if (isOwner(user)) {

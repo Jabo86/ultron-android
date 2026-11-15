@@ -33,6 +33,7 @@ class WakeControlModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModu
             val notifications = ctx.getSystemService(NotificationManager::class.java)
             notifications.cancel(WakeService.MESSAGE_ID)
             notifications.cancel(WakeService.CALL_ID)
+            notifications.cancel(WakeService.CONTACT_ID)
             val activity = ctx.currentActivity
             if (activity == null) promise.resolve(null)
             else activity.runOnUiThread {

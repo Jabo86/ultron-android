@@ -180,7 +180,7 @@ export default function ConversationsScreen({ navigation }) {
     if (!target) { setAddErr(t("conv.new.invalid")); return; }
     setAdding(true); setAddErr("");
     try {
-      const r = await api.addContact(target);
+      const r = hostedRatchetPilot(user) ? null : await api.addContact(target);
       const tt = r?.contact?.lns || target;
       setShowNew(false); setLns("");
       navigation.navigate("Chat", { conv_id: null, others: [tt], title: tt.split("@")[0], title_lns: tt });

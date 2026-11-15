@@ -574,11 +574,32 @@ export default function ChatScreen({ route, navigation }) {
     }
   }, 15000, { runOnFocus: false, active: !!convId && !hostedChat });
 
+  const maySendToContact = async ({ request = false } = {}) => {
+    if (!pilot || others.length !== 1) return true;
+    const peer = others[0];
+    const relationship = await api.contactState(peer);
+    if (relationship?.mutual) return true;
+    const state = !relationship?.contact_request && request ? await api.addContact(peer) : relationship;
+    if (state?.mutual) return true;
+    const incoming = state?.contact_request === "incoming";
+    setErr(incoming
+      ? (lang === "en" ? "Accept this contact request in Contacts before sending." : "Accetta la richiesta in Rubrica per poter scrivere.")
+      : state?.contact_request === "outgoing"
+      ? (lang === "en" ? "Contact request sent. Your message stays a draft until they accept." : "Richiesta inviata. Il messaggio resta nella bozza finché il contatto accetta.")
+      : (lang === "en" ? "An accepted contact is required to send attachments." : "Per inviare allegati serve un contatto accettato."));
+    return false;
+  };
+
   const onSend = async (override) => {
     atBottomRef.current = true; // dopo un invio è giusto tornare in fondo
     const body = (typeof override === "string" ? override : text).trim();
     if (!body || others.length === 0 || !user?.kem) return;
     setSending(true); setErr("");
+    try {
+      if (!(await maySendToContact({ request: true }))) { setSending(false); return; }
+    } catch (e) {
+      setErr(api.apiErr(e)); setSending(false); return;
+    }
     if (editing) {
       try {
         if (hostedRatchetPilot(user)) throw new Error("La modifica dei messaggi non è disponibile nella prova ratchet.");
@@ -621,6 +642,8 @@ export default function ChatScreen({ route, navigation }) {
   // Cifra e invia un asset (foto o video) come allegato E2EE (blob + envelope).
   const sendAsset = async (asset) => {
     if (!asset?.uri || others.length === 0 || !user?.kem) return;
+    try { if (!(await maySendToContact())) return; }
+    catch (e) { setErr(api.apiErr(e)); return; }
     setSending(true); setErr("");
     try {
       const isVid = asset.type === "video" || (asset.mimeType || "").startsWith("video");
@@ -673,6 +696,8 @@ export default function ChatScreen({ route, navigation }) {
   // Registrazione nota vocale → cifra → blob → invia come allegato E2EE.
   const startRec = async () => {
     if (others.length === 0 || !user?.kem) { setErr(t("chat.attach.noconv")); return; }
+    try { if (!(await maySendToContact())) return; }
+    catch (e) { setErr(api.apiErr(e)); return; }
     suppressLock();
     try {
       const p = await AudioModule.requestRecordingPermissionsAsync();
@@ -728,6 +753,8 @@ export default function ChatScreen({ route, navigation }) {
   // File generico (documenti, qualsiasi tipo) via DocumentPicker, cifrato E2EE come gli altri allegati.
   const attachFile = async () => {
     if (others.length === 0 || !user?.kem) { setErr(t("chat.attach.noconv")); return; }
+    try { if (!(await maySendToContact())) return; }
+    catch (e) { setErr(api.apiErr(e)); return; }
     suppressLock();
     try {
       const res = await withSystemActivity(() => DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true }));

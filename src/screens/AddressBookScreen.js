@@ -14,6 +14,8 @@ import Avatar from "../components/Avatar";
 import { useUnread } from "../context/UnreadContext";
 import { getVerified } from "../lib/verify";
 
+import { RATCHET_PILOT } from "../config";
+
 export default function AddressBookScreen({ navigation, route }) {
   const tint = useTint();
   const styles = useMemo(() => makeStyles(tint), [tint]);
@@ -38,7 +40,7 @@ export default function AddressBookScreen({ navigation, route }) {
       try {
         const book = require("../lib/book");
         const local = await book.list();
-        if (mounted.current && local.length) {
+        if (!RATCHET_PILOT && mounted.current && local.length) {
           setContacts(local.map((e) => ({
             lns: e.lns, display_name: e.name || String(e.lns).split("@")[0], avatar: e.avatar || null,
             role: null, department: null, company_name: null, online: false,
@@ -66,7 +68,7 @@ export default function AddressBookScreen({ navigation, route }) {
   const sq = q.trim().toLowerCase();
   // Richiesta in arrivo = chi mi ha in rubrica ma che io non ho ancora aggiunto.
   const incoming = useMemo(
-    () => contacts.filter((c) => c.they_have_me && c.in_my_book === false && !c.blocked && !c.blind),
+    () => contacts.filter((c) => !c.blocked && (RATCHET_PILOT ? c.contact_request === "incoming" : c.they_have_me && c.in_my_book === false && !c.blind)),
     [contacts]);
   const base = useMemo(() => {
     const pend = new Set(incoming.map((c) => c.lns));
@@ -106,7 +108,7 @@ export default function AddressBookScreen({ navigation, route }) {
   const acceptRequest = async (c) => {
     setReqBusy(c.lns);
     try {
-      await api.addContact(c.lns, { name: c.display_name || undefined, avatar: c.avatar || undefined });
+      await api.acceptContact(c.lns, { name: c.display_name || undefined, avatar: c.avatar || undefined });
       await load(); refreshBadges?.();
       // Appena c'è reciprocità conviene confrontare il numero di sicurezza.
       const already = await getVerified(c.lns);
