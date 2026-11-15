@@ -138,9 +138,16 @@ function randBytes(n) {
 
 // Generazione chiave ML-DSA-65 ON-DEVICE (auto-registrazione utenti personali).
 // La chiave privata NON lascia mai il dispositivo: al server va solo la pk.
+export function keygenFromSeed(seed) {
+  const { publicKey, secretKey } = ml_dsa65.keygen(seed);
+  try { return { publicKeyHex: bytesToHex(publicKey), secretKeyHex: bytesToHex(secretKey) }; }
+  finally { secretKey.fill(0); }
+}
+
 export function keygen() {
-  const kp = ml_dsa65.keygen(randBytes(32));
-  return { publicKeyHex: bytesToHex(kp.publicKey), secretKeyHex: bytesToHex(kp.secretKey) };
+  const seed = randBytes(32);
+  try { return keygenFromSeed(seed); }
+  finally { seed.fill(0); }
 }
 
 // Sign the login challenge nonce (order matches the web client: sign(nonce, sk)).

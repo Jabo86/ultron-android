@@ -5,14 +5,20 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { NativeModules } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
-import { randomHex } from "./crypto";
+import { randomHex, sha256Hex } from "./crypto";
 import * as api from "./api";
+import { RATCHET_PILOT } from "../config";
 
 const FILE = FileSystem.documentDirectory + "wake.json";
 const RID_KEY = "lat.wake.rid";
 const ON_KEY = "lat.wake.on";
 const ASKED_KEY = "ultron.wake.permission-prompted";
 let operation = Promise.resolve();
+let profile = null;
+
+const profileKey = (key) => RATCHET_PILOT ? `${key}.profile.${profile}` : key;
+const getPreference = (key) => AsyncStorage.getItem(profileKey(key));
+const setPreference = (key, value) => AsyncStorage.setItem(profileKey(key), value);
 
 function serialize(task) {
   const next = operation.then(task);
@@ -20,8 +26,19 @@ function serialize(task) {
   return next;
 }
 
+export function selectWakeProfile(user) {
+  if (!RATCHET_PILOT) return Promise.resolve();
+  return serialize(async () => {
+    const scope = user ? sha256Hex(JSON.stringify([user.server, user.lns])) : null;
+    if (scope && scope === profile) return;
+    await FileSystem.deleteAsync(FILE, { idempotent: true });
+    await NativeModules.WakeControl?.pause?.();
+    profile = scope;
+  });
+}
+
 export async function isOn() {
-  return (await AsyncStorage.getItem(ON_KEY)) === "1";
+  return (!RATCHET_PILOT || !!profile) && (await getPreference(ON_KEY)) === "1";
 }
 
 async function writeConfig(on, rid) {
@@ -35,24 +52,26 @@ async function writeConfig(on, rid) {
 /// Riscrive il file di config quando l'utente cambia l'interruttore del rumore, così il
 /// servizio nativo vede subito il nuovo stato (mantiene lo stato della sveglia).
 async function writeChaff() {
-  const on = (await AsyncStorage.getItem(ON_KEY)) === "1";
-  const rid = (await AsyncStorage.getItem(RID_KEY)) || "";
+  if (RATCHET_PILOT && !profile) return;
+  const on = (await getPreference(ON_KEY)) === "1";
+  const rid = (await getPreference(RID_KEY)) || "";
   await writeConfig(on, rid);
 }
 
 async function register() {
+  if (RATCHET_PILOT && !profile) throw new Error("Accedi prima di attivare le notifiche.");
   if (!api.getServerUrl().startsWith("https://")) throw new Error("ULTRON richiede HTTPS per le notifiche.");
   if (!NativeModules.WakeControl?.start) throw new Error("Servizio notifiche ULTRON non disponibile.");
-  let rid = await AsyncStorage.getItem(RID_KEY);
+  let rid = await getPreference(RID_KEY);
   if (!rid || rid.length < 32) {
     rid = randomHex(24); // 48 caratteri esadecimali
-    await AsyncStorage.setItem(RID_KEY, rid);
+    await setPreference(RID_KEY, rid);
   }
   await api.wakeRegister(rid);
   await writeConfig(true, rid);
   try {
     if (!(await NativeModules.WakeControl.start())) throw new Error("Android non ha avviato il servizio ULTRON.");
-    await AsyncStorage.setItem(ON_KEY, "1");
+    await setPreference(ON_KEY, "1");
   } catch (error) {
     await writeConfig(false, rid);
     throw error;
@@ -61,11 +80,12 @@ async function register() {
 }
 
 async function revoke() {
-  const rid = await AsyncStorage.getItem(RID_KEY);
-  await AsyncStorage.setItem(ON_KEY, "0");
+  if (RATCHET_PILOT && !profile) return;
+  const rid = await getPreference(RID_KEY);
+  await setPreference(ON_KEY, "0");
   await writeConfig(false, rid);
   if (rid) {
-    await AsyncStorage.removeItem(RID_KEY);
+    await AsyncStorage.removeItem(profileKey(RID_KEY));
     try { await api.wakeRevoke(rid); } catch { /* il gettone scade da solo */ }
   }
 }
@@ -73,7 +93,8 @@ async function revoke() {
 /// All'avvio dell'app: se la sveglia è attiva riallinea server e file di configurazione
 /// (per esempio dopo un cambio di server o un ripristino da backup).
 async function renew(askPermission = false) {
-  const preference = await AsyncStorage.getItem(ON_KEY);
+  if (RATCHET_PILOT && !profile) return false;
+  const preference = await getPreference(ON_KEY);
   if (preference === "0") return false;
   const { requestNotificationPermission } = require("./notifications");
   const requested = askPermission && preference === null && !(await AsyncStorage.getItem(ASKED_KEY));
@@ -83,7 +104,7 @@ async function renew(askPermission = false) {
     await register();
     return true;
   }
-  const rid = await AsyncStorage.getItem(RID_KEY);
+  const rid = await getPreference(RID_KEY);
   if (!rid) { await register(); return true; }
   await api.wakeRegister(rid);
   await writeConfig(true, rid);

@@ -103,6 +103,12 @@ export const AUDIT_SECTIONS = [
 export const PILOT_AUDIT = {
   title: ["Edizione pilota", "Pilot edition"],
   rows: [
+    ["Accesso con 12 parole", "Sign in with 12 words", "code",
+      "Per gli account creati con questa build, l’app genera 12 parole alla registrazione. Le parole, il nome utente e lo stesso server rigenerano sul telefono la chiave d’identità. Le parole non vengono inviate al gateway. Gli account precedenti usano ancora il proprio file chiave. Le parole non ripristinano la cronologia locale o le sessioni ratchet precedenti.",
+      "For accounts created with this build, the app generates 12 words during sign-up. The words, username and same server regenerate the identity key on the phone. The words are never sent to the gateway. Existing accounts still use their keyfile. The words do not restore local history or previous ratchet sessions."],
+    ["Profilo esca", "Decoy profile", "device",
+      "Un PIN diverso sblocca il secondo spazio cifrato. Con un altro account, la rubrica e le chat sono distinte. Il pilota cambia gettone delle notifiche quando cambia account e chiude gli avvisi del profilo precedente. Il passaggio tra i due PIN va verificato sul telefono.",
+      "A different PIN opens the second encrypted space. With a different account, contacts and chats are separate. The pilot switches notification tokens by account and clears prior alerts. Switching between PINs needs device testing."],
     ["Chat individuali con ratchet", "Direct chats with ratchet", "device",
       "Il pilota usa un gateway e un archivio separati. La chat individuale richiede il QR verificato su entrambi i telefoni e un dispositivo per account. Usa prekey firmate e buste ratchet. Il gateway blocca l’invio statico. Partecipanti, orari e stato di consegna sono visibili al gateway.",
       "The pilot uses a separate gateway and database. Direct chat requires QR verification on both phones and one device per account. Chat uses signed prekeys and ratchet envelopes. The gateway blocks static sending. The gateway can see participants, timestamps and delivery status."],

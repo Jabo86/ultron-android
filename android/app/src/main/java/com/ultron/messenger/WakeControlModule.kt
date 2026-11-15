@@ -1,5 +1,7 @@
 package com.ultron.messenger
 
+import android.app.NotificationManager
+import android.content.Intent
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -20,6 +22,25 @@ class WakeControlModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModu
             val rid = intent?.getStringExtra(WakeService.CALL_RID)
             intent?.removeExtra(WakeService.CALL_RID)
             promise.resolve(rid?.takeIf { it.matches(Regex("[a-f0-9]{32}")) })
+        }
+    }
+
+    @ReactMethod
+    fun pause(promise: Promise) {
+        try {
+            val ctx = reactApplicationContext
+            ctx.stopService(Intent(ctx, WakeService::class.java))
+            val notifications = ctx.getSystemService(NotificationManager::class.java)
+            notifications.cancel(WakeService.MESSAGE_ID)
+            notifications.cancel(WakeService.CALL_ID)
+            val activity = ctx.currentActivity
+            if (activity == null) promise.resolve(null)
+            else activity.runOnUiThread {
+                activity.intent?.removeExtra(WakeService.CALL_RID)
+                promise.resolve(null)
+            }
+        } catch (e: Exception) {
+            promise.reject("WAKE_PAUSE", e)
         }
     }
 

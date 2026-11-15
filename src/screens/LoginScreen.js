@@ -11,6 +11,8 @@ import { useI18n } from "../lib/i18n";
 import { UI_LANGS } from "../lib/locales";
 import * as api from "../lib/api";
 import { loadPreferredServer, loadServer } from "../lib/store";
+import { RATCHET_PILOT } from "../config";
+import { recoveryKeyfile } from "../lib/recoveryPhrase";
 import { theme } from "../theme";
 
 export default function LoginScreen({ navigation }) {
@@ -22,6 +24,9 @@ export default function LoginScreen({ navigation }) {
   const [pasted, setPasted] = useState("");
   const [lockedFile, setLockedFile] = useState(null);
   const [password, setPassword] = useState("");
+  const [showRecovery, setShowRecovery] = useState(false);
+  const [recoveryUser, setRecoveryUser] = useState("");
+  const [recoveryWords, setRecoveryWords] = useState("");
   const en = lang === "en";
   const [showServer, setShowServer] = useState(false);
   const [server, setServer] = useState(api.getServerUrl());
@@ -96,6 +101,18 @@ export default function LoginScreen({ navigation }) {
     } catch { setErr(t("login.badjson")); }
   };
 
+  const recover = async () => {
+    if (busy) return;
+    try {
+      const target = api.personalServerUrl(server);
+      const keyfile = recoveryKeyfile(recoveryUser, target, recoveryWords);
+      setRecoveryWords("");
+      await doSignIn(keyfile);
+    } catch {
+      setErr(en ? "Check the account name, server and 12 words." : "Controlla il nome utente, il server e le 12 parole.");
+    }
+  };
+
   const openSignup = () => {
     try { navigation.navigate("Signup", { server: api.personalServerUrl(server) }); }
     catch (e) { setErr(e.message); setShowServer(true); }
@@ -125,6 +142,24 @@ export default function LoginScreen({ navigation }) {
         <TouchableOpacity style={styles.primaryBtn} onPress={pickFile} disabled={busy} testID="login-import-key">
           {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>{t("login.import")}</Text>}
         </TouchableOpacity>
+
+        {RATCHET_PILOT && <>
+          <TouchableOpacity style={styles.secondaryBtn} disabled={busy}
+            onPress={() => { setShowRecovery((value) => !value); setRecoveryWords(""); }}>
+            <Text style={styles.secondaryBtnText}>{en ? "Sign in with 12 words" : "Accedi con 12 parole"}</Text>
+          </TouchableOpacity>
+          {showRecovery && <View style={{ width: "100%" }}>
+            <TextInput style={styles.serverInput} value={recoveryUser} onChangeText={setRecoveryUser}
+              autoCapitalize="none" autoCorrect={false} maxLength={43}
+              placeholder={en ? "ULTRON username" : "Nome utente ULTRON"} placeholderTextColor={theme.textFaint} />
+            <TextInput style={styles.serverInput} value={recoveryWords} onChangeText={setRecoveryWords}
+              autoCapitalize="none" autoCorrect={false} secureTextEntry maxLength={MAX_KEY_PASSWORD}
+              placeholder={en ? "12 words in order" : "12 parole in ordine"} placeholderTextColor={theme.textFaint} />
+            <TouchableOpacity style={styles.secondaryBtn} onPress={recover} disabled={busy || !recoveryWords}>
+              <Text style={styles.secondaryBtnText}>{t("login.signin")}</Text>
+            </TouchableOpacity>
+          </View>}
+        </>}
 
         <TouchableOpacity onPress={() => setShowPaste((v) => !v)} testID="login-toggle-paste">
           <Text style={styles.linkText}>{showPaste ? t("login.hide") : t("login.paste")}</Text>

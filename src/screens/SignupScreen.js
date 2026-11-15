@@ -9,6 +9,8 @@ import KeyfileExport from "../components/KeyfileExport";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../lib/i18n";
 import * as api from "../lib/api";
+import { RATCHET_PILOT } from "../config";
+import { generateRecoveryPhrase, recoveryKeyfile } from "../lib/recoveryPhrase";
 import { keygen, signMessage } from "../lib/crypto";
 import { saveAppLock } from "../lib/store";
 import { isDeviceSecure } from "../lib/biometrics";
@@ -34,6 +36,7 @@ export default function SignupScreen({ navigation, route }) {
   const [showKeyExport, setShowKeyExport] = useState(false);
   const [created, setCreated] = useState(null); // { keyfile, lns_name }
   const [saved, setSaved] = useState(false);
+  const [reviewPhrase, setReviewPhrase] = useState("");
   const tRef = useRef(null);
   const pending = useRef(null);
 
@@ -57,15 +60,24 @@ export default function SignupScreen({ navigation, route }) {
     return () => { active = false; clearTimeout(tRef.current); };
   }, [username, server]);
 
-  const doSignup = async () => {
+  const doSignup = async (confirmed = false) => {
     const u = normUser(username);
     if (u.length < 3 || busy || avail === false) return;
+    if (RATCHET_PILOT && !confirmed) {
+      if (pending.current?.username !== u) pending.current = { username: u, phrase: generateRecoveryPhrase() };
+      setReviewPhrase(pending.current.phrase);
+      return;
+    }
     setBusy(true); setErr("");
     try {
       // 1) chiavi generate SUL DISPOSITIVO: la privata non viene mai inviata al server
-      if (pending.current?.username !== u) pending.current = { username: u, keypair: keygen() };
-      const kp = pending.current.keypair;
       const lns = `${u}@${DOMAIN}`;
+      if (RATCHET_PILOT && pending.current?.username !== u) throw new Error("Nome utente cambiato.");
+      if (pending.current?.username !== u) pending.current = { username: u, keypair: keygen() };
+      const keys = RATCHET_PILOT ? recoveryKeyfile(u, server, pending.current.phrase) : null;
+      const kp = keys
+        ? { publicKeyHex: keys.public_key_hex, secretKeyHex: keys.secret_key_hex }
+        : pending.current.keypair;
       const signature_hex = signMessage(`ultron-personal-signup-v1:${lns}`, kp.secretKeyHex);
       const r = await api.personalSignup({ username: u, public_key_hex: kp.publicKeyHex, signature_hex }, server);
       if (r.lns_name !== lns) throw new Error(it ? "Indirizzo inatteso dal server." : "Unexpected account address.");
@@ -77,6 +89,7 @@ export default function SignupScreen({ navigation, route }) {
       setSignupUnavailable(false);
       setCreated({ keyfile, lns_name: r.lns_name });
       pending.current = null;
+      setReviewPhrase("");
     } catch (e) {
       if (e.response?.status === 404) setSignupUnavailable(true);
       else setErr(api.apiErr(e));
@@ -94,6 +107,26 @@ export default function SignupScreen({ navigation, route }) {
     finally { setBusy(false); }
   };
 
+  if (reviewPhrase && !created) {
+    return (
+      <ScrollView style={styles.root} contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 24 }]}>
+        <Text style={styles.title}>{it ? "Le tue 12 parole" : "Your 12 words"}</Text>
+        <Text style={styles.lnsBig}>{username}@{DOMAIN}</Text>
+        <Text style={styles.warnTxt}>{reviewPhrase}</Text>
+        <Text style={styles.sub}>{it
+          ? "Annota le parole in ordine. Per rientrare dopo «Esci» servono queste parole, il tuo nome utente e lo stesso server. Chi conosce le parole può accedere al tuo account."
+          : "Write the words down in order. To sign in after signing out, use these words, your username and the same server. Anyone with these words can access your account."}</Text>
+        {!!err && <Text style={styles.err}>{err}</Text>}
+        <TouchableOpacity style={styles.primaryBtn} onPress={() => doSignup(true)} disabled={busy}>
+          <Text style={styles.primaryBtnTxt}>{busy ? (it ? "Creazione…" : "Creating…") : (it ? "Le ho annotate · Crea account" : "I wrote them down · Create account")}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.back} onPress={() => setReviewPhrase("")} disabled={busy}>
+          <Text style={styles.backTxt}>{it ? "Indietro" : "Back"}</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    );
+  }
+
   if (created) {
     return (
       <ScrollView style={styles.root} contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 24 }]}>
@@ -102,7 +135,9 @@ export default function SignupScreen({ navigation, route }) {
         <Text style={styles.lnsBig} testID="signup-done-lns">{created.lns_name}</Text>
         <View style={styles.warnBox}>
           <Text style={styles.warnTxt}>
-            {it
+            {RATCHET_PILOT
+              ? (it ? "Puoi rientrare con le 12 parole annotate. La copia cifrata della chiave è facoltativa." : "You can sign in with the 12 words you wrote down. An encrypted keyfile copy is optional.")
+              : it
               ? "ULTRON genera la chiave privata sul telefono. Se perdi l’accesso al dispositivo, puoi rientrare con il file chiave cifrato e la sua frase segreta."
               : "ULTRON generates your private key on the phone. If you lose access to the device, use the encrypted keyfile and its passphrase to sign in again."}
           </Text>
@@ -122,7 +157,7 @@ export default function SignupScreen({ navigation, route }) {
         )}
         {!!err && <Text style={styles.err} testID="signup-error">{err}</Text>}
         <TouchableOpacity style={[styles.primaryBtn, busy && styles.btnDim]} onPress={() => {
-          if (saved) { enter(); return; }
+          if (saved || RATCHET_PILOT) { enter(); return; }
           Alert.alert(it ? "Continuare senza copia?" : "Continue without a copy?",
             it ? "Se perdi il telefono prima di esportare la chiave da Impostazioni, puoi perdere l’accesso all’account." : "If you lose the phone before exporting the key in Settings, you can lose access to the account.",
             [{ text: it ? "Annulla" : "Cancel", style: "cancel" },
@@ -183,7 +218,7 @@ export default function SignupScreen({ navigation, route }) {
         {!!err && <Text style={styles.err} testID="signup-error">{err}</Text>}
 
         <TouchableOpacity style={[styles.primaryBtn, (username.length < 3 || avail === false || busy) && styles.btnDim]}
-          onPress={doSignup} disabled={username.length < 3 || avail === false || busy} testID="signup-submit">
+          onPress={() => doSignup()} disabled={username.length < 3 || avail === false || busy} testID="signup-submit">
           {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnTxt}>{it ? "Crea account" : "Create account"}</Text>}
         </TouchableOpacity>
       </ScrollView>

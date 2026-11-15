@@ -11,6 +11,7 @@ import { isDeviceSecure } from "../lib/biometrics";
 import * as lock from "../lib/lock";
 import { publishSignedChatKeys } from "../lib/signedChatKeys";
 import * as devices from "../lib/devices";
+import { selectWakeProfile } from "../lib/wake";
 
 const Ctx = createContext(null);
 export const useAuth = () => useContext(Ctx);
@@ -65,6 +66,7 @@ export function AuthProvider({ children }) {
     const kf = parseKeyfile(rawKf);
     if (!kf) throw new Error("File chiave non valido o corrotto.");
     const target = (overrideServer && server) || serverFromKeyfile(rawKf) || server || api.getServerUrl();
+    if (RATCHET_PILOT) await selectWakeProfile({ lns: kf.lns, server: api.normalizeServer(target) });
     api.setServerUrl(target);
     await api.login({ lns: kf.lns, sk: kf.sk, pk: kf.pk });
     const kem = deriveKemKeypair(kf.sk);
@@ -170,6 +172,11 @@ export function AuthProvider({ children }) {
     const r = await lock.unlockWithPin(pin);
     if (r.status === "wipe") { await wipeNow(); return { status: "wiped" }; }
     if (r.status === "wrong" || r.status === "busy") return r;
+    if (RATCHET_PILOT) {
+      await selectWakeProfile(null);
+      await lock.clearPlainCache();
+      msgCache.clearAll();
+    }
     if (r.status === "decoy") {
       // PROFILO ESCA. Da qui l'app e' identica in tutto: nessun segno, nessun contatore,
       // nessuna scorciatoia per rientrare nel profilo vero. Se l'esca non ha ancora un
@@ -180,6 +187,13 @@ export function AuthProvider({ children }) {
       decoyProfile.current = true;
       setDecoySession(true);
       if (r.keyfile) await signIn(r.keyfile, { persist: false, decoy: true });
+      setPinGate(false);
+      setLocked(false);
+      return { status: "ok" };
+    }
+    if (!r.keyfile && RATCHET_PILOT) {
+      decoyProfile.current = false;
+      setDecoySession(false);
       setPinGate(false);
       setLocked(false);
       return { status: "ok" };
@@ -195,6 +209,7 @@ export function AuthProvider({ children }) {
 
   const signOut = useCallback(async () => {
     try { await require("../lib/wake").disable(); } catch { /* best effort */ }
+    if (RATCHET_PILOT) await selectWakeProfile(null).catch(() => {});
     try { await api.logout(); } catch { /* best-effort: revoca lato server */ }
     await clearStoredKeyfile();
     if (!decoyProfile.current) await lock.forgetResetTarget().catch(() => {});

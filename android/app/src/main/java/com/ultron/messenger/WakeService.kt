@@ -29,6 +29,7 @@ class WakeService : Service() {
     const val CH_SERVICE = "lattice-wake"
     const val CH_CALL = "ultron-incoming-call"
     const val CALL_ID = 4713
+    const val MESSAGE_ID = 4712
     const val CALL_RID = "com.ultron.messenger.CALL_RID"
     const val CH_MSG = "lattice-wake-msg"
     const val FG_ID = 4711
@@ -124,7 +125,7 @@ class WakeService : Service() {
         .setAutoCancel(true)
         .setPriority(NotificationCompat.PRIORITY_HIGH)
         .setContentIntent(openAppIntent())
-      nm.notify(4712, b.build())
+      nm.notify(MESSAGE_ID, b.build())
     } catch (e: Exception) { /* notifiche non concesse */ }
   }
 

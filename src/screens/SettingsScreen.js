@@ -861,7 +861,7 @@ export default function SettingsScreen({ navigation }) {
       <View style={styles.card}>
         <Row icon="shield-outline" label={t("settings.encryption")} hint={t("settings.encryptionVal")} testID="settings-encryption" />
         <View style={styles.divider} />
-        <Row icon="information-circle-outline" label={t("settings.version")} hint={`${Constants.expoConfig?.version || "1.0.0"} · Versione Zero (${Constants.expoConfig?.android?.versionCode || "1"})`} testID="settings-version" />
+        <Row icon="information-circle-outline" label={t("settings.version")} hint={RATCHET_PILOT ? `ULTRON Ratchet Pilota · build ${process.env.EXPO_PUBLIC_ULTRON_VERSION_CODE || "locale"}` : `${Constants.expoConfig?.version || "1.0.0"} · Versione Zero (${Constants.expoConfig?.android?.versionCode || "1"})`} testID="settings-version" />
         <View style={styles.divider} />
         {isOwner && (
           <>
