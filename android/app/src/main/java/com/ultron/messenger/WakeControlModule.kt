@@ -2,6 +2,9 @@ package com.ultron.messenger
 
 import android.app.NotificationManager
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -12,6 +15,27 @@ import com.facebook.react.bridge.ReactMethod
  */
 class WakeControlModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule(ctx) {
     override fun getName(): String = "WakeControl"
+
+    @ReactMethod
+    fun fullScreenCallsAllowed(promise: Promise) {
+        val nm = reactApplicationContext.getSystemService(NotificationManager::class.java)
+        promise.resolve(Build.VERSION.SDK_INT < 34 || nm.canUseFullScreenIntent())
+    }
+
+    @ReactMethod
+    fun openFullScreenCallSettings(promise: Promise) {
+        val ctx = reactApplicationContext
+        try {
+            val action = if (Build.VERSION.SDK_INT >= 34) Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT
+                else Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+            val intent = Intent(action, Uri.parse("package:" + ctx.packageName))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ctx.startActivity(intent)
+            promise.resolve(null)
+        } catch (e: Exception) {
+            promise.reject("CALL_SETTINGS", "Android settings unavailable", e)
+        }
+    }
 
     @ReactMethod
     fun takeIncomingCall(promise: Promise) {

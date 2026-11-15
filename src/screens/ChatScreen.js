@@ -205,8 +205,8 @@ export default function ChatScreen({ route, navigation }) {
         <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
           {others.length === 1 && (
             <>
-              <TouchableOpacity onPress={() => navigation.navigate("Call", { to: others[0], to_name: title, video: false })} testID="chat-call-audio" accessibilityLabel={lang === "en" ? "Voice call" : "Chiamata vocale"} style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}>
-                <Ionicons name="call-outline" size={20} color={tint} />
+              <TouchableOpacity onPress={() => navigation.navigate("Call", { to: others[0], to_name: title, video: false })} testID="chat-call-audio" accessibilityLabel={lang === "en" ? "Voice call" : "Chiamata vocale"} style={{ minWidth: 46, minHeight: 44, borderRadius: 14, backgroundColor: tint + "22", borderWidth: 1, borderColor: tint + "66", alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="call" size={20} color={tint} />
               </TouchableOpacity>
             </>
           )}
@@ -291,7 +291,7 @@ export default function ChatScreen({ route, navigation }) {
       // `preRaw` = pagina già sul telefono: si disegna senza rete. Se la rete ha già
       // risposto la si scarta, per non tornare indietro nel tempo.
       const raw0 = preRaw || await api.messages(cid, want + 1);
-      if (preRaw) { if (netDone.current) return; } else { netDone.current = true; convCache.save(cid, raw0); }
+      if (preRaw) { if (netDone.current) return; } else { netDone.current = true; convCache.save(cid, raw0, user); }
       if (!preRaw && mounted.current) {
         const lastId = raw0[raw0.length - 1]?.message_id;
         const cursor = serverCursor.current;
@@ -304,6 +304,8 @@ export default function ChatScreen({ route, navigation }) {
       const raw = more ? raw0.slice(raw0.length - want) : raw0;
       setHasMore(more);
       const out = [];
+      const contactChecks = new Map();
+      const offline = !!preRaw && hostedRatchetPilot(user);
       const fast = typeof limit === "number";
       // `deepMode` separa le due cose che prima viaggiavano insieme: quanti messaggi
       // mostrare subito e se fare i tentativi a tentoni. La passata profonda ora gira
@@ -341,11 +343,12 @@ export default function ChatScreen({ route, navigation }) {
             if (heavy && heavy % 5 === 0) await new Promise((r) => setTimeout(r, 0));
             heavy++;
             const pt = m.ratchet
-              ? await readPilotMessage(m, user).catch(() => null)
+              ? await readPilotMessage(m, user, { offline, contactChecks }).catch(() => null)
               : api.getServerUrl() === DEFAULT_SERVER
               ? decryptEnvelope(m.envelope, user.kem.secretKey)
               : await decryptAny(m, user, { deep, breathe: deep });
             if (pt == null) {
+              if (offline && m.ratchet) continue;
               body = UNDEC;
               // Perché non si è aperta: forma delle buste, chiavi possedute, dispositivo.
               // Nessun contenuto, nessuna chiave: solo quello che serve a capire.
@@ -491,13 +494,22 @@ export default function ChatScreen({ route, navigation }) {
     // cifrate dentro un blob a sua volta cifrato con la chiave del dispositivo), senza
     // toccare la rete: con la linea lenta la chat non resta più vuota.
     netDone.current = false;
-    convCache.read(convId).then((cached) => {
-      if (cached && mounted.current && !netDone.current) load(convId, INITIAL_WIN, false, cached).catch(() => {});
-    }).catch(() => {});
-    // Apertura rapida: solo gli ultimi messaggi, il resto solo se richiesto.
-    load(convId, INITIAL_WIN).then(() => {
-      if (pendingRef.current) scheduleRepair(convId);
-    });
+    let active = true;
+    const loadNetwork = async () => {
+      if (!active) return;
+      await load(convId, INITIAL_WIN);
+      if (active && pendingRef.current) scheduleRepair(convId);
+    };
+    const loadCached = async () => {
+      const cached = await convCache.read(convId, user);
+      if (active && cached && !netDone.current) await load(convId, INITIAL_WIN, false, cached);
+    };
+    if (hostedRatchetPilot(user)) {
+      loadCached().catch(() => {}).then(loadNetwork);
+    } else {
+      loadCached().catch(() => {});
+      loadNetwork();
+    }
     // Cassetta anonima: consegna i gettoni al contatto e ritira i depositi in arrivo.
     // Chiave statica del contatto in cassaforte: così la catena che si rigenera parte anche
     // se domani la richiesta al server non riesce.
@@ -505,7 +517,7 @@ export default function ChatScreen({ route, navigation }) {
     if (others.length === 1 && api.getServerUrl() !== DEFAULT_SERVER) {
       mbx.publishTo(others[0], user).catch(() => {});
     }
-    return () => { mounted.current = false; };
+    return () => { active = false; mounted.current = false; };
   }, [convId, load, others, user, scheduleRepair]);
 
   // Aggiornamenti: solo con l'app in primo piano e questa chat davanti agli occhi.

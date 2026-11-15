@@ -6,7 +6,7 @@ import { getVerified, keyFingerprint } from "./verify";
 import { hostedSignedChatKeys } from "./signedChatKeys";
 import { parsePools, publishHostedPrekeys } from "./hostedPrekeys";
 import { receiveHostedRatchet, sendHostedRatchet } from "./ratchet";
-import { archivablePayload, hostedSentRecord } from "./ratchetHistory";
+import { archivablePayload, historyRecord, hostedSentRecord } from "./ratchetHistory";
 
 export function hostedRatchetPilot(user) {
   return RATCHET_PILOT && user?.server === DEFAULT_SERVER && api.getServerUrl() === DEFAULT_SERVER;
@@ -42,7 +42,7 @@ export async function sendPilotMessage(payload, user, peer) {
   return sendHostedRatchet(payload, user, peer, device, keys);
 }
 
-export async function readPilotMessage(message, user) {
+export async function readPilotMessage(message, user, { offline = false, contactChecks } = {}) {
   if (!hostedRatchetPilot(user) || !message.ratchet) return null;
   const check = api.authenticatedScope(user);
   if (message.mine) {
@@ -52,7 +52,19 @@ export async function readPilotMessage(message, user) {
     check();
     return typeof opened === "string" ? opened : null;
   }
-  const keys = await verifiedContact(user, message.from_lns);
+  if (message.to_lns !== user.lns || message.envelope?.for !== user.lns) return null;
+  const record = historyRecord(user, message, message.envelope);
+  const saved = record && await getBlob(record.name);
+  check();
+  if (record && saved?.digest === record.digest && typeof saved.plaintext === "string") return saved.plaintext;
+  if (offline) return null;
+  const peer = message.from_lns;
+  let validation = contactChecks?.get(peer);
+  if (!validation) {
+    validation = verifiedContact(user, peer);
+    contactChecks?.set(peer, validation);
+  }
+  const keys = await validation;
   const installation = await deviceId();
   check();
   return receiveHostedRatchet(message, user, installation, keys.identityKey);

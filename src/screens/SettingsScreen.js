@@ -1,8 +1,9 @@
+import { callAccessCopy } from "../lib/locales/callAccess";
 import { LEGAL_DOCS, PRIVACY_SUMMARY, CONTACTS_SUMMARY, DATA_PROTECTION } from "../lib/legalDocuments";
 import { isOwner as canaryIsOwner } from "../lib/canary";
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, ActivityIndicator, Alert, Linking, Platform, Modal, TextInput, Share,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, ActivityIndicator, Alert, Linking, NativeModules, AppState, Platform, Modal, TextInput, Share,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -59,7 +60,18 @@ export default function SettingsScreen({ navigation }) {
   const isOwner = canaryIsOwner(user);
   const hostedCalls = api.getServerUrl() === DEFAULT_SERVER;
   const [callDirect, setCallDirect] = useState(false);
+  const callAccess = callAccessCopy[lang] || callAccessCopy.en;
+  const [fullScreenCalls, setFullScreenCalls] = useState(null);
   const [relayStatus, setRelayStatus] = useState("checking");
+  useFocusEffect(useCallback(() => {
+    if (!hostedCalls || !NativeModules.WakeControl?.fullScreenCallsAllowed) return;
+    let active = true;
+    const refresh = () => NativeModules.WakeControl.fullScreenCallsAllowed()
+      .then((allowed) => { if (active) setFullScreenCalls(allowed); }).catch(() => {});
+    refresh();
+    const sub = AppState.addEventListener("change", (state) => { if (state === "active") refresh(); });
+    return () => { active = false; sub.remove(); };
+  }, [hostedCalls]));
   const [chaff, setChaff] = useState(true);
   const [wakeOn, setWakeOn] = useState(false);
   const [wakeBusy, setWakeBusy] = useState(false);
@@ -580,6 +592,12 @@ export default function SettingsScreen({ navigation }) {
             right={<Switch value={callDirect} onValueChange={async (v) => { setCallDirect(v); await saveAllowDirect(v); }} trackColor={{ true: "#50C878", false: theme.border }} thumbColor="#fff" testID="settings-call-direct" />} />
         )}
         <View style={styles.divider} />
+        {hostedCalls && fullScreenCalls !== null && (
+          <Row icon="call-outline" label={callAccess[0]} hint={callAccess[fullScreenCalls ? 1 : 2]}
+            onPress={() => NativeModules.WakeControl.openFullScreenCallSettings().catch(() => Linking.openSettings().catch(() => {}))}
+            right={<Ionicons name="chevron-forward-outline" size={18} color={theme.textFaint} />}
+            testID="settings-fullscreen-calls" />
+        )}
         <Row icon="pulse-outline"
           label={t("sm.040")}
           hint={en ? "Runs while Android keeps the service active. 24/7 operation is unverified."
