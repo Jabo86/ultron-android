@@ -60,8 +60,9 @@ jobs:
           test "$("$tools/aapt" dump badging "$apk" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")" = com.ultron.messenger.pilot
           "$tools/apksigner" verify "$apk"
           mkdir -p dist
-          cp "$apk" dist/ULTRON-Ratchet-Pilota.apk
-          sha256sum dist/ULTRON-Ratchet-Pilota.apk
-          gh release create "ratchet-pilot-${GITHUB_RUN_NUMBER}" dist/ULTRON-Ratchet-Pilota.apk \
+          asset="dist/ULTRON-Ratchet-Pilota-${EXPO_PUBLIC_ULTRON_VERSION_CODE}.apk"
+          cp "$apk" "$asset"
+          sha256sum "$asset"
+          gh release create "ratchet-pilot-${GITHUB_RUN_NUMBER}" "$asset" \
             --target "$GITHUB_SHA" --prerelease --latest=false --title "ULTRON Ratchet Pilota ${GITHUB_RUN_NUMBER}" \
             --notes "App separata per account di prova. Gateway HTTPS /ratchet-pilot."

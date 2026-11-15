@@ -65,7 +65,10 @@ export default function ConversationsScreen({ navigation }) {
 
   const load = useCallback(async () => {
     try {
-      const [cs, gs] = await Promise.all([api.convs().catch(() => []), api.channels().catch(() => [])]);
+      const [cs, gs] = await Promise.all([
+        api.convs(),
+        hostedRatchetPilot(user) ? [] : api.channels().catch(() => []),
+      ]);
       // Rubrica cieca: i nomi si imparano da qui, senza chiedere niente al server.
       try {
         const book = require("../lib/book");
@@ -87,7 +90,7 @@ export default function ConversationsScreen({ navigation }) {
       try { const mc = await missedCallCount(); if (mounted.current) setMissedCalls(mc); } catch {}
     } catch { /* keep last */ }
     finally { if (mounted.current) setBooted(true); }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     mounted.current = true;

@@ -1,4 +1,4 @@
-import { argon2idAsync } from "@noble/hashes/argon2.js";
+import { deriveExportKey } from "./exportKdf.js";
 import { gcm } from "@noble/ciphers/aes.js";
 import { parseKeyfile, randomHex, hexToBytes, bytesToHex, utf8Encode, utf8Decode } from "./crypto.js";
 
@@ -7,12 +7,15 @@ export const MIN_KEY_PASSWORD = 16;
 export const MAX_KEY_PASSWORD = 256;
 export const MAX_KEYFILE_BYTES = 128 * 1024;
 
-const COST = { m: 65536, t: 3, p: 1, dkLen: 32 };
 const CONTEXT = utf8Encode(KEYFILE_FORMAT);
 const isHex = (value, length) => typeof value === "string" &&
   value.length === length && /^[0-9a-f]+$/i.test(value);
 
-const derive = (password, salt) => argon2idAsync(utf8Encode(password), hexToBytes(salt), COST);
+async function derive(password, salt) {
+  const secret = utf8Encode(password);
+  try { return await deriveExportKey(secret, hexToBytes(salt)); }
+  finally { secret.fill(0); }
+}
 
 export async function protectKeyfile(keyfile, password) {
   if (!parseKeyfile(keyfile)) throw new Error("Invalid keyfile");

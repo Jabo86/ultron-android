@@ -7,7 +7,7 @@ import com.facebook.react.uimanager.ViewManager
 
 class UltronNativePackage : ReactPackage {
   override fun createNativeModules(ctx: ReactApplicationContext): MutableList<NativeModule> =
-    mutableListOf(CallControlModule(ctx), DeviceInfoModule(ctx), KdfModule(ctx), HwKeyModule(ctx), IntegrityModule(ctx), WakeControlModule(ctx))
+    mutableListOf(CallControlModule(ctx), DeviceInfoModule(ctx), KdfModule(ctx), HwKeyModule(ctx), IntegrityModule(ctx), WakeControlModule(ctx), QrScanModule(ctx))
 
   override fun createViewManagers(ctx: ReactApplicationContext): MutableList<ViewManager<*, *>> =
     mutableListOf()

@@ -1,3 +1,5 @@
+import { hostedRatchetPilot, verifiedContact } from "./src/lib/hostedRatchetChat";
+import { setNativeExportKdf } from "./src/lib/exportKdf";
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { View, ActivityIndicator, AppState as RNAppState, NativeModules, Platform } from "react-native";
 import { StatusBar } from "expo-status-bar";
@@ -147,6 +149,8 @@ function MainTabs() {
   );
 }
 
+setNativeExportKdf(NativeModules.LatticeKdf);
+
 const navTheme = {
   ...DarkTheme,
   colors: {
@@ -268,9 +272,17 @@ function Root() {
         const call = event?.ping && openInvite(event.ping, user.kem.secretKey);
         if (!call?.chan || !call.from || !call.offer?.sdp || !call.offer_sig || !call.from_pk ||
             !verifyMessage(call.offer.sdp, call.offer_sig, call.from_pk)) return;
-        const keys = await api.pulseDhKeys([call.from]);
-        if (!keys?.[call.from]) return;
-        const shared = anonSharedSecret(user.dh.secretKey, keys[call.from]);
+        let dh;
+        if (hostedRatchetPilot(user)) {
+          const keys = await verifiedContact(user, call.from);
+          if (call.from_pk !== keys.identityKey || call.from_kem !== keys.kem) return;
+          dh = keys.dh;
+        } else {
+          const keys = await api.pulseDhKeys([call.from]);
+          dh = keys?.[call.from];
+        }
+        if (!dh) return;
+        const shared = anonSharedSecret(user.dh.secretKey, dh);
         if (!anonEpochs().some((epoch) => discRid(shared, call.from, user.lns, epoch) === rid)) return;
         const session = await api.anonGet(call.chan);
         if (!alive || session?.bye || session?.answer || activeCall.current === call.chan ||

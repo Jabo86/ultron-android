@@ -205,7 +205,7 @@ export default function ChatScreen({ route, navigation }) {
         <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
           {others.length === 1 && (
             <>
-              <TouchableOpacity onPress={() => navigation.navigate("Call", { to: others[0], to_name: title, video: false })} testID="chat-call-audio" hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}>
+              <TouchableOpacity onPress={() => navigation.navigate("Call", { to: others[0], to_name: title, video: false })} testID="chat-call-audio" accessibilityLabel={lang === "en" ? "Voice call" : "Chiamata vocale"} style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}>
                 <Ionicons name="call-outline" size={20} color={tint} />
               </TouchableOpacity>
             </>
@@ -501,7 +501,7 @@ export default function ChatScreen({ route, navigation }) {
     // Cassetta anonima: consegna i gettoni al contatto e ritira i depositi in arrivo.
     // Chiave statica del contatto in cassaforte: così la catena che si rigenera parte anche
     // se domani la richiesta al server non riesce.
-    try { require("../lib/maintenance").warmStaticKeys(others); } catch { /* */ }
+    try { if (!hostedRatchetPilot(user)) require("../lib/maintenance").warmStaticKeys(others); } catch { /* */ }
     if (others.length === 1 && api.getServerUrl() !== DEFAULT_SERVER) {
       mbx.publishTo(others[0], user).catch(() => {});
     }

@@ -77,7 +77,7 @@ export function AuthProvider({ children }) {
     const kem = deriveKemKeypair(kf.sk);
     const kem1024 = deriveKem1024Keypair(kf.sk);
     const dh = deriveDhKeypair(kf.sk);
-    try {
+    if (!RATCHET_PILOT) try {
       const kg = require("../lib/keygen");
       const hs = kg.keysFor(kf.sk, await kg.currentGen());
       await api.publishKey(bytesToHex(kem.publicKey), bytesToHex(dh.publicKey),
@@ -93,7 +93,16 @@ export function AuthProvider({ children }) {
     const u = { lns: kf.lns, sk: kf.sk, pk: kf.pk, tenant_id: kf.tenant_id, kem, kem1024, dh, server: api.getServerUrl() };
     decoyProfile.current = decoy;
     setDecoySession(decoy);
-    if (RATCHET_PILOT) setVerificationScope(u);
+    if (RATCHET_PILOT) {
+      setVerificationScope(u);
+      const check = api.authenticatedScope(u);
+      setTimeout(() => {
+        try {
+          check();
+          publishSignedChatKeys(u.lns, u.sk, bytesToHex(u.kem.publicKey), bytesToHex(u.dh.publicKey)).catch(() => {});
+        } catch { /* session changed */ }
+      }, 0);
+    }
     setUser(u);
     // La cassetta anonima ha bisogno di sapere chi siamo per aprire le buste del ratchet.
     try { require("../lib/mailbox").setIdentity(u); } catch { /* modulo assente */ }
@@ -109,7 +118,7 @@ export function AuthProvider({ children }) {
       await saveServer(api.getServerUrl());
     }
     // BLOCCO A: registra questo dispositivo e mantiene il lotto di chiavi usa-e-getta.
-    devices.ensureDevice().catch(() => {});
+    if (!RATCHET_PILOT) devices.ensureDevice().catch(() => {});
     // RUBRICA CIECA: la rubrica passa sul telefono (cifrata) e al server restano solo i
     // gettoni di coppia. La prima volta si porta via quella che era sul server.
     try {
@@ -122,7 +131,7 @@ export function AuthProvider({ children }) {
       if (!RATCHET_PILOT) book.reconcile(u).catch(() => {});
       // Manutenzione automatica: chiavi orfane sul server, vecchie installazioni,
       // chiavi statiche in cassaforte. Non blocca l'avvio e non chiede nulla.
-      try { require("../lib/maintenance").run([]); } catch { /* */ }
+      try { if (!RATCHET_PILOT) require("../lib/maintenance").run([]); } catch { /* */ }
     } catch { /* rubrica non disponibile */ }
     // Riallinea il token di autodistruzione se il PIN era già attivo.
     if (!decoy) await lock.armReset(u.lns, u.server, api.panicArm).catch(() => false);
@@ -153,7 +162,7 @@ export function AuthProvider({ children }) {
       book.reconcile(u2).catch(() => {});
       // Manutenzione automatica: chiavi orfane sul server, vecchie installazioni,
       // chiavi statiche in cassaforte. Non blocca l'avvio e non chiede nulla.
-      try { require("../lib/maintenance").run([]); } catch { /* */ }
+      try { if (!RATCHET_PILOT) require("../lib/maintenance").run([]); } catch { /* */ }
     } catch { /* rubrica non disponibile */ }
     return r; // NB: mustRotate resta true finché l'utente non conferma di aver salvato la chiave
   }, []);

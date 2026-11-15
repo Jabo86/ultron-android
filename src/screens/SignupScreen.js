@@ -142,9 +142,7 @@ export default function SignupScreen({ navigation, route }) {
               : "ULTRON generates your private key on the phone. If you lose access to the device, use the encrypted keyfile and its passphrase to sign in again."}
           </Text>
         </View>
-        <TouchableOpacity style={styles.primaryBtn} onPress={() => setShowKeyExport(true)} testID="signup-save-keyfile">
-          <Text style={styles.primaryBtnTxt}>{it ? "Salva una copia cifrata" : "Save an encrypted copy"}</Text>
-        </TouchableOpacity>
+
         {secure && (
           <View style={styles.switchRow}>
             <View style={{ flex: 1 }}>
@@ -164,6 +162,9 @@ export default function SignupScreen({ navigation, route }) {
               { text: it ? "Continua" : "Continue", onPress: enter }]);
         }} disabled={busy} testID="signup-enter">
           {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnTxt}>{it ? "Entra in ULTRON" : "Enter ULTRON"}</Text>}
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.back} disabled={busy} onPress={() => setShowKeyExport(true)} testID="signup-save-keyfile">
+          <Text style={styles.backTxt}>{it ? "Salva una copia cifrata" : "Save an encrypted copy"}</Text>
         </TouchableOpacity>
         {showKeyExport && <KeyfileExport keyfile={created.keyfile} english={!it}
           onClose={() => setShowKeyExport(false)} onShared={() => { setSaved(true); setShowKeyExport(false); }} />}

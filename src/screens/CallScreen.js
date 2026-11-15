@@ -1,3 +1,4 @@
+import { hostedRatchetPilot, verifiedContact } from "../lib/hostedRatchetChat";
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Vibration, Alert, AppState } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -198,6 +199,8 @@ export default function CallScreen({ route, navigation }) {
   }, [pushInv, reject]);
 
   const hosted = api.getServerUrl() === DEFAULT_SERVER;
+  const pilot = hostedRatchetPilot(user);
+  const peerIdentity = useRef(null);
   const [directAllowed, setDirectAllowed] = useState(false);
 
   const makePc = useCallback((config) => {
@@ -289,9 +292,16 @@ export default function CallScreen({ route, navigation }) {
 
         if (!incoming) {
           // CHIAMANTE: chiavi del ricevente (KEM per cifrare, DH per il rid), offer firmata, invito cifrato.
-          const [kemMap, dhMap] = await Promise.all([api.pulseStaticKeys([to]), api.pulseDhKeys([to])]);
-          const calleeKem = kemMap && kemMap[to];
-          const calleeDh = dhMap && dhMap[to];
+          let calleeKem, calleeDh;
+          if (pilot) {
+            const keys = await verifiedContact(user, to);
+            ({ kem: calleeKem, dh: calleeDh } = keys);
+            peerIdentity.current = keys.identityKey;
+          } else {
+            const [kemMap, dhMap] = await Promise.all([api.pulseStaticKeys([to]), api.pulseDhKeys([to])]);
+            calleeKem = kemMap?.[to];
+            calleeDh = dhMap?.[to];
+          }
           if (!calleeKem || !calleeDh) throw new Error("Chiavi del contatto non disponibili.");
           const pinned = hosted ? await getVerified(to) : null;
           if (pinned && keyFingerprint(to, calleeKem, calleeDh) !== pinned.fp) {
@@ -391,6 +401,7 @@ export default function CallScreen({ route, navigation }) {
           }
           if (answer?.answer?.sdp) {
             const ok = answer.answer_sig && answer.to_pk &&
+              (!pilot || answer.to_pk === peerIdentity.current) &&
               verifyMessage(answer.answer.sdp, answer.answer_sig, answer.to_pk);
             setVerified(!!ok);
             if (!ok && hosted) {
@@ -427,7 +438,7 @@ export default function CallScreen({ route, navigation }) {
     });
     pollSignal();
     return () => { alive = false; clearInterval(interval); subscription.remove(); };
-  }, [incoming, applyRemoteIce, finish, hosted, trySas, user]);
+  }, [incoming, applyRemoteIce, finish, hosted, pilot, trySas, user]);
 
   const toggleMute = () => { const a = localStream?.getAudioTracks?.()[0]; if (a) { a.enabled = muted; setMuted(!muted); } };
 

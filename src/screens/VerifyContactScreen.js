@@ -280,8 +280,8 @@ export default function VerifyContactScreen({ route, navigation }) {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>{en ? "Read their code" : "Leggi il suo codice"}</Text>
           <Text style={styles.cardHint}>
-            {en ? "Point the camera at the QR shown on the other phone. The picture is read on this phone only and thrown away."
-                : "Inquadra il QR mostrato sull'altro telefono. La foto viene letta solo qui e poi buttata."}
+            {en ? "Point the camera at the QR shown on the other phone. The QR is read live on this phone."
+                : "Inquadra il QR mostrato sull'altro telefono. Il QR viene letto in diretta su questo telefono."}
           </Text>
           <View style={{ height: 12 }} />
           <QrScanner

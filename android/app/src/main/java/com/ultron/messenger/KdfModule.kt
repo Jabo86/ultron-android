@@ -5,6 +5,9 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import javax.crypto.SecretKeyFactory
+import org.bouncycastle.crypto.generators.Argon2BytesGenerator
+import org.bouncycastle.crypto.params.Argon2Parameters
+import java.util.concurrent.Executors
 import javax.crypto.spec.PBEKeySpec
 
 // DERIVAZIONE DEL PIN, IN CODICE NATIVO — v2.5.1
@@ -69,6 +72,35 @@ class KdfModule(private val ctx: ReactApplicationContext) : ReactContextBaseJava
       spec.clearPassword()
       promise.resolve((System.currentTimeMillis() - t0).toInt())
     } catch (e: Throwable) { promise.resolve(-1) }
+  }
+
+  private val exportWorker = Executors.newSingleThreadExecutor()
+
+  @ReactMethod
+  fun deriveExportKey(secretHex: String, saltHex: String, promise: Promise) {
+    if (secretHex.length > 2048 || secretHex.length % 2 != 0 ||
+        !secretHex.matches(Regex("[0-9a-f]*")) || !saltHex.matches(Regex("[0-9a-f]{32}"))) {
+      promise.reject("export_kdf_input", "Invalid derivation input")
+      return
+    }
+    exportWorker.execute {
+      val secret = secretHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+      val salt = saltHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+      val out = ByteArray(32)
+      try {
+        val config = Argon2Parameters.Builder(Argon2Parameters.ARGON2_id)
+          .withVersion(Argon2Parameters.ARGON2_VERSION_13)
+          .withMemoryAsKB(65536).withIterations(3).withParallelism(1).withSalt(salt)
+          .build()
+        Argon2BytesGenerator().apply { init(config); generateBytes(secret, out) }
+        promise.resolve(out.joinToString("") { "%02x".format(it.toInt() and 255) })
+      } catch (e: Throwable) {
+        promise.reject("export_kdf_failed", "Key derivation failed")
+      } finally {
+        secret.fill(0)
+        out.fill(0)
+      }
+    }
   }
 
   companion object { private const val ALGO = "PBKDF2WithHmacSHA512" }

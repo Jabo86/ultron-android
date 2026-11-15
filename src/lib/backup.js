@@ -7,7 +7,7 @@ import * as Sharing from "expo-sharing";
 import * as DocumentPicker from "expo-document-picker";
 import { Platform } from "react-native";
 import notifee, { AndroidImportance, TimeUnit, TriggerType } from "react-native-notify-kit";
-import { argon2idAsync } from "@noble/hashes/argon2.js";
+import { deriveExportKey } from "./exportKdf";
 import { readPilotMessage } from "./hostedRatchetChat";
 import { scrypt } from "@noble/hashes/scrypt.js";
 import { gcm } from "@noble/ciphers/aes.js";
@@ -167,7 +167,7 @@ export async function encryptContainer(payload, password) {
   const plain = enc8(JSON.stringify(payload));
   let key;
   try {
-    key = await argon2idAsync(secret, hexToBytes(salt), { ...ARGON, dkLen: 32 });
+    key = await deriveExportKey(secret, hexToBytes(salt));
     const ct = gcm(key, hexToBytes(iv), enc8(FMT)).encrypt(plain);
     return { fmt: FMT, hint: "password", kdf: { alg: "argon2id", ...ARGON, salt }, iv, ct: bytesToBase64(ct) };
   } finally {
@@ -191,7 +191,7 @@ export async function decryptContainer(container, password) {
   let key, plain;
   try {
     const salt = hexToBytes(k.salt);
-    key = legacy ? scrypt(secret, salt, { ...KDF, dkLen: 32 }) : await argon2idAsync(secret, salt, { ...ARGON, dkLen: 32 });
+    key = legacy ? scrypt(secret, salt, { ...KDF, dkLen: 32 }) : await deriveExportKey(secret, salt);
     plain = gcm(key, hexToBytes(container.iv), legacy ? undefined : enc8(FMT)).decrypt(base64ToBytes(container.ct));
     return JSON.parse(dec8(plain));
   } catch {

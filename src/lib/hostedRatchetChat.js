@@ -12,7 +12,7 @@ export function hostedRatchetPilot(user) {
   return RATCHET_PILOT && user?.server === DEFAULT_SERVER && api.getServerUrl() === DEFAULT_SERVER;
 }
 
-async function verifiedContact(user, peer) {
+export async function verifiedContact(user, peer) {
   const pinned = await getVerified(peer);
   if (!pinned) throw new Error("Verifica il QR del contatto per usare il ratchet pilota.");
   const signed = await hostedSignedChatKeys(user.lns, peer, (kem, dh) => {
