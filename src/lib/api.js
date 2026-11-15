@@ -284,6 +284,9 @@ export const contactRemoveServer = (lns) =>
 export const blockServer = (lns, on) =>
   withAuth((a) => client.post("/public/pulse/block", { lns, on }, a).then((r) => r.data));
 
+export const contactsRaw = () =>
+  withAuth((a, transport) => transport.get("/public/pulse/contacts", a).then((r) => r.data));
+
 export const contacts = async () => {
   const book = require("./book");
   const server = await contactsRaw().catch(() => []);

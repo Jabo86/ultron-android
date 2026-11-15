@@ -3,12 +3,14 @@ import { Alert, Modal, View, Text, TextInput, Pressable, StyleSheet } from "reac
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { MAX_KEY_PASSWORD, MIN_KEY_PASSWORD, protectKeyfile } from "../lib/keyfileProtection";
+import { generateRecoveryPhrase } from "../lib/recoveryPhrase";
 import { randomHex } from "../lib/crypto";
 import { withSystemActivity } from "../lib/lockGuard";
 import { theme } from "../theme";
 
 export default function KeyfileExport({ keyfile, english, onClose, onShared }) {
   const [password, setPassword] = useState("");
+  const [generated, setGenerated] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
@@ -44,8 +46,20 @@ export default function KeyfileExport({ keyfile, english, onClose, onShared }) {
         <Text style={s.copy}>{english
           ? "Use a unique passphrase of at least 16 characters. You will need it to open this copy."
           : "Usa una frase segreta unica di almeno 16 caratteri. Ti servirà per aprire questa copia."}</Text>
+        <Pressable disabled={busy} accessibilityRole="button" onPress={() => {
+          const phrase = generateRecoveryPhrase();
+          setGenerated(phrase);
+          setPassword(phrase);
+          setConfirmation("");
+        }}>
+          <Text style={s.actionText}>{english ? "Generate 12 words" : "Genera 12 parole"}</Text>
+        </Pressable>
+        {!!generated && <Text style={s.copy}>{generated}</Text>}
+        {!!generated && <Text style={s.copy}>{english
+          ? "Write them down in order. You will need both the words and the encrypted file."
+          : "Annotale in ordine. Per il recupero servono sia le parole sia il file cifrato."}</Text>}
         <TextInput style={s.input} secureTextEntry autoCorrect={false} autoCapitalize="none" maxLength={MAX_KEY_PASSWORD}
-          editable={!busy} value={password} onChangeText={setPassword} placeholder={english ? "Passphrase" : "Frase segreta"}
+          editable={!busy} value={password} onChangeText={(value) => { setGenerated(""); setPassword(value); }} placeholder={english ? "Passphrase" : "Frase segreta"}
           placeholderTextColor={theme.textFaint} testID="keyfile-passphrase" />
         <TextInput style={s.input} secureTextEntry autoCorrect={false} autoCapitalize="none" maxLength={MAX_KEY_PASSWORD}
           editable={!busy} value={confirmation} onChangeText={setConfirmation} placeholder={english ? "Repeat passphrase" : "Ripeti la frase segreta"}

@@ -233,13 +233,15 @@ export default function ChatScreen({ route, navigation }) {
         </View>
       ),
     });
-  }, [navigation, title, convId, others, exporting, onExport, vfy]);
+  }, [navigation, title, convId, others, exporting, onExport, vfy, user, lang]);
 
+  const pilot = hostedRatchetPilot(user);
   const onDeleteChat = () => {
     if (!convId) return;
-    Alert.alert(t("chat.deleteChat.title"), t("chat.deleteChat.text"), [
+    Alert.alert(pilot ? (lang === "en" ? "Hide chat?" : "Nascondere la chat?") : t("chat.deleteChat.title"),
+      pilot ? (lang === "en" ? "It will disappear from your list. New messages can bring it back." : "Sparirà dalla tua lista. I nuovi messaggi possono farla ricomparire.") : t("chat.deleteChat.text"), [
       { text: t("cancel"), style: "cancel" },
-      { text: t("delete"), style: "destructive", onPress: async () => {
+      { text: pilot ? (lang === "en" ? "Hide" : "Nascondi") : t("delete"), style: "destructive", onPress: async () => {
         try { await api.deleteConversation(convId); navigation.goBack(); }
         catch (e) { setErr(api.apiErr(e)); }
       } },
@@ -392,6 +394,7 @@ export default function ChatScreen({ route, navigation }) {
             }
           }
         }
+        if (m.hidden === true) continue;
         out.push({ id: m.message_id, mine: !!m.mine, body, atts, reply, signed, reactions: Array.isArray(m.reactions) ? m.reactions : [], ttl: ttlv, at: m.sent_at || m.created_at, delivered: !!m.delivered, read: !!m.read, edited: !!m.edited, pinned: !!m.pinned });
       }
       // Messaggi arrivati per cassetta anonima: vivono solo qui, cifrati sul telefono.
@@ -1075,18 +1078,18 @@ export default function ChatScreen({ route, navigation }) {
         <Modal visible transparent animationType="fade" onRequestClose={() => setActionItem(null)}>
           <Pressable style={styles.sheetWrap} onPress={() => setActionItem(null)}>
             <Pressable style={styles.sheet}>
-              <View style={styles.emojiRow}>
+              {!pilot && <View style={styles.emojiRow}>
                 {["👍", "❤️", "😂", "😮", "😢", "🙏"].map((em) => (
                   <TouchableOpacity key={em} style={styles.emojiBtn} testID={`chat-react-${em}`} onPress={() => doReact(actionItem, em)}>
                     <Text style={styles.emojiText}>{em}</Text>
                   </TouchableOpacity>
                 ))}
-              </View>
+              </View>}
               <TouchableOpacity style={styles.sheetItem} testID="chat-action-reply" onPress={() => { const it = actionItem; setActionItem(null); setReplyTo({ id: it.id, name: it.mine ? (user?.lns?.split("@")[0] || "?") : title, text: (it.body || "").slice(0, 140) }); }}>
                 <Ionicons name="arrow-undo-outline" size={18} color={theme.text} />
                 <Text style={styles.sheetItemText}>{t("chat.reply")}</Text>
               </TouchableOpacity>
-              {actionItem.mine && !!actionItem.body && (
+              {!pilot && actionItem.mine && !!actionItem.body && (
                 <TouchableOpacity style={styles.sheetItem} testID="chat-action-edit" onPress={() => startEdit(actionItem)}>
                   <Ionicons name="create-outline" size={18} color={theme.text} />
                   <Text style={styles.sheetItemText}>{lang === "en" ? "Edit" : "Modifica"}</Text>
@@ -1102,11 +1105,11 @@ export default function ChatScreen({ route, navigation }) {
                 <Ionicons name="arrow-redo-outline" size={18} color={theme.text} />
                 <Text style={styles.sheetItemText}>{lang === "en" ? "Forward" : "Inoltra"}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.sheetItem} testID="chat-action-pin" onPress={() => doPin(actionItem)}>
+              {!pilot && <TouchableOpacity style={styles.sheetItem} testID="chat-action-pin" onPress={() => doPin(actionItem)}>
                 <Ionicons name={actionItem.pinned ? "bookmark" : "bookmark-outline"} size={18} color={theme.text} />
                 <Text style={styles.sheetItemText}>{actionItem.pinned ? (lang === "en" ? "Unpin message" : "Rimuovi da fissati") : (lang === "en" ? "Pin message" : "Fissa messaggio")}</Text>
-              </TouchableOpacity>
-              {!actionItem.mine && (
+              </TouchableOpacity>}
+              {!pilot && !actionItem.mine && (
                 <TouchableOpacity style={styles.sheetItem} testID="chat-action-report" onPress={() => doReport(actionItem)}>
                   <Ionicons name="flag-outline" size={18} color={theme.text} />
                   <Text style={styles.sheetItemText}>{lang === "en" ? "Report" : "Segnala"}</Text>
@@ -1114,12 +1117,12 @@ export default function ChatScreen({ route, navigation }) {
               )}
               <TouchableOpacity style={styles.sheetItem} testID="chat-action-delete-me" onPress={() => doDelete(actionItem, "me")}>
                 <Ionicons name="trash-outline" size={18} color={theme.text} />
-                <Text style={styles.sheetItemText}>{t("chat.deleteForMe")}</Text>
+                <Text style={styles.sheetItemText}>{pilot ? (lang === "en" ? "Hide for me" : "Nascondi per me") : t("chat.deleteForMe")}</Text>
               </TouchableOpacity>
               {actionItem.mine && (
                 <TouchableOpacity style={styles.sheetItem} testID="chat-action-delete-all" onPress={() => doDelete(actionItem, "all")}>
                   <Ionicons name="trash-outline" size={18} color={theme.danger} />
-                  <Text style={[styles.sheetItemText, { color: theme.danger }]}>{t("chat.deleteForAll")}</Text>
+                  <Text style={[styles.sheetItemText, { color: theme.danger }]}>{pilot ? (lang === "en" ? "Hide for both" : "Nascondi per entrambi") : t("chat.deleteForAll")}</Text>
                 </TouchableOpacity>
               )}
             </Pressable>

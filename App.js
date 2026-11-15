@@ -173,10 +173,9 @@ function Root() {
   // ULTRON: solo permessi notifiche locali e connessione diretta WakeService.
   useEffect(() => {
     if (!user?.lns || locked) return;
-    const register = () => wake.refresh().catch(() => {});
-    register();
+    wake.refresh(RNAppState.currentState === "active").catch(() => {});
     const sub = RNAppState.addEventListener("change", (st) => {
-      if (st === "active") register();
+      if (st === "active") wake.refresh(true).catch(() => {});
     });
     return () => { try { sub.remove(); } catch (_) {} };
   }, [user?.lns, locked]);

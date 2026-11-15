@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { AppState } from "react-native";
 import { parseKeyfile, deriveKemKeypair, deriveKem1024Keypair, deriveDhKeypair, bytesToHex } from "../lib/crypto";
 import * as api from "../lib/api";
+import { RATCHET_PILOT } from "../config";
 import * as msgCache from "../lib/msgCache";
 import { saveKeyfile, loadKeyfile, clearStoredKeyfile, saveServer, loadServer, loadAppLock } from "../lib/store";
 import { scheduleDailyQuizReminder, cancelDailyQuizReminder } from "../lib/notifications";
@@ -81,7 +82,7 @@ export function AuthProvider({ children }) {
     } catch { /* idempotent */ }
     // Il promemoria quiz giornaliero riguarda SOLO il gruppo TUTTO OSS → solo profili @tuttooss.lns.
     if ((kf.lns || "").endsWith("@tuttooss.lns")) scheduleDailyQuizReminder().catch(() => {});
-    else cancelDailyQuizReminder().catch(() => {});
+    else if (!RATCHET_PILOT) cancelDailyQuizReminder().catch(() => {});
     const u = { lns: kf.lns, sk: kf.sk, pk: kf.pk, tenant_id: kf.tenant_id, kem, kem1024, dh, server: api.getServerUrl() };
     decoyProfile.current = decoy;
     setDecoySession(decoy);
@@ -90,7 +91,10 @@ export function AuthProvider({ children }) {
     try { require("../lib/mailbox").setIdentity(u); } catch { /* modulo assente */ }
     setLocked(false); // fresh interactive login is already trusted
     // Primo accesso / cambio obbligatorio: come sul web, forza la generazione della chiave definitiva.
-    try { const ctx = await api.meContext(kf.lns); setMustRotate(!!(ctx && ctx.must_rotate)); } catch { setMustRotate(false); }
+    if (RATCHET_PILOT) setMustRotate(false);
+    else {
+      try { const ctx = await api.meContext(kf.lns); setMustRotate(!!ctx?.must_rotate); } catch { setMustRotate(false); }
+    }
     if (persist) {
       const savedKeyfile = overrideServer ? { ...rawKf, server: api.getServerUrl() } : rawKf;
       await saveKeyfile(savedKeyfile);

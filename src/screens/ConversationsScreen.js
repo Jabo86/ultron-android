@@ -1,3 +1,4 @@
+import { hostedRatchetPilot } from "../lib/hostedRatchetChat";
 import { contactAddress, matchesContact } from "../lib/contactAddress";
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
@@ -199,9 +200,9 @@ export default function ConversationsScreen({ navigation }) {
 
   const openGroup = useCallback(async () => {
     setShowGroup(true); setGErr(""); setGName(""); setGDesc(""); setGAvatar(""); setGSel({}); setLoadingContacts(true);
-    try { const d = await api.contacts(); if (mounted.current) setContacts((Array.isArray(d) ? d : []).filter((c) => c.has_key)); }
-    catch { /* */ } finally { if (mounted.current) setLoadingContacts(false); }
-  }, []);
+    try { const d = await api.contacts(); if (mounted.current) setContacts((Array.isArray(d) ? d : []).filter((c) => c.has_key && !c.blocked && c.lns !== user?.lns)); }
+    catch (error) { if (mounted.current) { setContacts([]); setGErr(api.apiErr(error)); } } finally { if (mounted.current) setLoadingContacts(false); }
+  }, [user?.lns]);
   const toggleG = (lns) => setGSel((s) => ({ ...s, [lns]: !s[lns] }));
   const gChosen = Object.keys(gSel).filter((k) => gSel[k]);
   const pickGroupAvatar = async () => {
@@ -217,6 +218,11 @@ export default function ConversationsScreen({ navigation }) {
     try {
       const gk = generateGroupKey();
       const keyMap = await api.pulseKeys(gChosen);
+      const missing = gChosen.filter((lns) => !keyMap[lns]);
+      if (missing.length) {
+        setGErr((lang === "en" ? "Missing chat keys for " : "Chiavi chat mancanti per ") + missing.join(", "));
+        return;
+      }
       keyMap[user.lns] = bytesToHex(user.kem.publicKey);
       const members = [{ lns: user.lns, role: "admin", key_env: wrapGroupKeyFor(gk, keyMap[user.lns]) }];
       for (const lns of gChosen) { if (keyMap[lns]) members.push({ lns, role: "member", key_env: wrapGroupKeyFor(gk, keyMap[lns]) }); }
@@ -328,9 +334,9 @@ export default function ConversationsScreen({ navigation }) {
         contentContainerStyle={convs.length === 0 && booted ? { flex: 1 } : { paddingBottom: 100 }}
       />
 
-      <TouchableOpacity style={styles.fabGroup} onPress={openGroup} testID="new-group-fab">
+      {!hostedRatchetPilot(user) && <TouchableOpacity style={styles.fabGroup} onPress={openGroup} testID="new-group-fab">
         <Ionicons name="people-outline" size={24} color="#fff" />
-      </TouchableOpacity>
+      </TouchableOpacity>}
       <TouchableOpacity style={styles.fab} onPress={openNew} testID="new-chat-fab">
         <Text style={styles.fabText}>+</Text>
       </TouchableOpacity>

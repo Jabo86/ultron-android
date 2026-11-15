@@ -7,9 +7,11 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library/legacy";
 import { Asset as MLAsset } from "expo-media-library";
 import * as Sharing from "expo-sharing";
+import * as IntentLauncher from "expo-intent-launcher";
+import { withSystemActivity } from "../lib/lockGuard";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as api from "../lib/api";
-import { decryptFileBytes, bytesToBase64 } from "../lib/crypto";
+import { decryptFileBytes, bytesToBase64, sha256Hex } from "../lib/crypto";
 import * as bigatt from "../lib/bigatt";
 import { analyzeAttachment } from "../lib/threatEngine";
 import ThreatBanner from "./ThreatBanner";
@@ -36,7 +38,7 @@ function fileNameFor(att) {
   const mime = String(att?.mime || "");
   const wanted = EXT[mime] || (mime.startsWith("image/") ? ".jpg" : mime.startsWith("video/") ? ".mp4" : mime.startsWith("audio/") ? ".m4a" : "");
   let base = String(att?.name || "").replace(/[^\w.\-]/g, "_");
-  if (!base) base = "lattice_" + String(att?.id || Date.now());
+  if (!base) base = "ultron-allegato";
   if (wanted && !base.toLowerCase().endsWith(wanted)) base = base.replace(/\.[^.]*$/, "") + wanted;
   return base;
 }
@@ -51,7 +53,8 @@ export default function EncryptedAttachment({ att }) {
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [threat, setThreat] = useState(scans.get(att?.id) || null);
+  const cacheKey = sha256Hex(JSON.stringify([att?.id, att?.key, att?.iv]));
+  const [threat, setThreat] = useState(scans.get(cacheKey) || null);
   const [full, setFull] = useState(false);
   const alive = useRef(true);
 
@@ -59,12 +62,12 @@ export default function EncryptedAttachment({ att }) {
     alive.current = true;
     (async () => {
       try {
-        const path = FileSystem.cacheDirectory + "att_" + String(att.id) + "_" + fileNameFor(att);
+        const path = FileSystem.cacheDirectory + "att_" + cacheKey + "_" + fileNameFor(att);
         const info = await FileSystem.getInfoAsync(path);
-        if (info?.exists && info.size > 0 && (!att.size || info.size === att.size)) {
+        if (info?.exists && scans.has(cacheKey) && info.size > 0 && (!att.size || info.size === att.size)) {
           if (!alive.current) return;
           setUri(path); setReady(true);
-          if (scans.has(att.id)) setThreat(scans.get(att.id));
+          setThreat(scans.get(cacheKey));
           return;
         }
         // Allegato a pezzi (v2): si scarica il cifrato su file e si decifra 4 MB alla
@@ -73,7 +76,7 @@ export default function EncryptedAttachment({ att }) {
         if (bigatt.isChunked(att)) {
           const first = await bigatt.decryptToFile(att, path);
           const scan2 = analyzeAttachment({ name: att.name, mime: att.mime, bytes: first }, lang);
-          scans.set(att.id, scan2);
+          scans.set(cacheKey, scan2);
           if (!alive.current) return;
           setThreat(scan2);
           setUri(path);
@@ -84,7 +87,7 @@ export default function EncryptedAttachment({ att }) {
         const bytes = decryptFileBytes(ct, att.key, att.iv);
         if (att.size && bytes.length !== att.size) throw new Error("Allegato incompleto.");
         const scan = analyzeAttachment({ name: att.name, mime: att.mime, bytes }, lang);
-        scans.set(att.id, scan);
+        scans.set(cacheKey, scan);
         await FileSystem.writeAsStringAsync(path, bytesToBase64(bytes), { encoding: FileSystem.EncodingType.Base64 });
         if (!alive.current) return;
         setThreat(scan);
@@ -95,7 +98,7 @@ export default function EncryptedAttachment({ att }) {
       }
     })();
     return () => { alive.current = false; };
-  }, [att?.id]);
+  }, [cacheKey]);
 
   const danger = threat?.level === "danger";
 
@@ -203,7 +206,17 @@ export default function EncryptedAttachment({ att }) {
 
   const save = () => guard(doSave);
   const openFull = () => guard(() => setFull(true));
-  const openExternal = () => guard(doShare);
+  const openExternal = () => guard(async () => {
+    try {
+      const data = await FileSystem.getContentUriAsync(uri);
+      const type = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i.test(att.mime || "") ? att.mime : "application/octet-stream";
+      await withSystemActivity(() => IntentLauncher.startActivityAsync("android.intent.action.VIEW", {
+        data, type, flags: 1,
+      }));
+    } catch {
+      Alert.alert("ULTRON", en ? "No installed app could open this file." : "Nessuna app installata ha potuto aprire questo file.");
+    }
+  });
 
   if (failed) return <Text style={st.failed} testID="attachment-failed">📎 {att.name} · {en ? "decryption failed" : "decifratura fallita"}</Text>;
 
@@ -322,8 +335,8 @@ export default function EncryptedAttachment({ att }) {
 
   return (
     <View>
-      <TouchableOpacity onPress={save} disabled={!ready || saving} style={[st.fileBtn, danger && st.fileBtnDanger]} testID="attachment-file">
-        <Text style={st.fileText}>{danger ? "🚫" : "📎"} {att.name}   {saving ? "…" : (danger ? "⚠" : "⬇")}</Text>
+      <TouchableOpacity onPress={openExternal} disabled={!ready} style={[st.fileBtn, danger && st.fileBtnDanger]} testID="attachment-file">
+        <Text style={st.fileText}>{danger ? "🚫" : "📎"} {att.name} · {en ? "Open" : "Apri"}</Text>
       </TouchableOpacity>
       <TouchableOpacity onPress={() => guard(doFolder)} disabled={!ready || saving} style={st.fileBtn} testID="attachment-file-folder">
         <Text style={st.fileText}>📁 {en ? "Save in a folder" : "Salva in una cartella"}</Text>

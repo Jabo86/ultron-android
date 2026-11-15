@@ -7,8 +7,8 @@ export const AUDIT_SECTIONS = [
         "L’app crea un indirizzo ULTRON, genera o importa il file chiave e firma una richiesta di accesso del server. Il gateway riceve indirizzo, chiave pubblica e firma. Puoi scegliere un server HTTPS compatibile, che gestisce i suoi dati e le sue regole.",
         "The app creates an ULTRON address, generates or imports a keyfile and signs the server’s login challenge. The gateway receives the address, public key and signature. You can choose a compatible HTTPS server with its own data policies."],
       ["Chat, ricerca e allegati", "Chat, search and attachments", "code",
-        "Le chat individuali gestiscono testo, risposte, inoltro, audio, immagini, video e documenti. I file scelti vengono letti e cifrati sul telefono. Il gateway può conservare buste e blocchi cifrati con partecipanti, orari, dimensioni e stato di consegna. Aprire o condividere un file può creare una copia leggibile.",
-        "Direct chats handle text, replies, forwarding, audio, images, video and documents. Selected files are read and encrypted on the device. The gateway may store encrypted envelopes and chunks with participants, timestamps, sizes and delivery state. Opening or sharing may create a readable copy."],
+        "Le chat individuali gestiscono testo, risposte, inoltro, audio, immagini, video e documenti. I file scelti vengono letti e cifrati sul telefono. Il gateway può conservare buste e blocchi cifrati con partecipanti, orari, dimensioni e stato di consegna. L’anteprima usa una cache privata. Documenti e video possono essere aperti con il visualizzatore Android, che riceve l’accesso in lettura. Salvataggi e condivisioni possono lasciare copie leggibili.",
+        "Direct chats handle text, replies, forwarding, audio, images, video and documents. Selected files are read and encrypted on the device. The gateway may store encrypted envelopes and chunks with participants, timestamps, sizes and delivery state. Previews use private cache. Documents and videos may be opened in an Android viewer with read access. Saving and sharing may leave readable copies."],
       ["Stati, reazioni e visualizzazioni", "Status, reactions and views", "code",
         "Testo e foto dello stato sono cifrati per il pubblico selezionato e scadono sul gateway dopo 24 ore. Il gateway conosce autore, destinatari, visualizzazioni e reazioni. I destinatari possono conservare ciò che vedono.",
         "Status text and photos are encrypted for the selected audience and expire on the gateway after 24 hours. The gateway knows the author, audience, views and reactions. Recipients can keep copies."],
@@ -53,8 +53,8 @@ export const AUDIT_SECTIONS = [
         "Cinque PIN di sblocco errati consecutivi avviano il ripristino Android. Il contatore sopravvive alla chiusura e si azzera con un PIN valido. Il reset lascia l’APK installato. La richiesta HTTPS di cancellazione usa un gettone registrato sul gateway. Offline il reset è locale. L’indirizzo resta riservato dopo la cancellazione. Il debug USB genera al massimo un avviso.",
         "Five consecutive wrong unlock PINs trigger Android app-data reset. The counter survives restarts and clears after a valid PIN. The APK remains installed. Remote deletion uses a capability registered on the gateway over HTTPS. Offline reset is local. The address remains reserved after deletion. USB debugging can trigger a warning."],
       ["Copia cifrata della chiave", "Encrypted keyfile", "code",
-        "Registrazione, Impostazioni e consegna delle chiavi creano una copia cifrata sul telefono con AES-256-GCM e Argon2id. Serve una frase segreta di almeno 16 caratteri. I vecchi JSON restano importabili e vanno custoditi come credenziali. La cifratura delle nuove copie non modifica i file già esportati.",
-        "Sign-up, Settings and key handover create an encrypted copy on the phone with AES-256-GCM and Argon2id. Use a passphrase of at least 16 characters. Legacy JSON can still be imported and should be treated as credentials. Encryption of new exports leaves existing files as they are."],
+        "Registrazione, Impostazioni e consegna delle chiavi creano una copia cifrata sul telefono con AES-256-GCM e Argon2id. Puoi generare 12 parole sul telefono oppure scegliere una frase di almeno 16 caratteri. Per il recupero servono il file cifrato e la sua frase. I vecchi JSON restano importabili e vanno custoditi come credenziali. La cifratura delle nuove copie non modifica i file già esportati.",
+        "Sign-up, Settings and key handover create an encrypted copy on the phone with AES-256-GCM and Argon2id. Generate 12 words on the phone or choose a passphrase of at least 16 characters. Recovery requires both the encrypted file and its passphrase. Legacy JSON can still be imported and should be treated as credentials. Encryption of new exports leaves existing files as they are."],
       ["Backup cifrato", "Encrypted backup", "test",
         "Sul telefono, prima di creare il file da salvare o condividere, AES-256-GCM cifra il contenuto. Il file nasce nella cartella documenti privata dell’app. Scrypt deriva la chiave dalla frase segreta. Il PIN è supportato nel ripristino dei vecchi backup. Il test prova lettura e rifiuto della password errata.",
         "On the phone, AES-256-GCM encrypts the contents before writing the file in the app’s private documents directory. Scrypt derives the key from the passphrase. PINs remain supported for restoring old backups. The test checks decryption and wrong-password rejection."],
@@ -99,3 +99,21 @@ export const AUDIT_SECTIONS = [
     ],
   },
 ];
+
+export const PILOT_AUDIT = {
+  title: ["Edizione pilota", "Pilot edition"],
+  rows: [
+    ["Chat individuali con ratchet", "Direct chats with ratchet", "device",
+      "Il pilota usa un gateway e un archivio separati. La chat individuale richiede il QR verificato su entrambi i telefoni e un dispositivo per account. Usa prekey firmate e buste ratchet. Il gateway blocca l’invio statico. Partecipanti, orari e stato di consegna sono visibili al gateway.",
+      "The pilot uses a separate gateway and database. Direct chat requires QR verification on both phones and one device per account. Chat uses signed prekeys and ratchet envelopes. The gateway blocks static sending. The gateway can see participants, timestamps and delivery status."],
+    ["Rimozione dalla vista", "Hiding messages", "code",
+      "Puoi nascondere per te un messaggio o la cronologia della chat. Solo chi ha inviato un messaggio può nasconderlo per entrambi. Il server conserva la busta cifrata per permettere alla sessione ratchet di avanzare. L’azione lascia inalterate copie esportate, allegati salvati e backup.",
+      "You can hide a message or a conversation’s history for yourself. Only the sender can hide a message for both people. The server retains the encrypted envelope so the ratchet session can advance. This leaves exports, saved attachments and backups intact."],
+    ["Funzioni del pilota", "Pilot capabilities", "code",
+      "L’accesso è limitato al gateway di prova. La creazione di gruppi e le chiamate TURN richiedono funzioni server ulteriori. Gli aggiornamenti del pilota si installano tramite APK firmato.",
+      "Sign-in is limited to the test gateway. Group creation and TURN calls require additional server support. Pilot updates are installed from the signed APK."],
+    ["Avvisi messaggi", "Message alerts", "device",
+      "Il servizio Android chiede gli avvisi al gateway ULTRON. Per riceverli serve autorizzare questa app in Android e attivare le notifiche senza Google. Il test nelle impostazioni verifica se il server vede un dispositivo in ascolto. La consegna a schermo spento dipende anche dalle restrizioni del telefono.",
+      "The Android service polls the ULTRON gateway. Allow Android notifications for this app and enable notifications without Google. The Settings test checks whether the server sees a listening device. Lock-screen delivery also depends on device restrictions."],
+  ],
+};

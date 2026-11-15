@@ -11,6 +11,7 @@ import * as api from "./api";
 const FILE = FileSystem.documentDirectory + "wake.json";
 const RID_KEY = "lat.wake.rid";
 const ON_KEY = "lat.wake.on";
+const ASKED_KEY = "ultron.wake.permission-prompted";
 let operation = Promise.resolve();
 
 function serialize(task) {
@@ -71,12 +72,14 @@ async function revoke() {
 
 /// All'avvio dell'app: se la sveglia è attiva riallinea server e file di configurazione
 /// (per esempio dopo un cambio di server o un ripristino da backup).
-async function renew() {
+async function renew(askPermission = false) {
   const preference = await AsyncStorage.getItem(ON_KEY);
   if (preference === "0") return false;
+  const { requestNotificationPermission } = require("./notifications");
+  const requested = askPermission && preference === null && !(await AsyncStorage.getItem(ASKED_KEY));
+  if (requested) await AsyncStorage.setItem(ASKED_KEY, "1");
+  if (!(await requestNotificationPermission({ askPermission: requested }))) return false;
   if (preference === null) {
-    const { requestNotificationPermission } = require("./notifications");
-    if (!(await requestNotificationPermission({ askPermission: false }))) return false;
     await register();
     return true;
   }
@@ -91,4 +94,4 @@ async function renew() {
 export const applyChaff = () => serialize(writeChaff);
 export const enable = () => serialize(register);
 export const disable = () => serialize(revoke);
-export const refresh = () => serialize(renew);
+export const refresh = (askPermission = false) => serialize(() => renew(askPermission));

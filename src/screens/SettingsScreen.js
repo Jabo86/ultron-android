@@ -23,7 +23,7 @@ import { checkAndPrepare, UpdateProgress } from "../components/UpdateBanner";
 import KeyfileExport from "../components/KeyfileExport";
 import * as wake from "../lib/wake";
 import * as api from "../lib/api";
-import { DEFAULT_SERVER } from "../config";
+import { DEFAULT_SERVER, RATCHET_PILOT } from "../config";
 import { isDeviceSecure, authenticate } from "../lib/biometrics";
 import { requestNotificationPermission, scheduleDailyQuizReminder, loadReminderTimes } from "../lib/notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -57,7 +57,7 @@ export default function SettingsScreen({ navigation }) {
   const { user, signOut, lock } = useAuth();
   const isOss = (user?.lns || "").endsWith("@tuttooss.lns");
   const isOwner = canaryIsOwner(user);
-  const hostedCalls = api.getServerUrl() === DEFAULT_SERVER;
+  const hostedCalls = !RATCHET_PILOT && api.getServerUrl() === DEFAULT_SERVER;
   const [callDirect, setCallDirect] = useState(false);
   const [relayStatus, setRelayStatus] = useState("checking");
   const [chaff, setChaff] = useState(true);
@@ -72,7 +72,9 @@ export default function SettingsScreen({ navigation }) {
     setUpBusy(true); setUpMsg(en ? "Checking for updates…" : "Controllo aggiornamenti…");
     try {
       if (!updatesConfigured) {
-        setUpMsg(en ? "This test build needs the official version installed first." : "Questa build di prova richiede prima l’installazione della versione ufficiale.");
+        setUpMsg(RATCHET_PILOT
+          ? (en ? "Get the next signed APK from the pilot release." : "Scarica il prossimo APK firmato dalla release del pilota.")
+          : (en ? "This build cannot check for updates." : "Questa build non può controllare gli aggiornamenti."));
         return;
       }
       const release = await checkAndPrepare((value, phase) => setUpProgress({ value, phase }));
@@ -740,6 +742,9 @@ export default function SettingsScreen({ navigation }) {
 
       <View style={styles.shieldBox} testID="settings-privacy">
         <Text style={styles.shieldTitle}>{en ? "Privacy and transparency" : "Privacy e trasparenza"}</Text>
+        {RATCHET_PILOT && <Text style={styles.shieldDesc}>{en
+          ? "Pilot: direct ratchet chats with verified QR, one phone per account. Groups are unavailable here. Hiding a message removes it from the interface, and the server retains the encrypted envelope."
+          : "Pilota: chat individuali con ratchet e QR verificato, un telefono per account. I gruppi non sono disponibili qui. Nascondere un messaggio lo toglie dalla vista e il server conserva la busta cifrata."}</Text>}
         {PRIVACY_SUMMARY[en ? "en" : "it"].map((paragraph) => (
           <Text key={paragraph} style={styles.shieldDesc}>{paragraph}</Text>
         ))}

@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useI18n } from "../lib/i18n";
-import { AUDIT_SECTIONS } from "../lib/auditEntries";
+import { RATCHET_PILOT } from "../config";
+import { AUDIT_SECTIONS, PILOT_AUDIT } from "../lib/auditEntries";
 import { checkBackupEncryption, checkShield } from "../lib/securityAudit";
 import { theme } from "../theme";
 
@@ -47,9 +48,9 @@ export default function SecurityScreen({ navigation }) {
       <Text style={s.link}>{busy ? (it ? "Test in corso…" : "Testing…") : (it ? "Esegui test locali" : "Run local tests")}</Text>
     </Pressable>
     {!!result && <Text accessibilityLiveRegion="polite" style={s.description} testID="security-local-results">{result}</Text>}
-    {AUDIT_SECTIONS.map(({ title, rows }) => <View key={title[0]} style={s.section}>
+    {(RATCHET_PILOT ? [PILOT_AUDIT, ...AUDIT_SECTIONS] : AUDIT_SECTIONS).map(({ title, rows }) => <View key={title[0]} style={s.section}>
       <Text style={s.heading}>{title[it ? 0 : 1]}</Text>
-      {rows.map(([name, english, status, description, translated]) => <View key={name} style={s.card}>
+      {rows.filter(([name]) => !RATCHET_PILOT || !["Account e server personale", "Chiavi chat firmate"].includes(name)).map(([name, english, status, description, translated]) => <View key={name} style={s.card}>
         <Text style={s.item}>{it ? name : english}</Text>
         <Text style={s.status}>{labels[status]}</Text>
         <Text style={s.description}>{it ? description : translated}</Text>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator,
+  Alert, View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator,
   ScrollView, Switch, KeyboardAvoidingView, Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -121,12 +121,18 @@ export default function SignupScreen({ navigation, route }) {
           </View>
         )}
         {!!err && <Text style={styles.err} testID="signup-error">{err}</Text>}
-        <TouchableOpacity style={[styles.primaryBtn, !saved && styles.btnDim]} onPress={enter} disabled={!saved || busy} testID="signup-enter">
+        <TouchableOpacity style={[styles.primaryBtn, busy && styles.btnDim]} onPress={() => {
+          if (saved) { enter(); return; }
+          Alert.alert(it ? "Continuare senza copia?" : "Continue without a copy?",
+            it ? "Se perdi il telefono prima di esportare la chiave da Impostazioni, puoi perdere l’accesso all’account." : "If you lose the phone before exporting the key in Settings, you can lose access to the account.",
+            [{ text: it ? "Annulla" : "Cancel", style: "cancel" },
+              { text: it ? "Continua" : "Continue", onPress: enter }]);
+        }} disabled={busy} testID="signup-enter">
           {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnTxt}>{it ? "Entra in ULTRON" : "Enter ULTRON"}</Text>}
         </TouchableOpacity>
         {showKeyExport && <KeyfileExport keyfile={created.keyfile} english={!it}
           onClose={() => setShowKeyExport(false)} onShared={() => { setSaved(true); setShowKeyExport(false); }} />}
-        {!saved && <Text style={styles.hintCenter}>{it ? "Salva prima il file chiave per continuare." : "Save the keyfile first to continue."}</Text>}
+        {!saved && <Text style={styles.hintCenter}>{it ? "Puoi salvare il file chiave anche dopo, dalle Impostazioni." : "You can save the keyfile later in Settings."}</Text>}
 
       </ScrollView>
     );
