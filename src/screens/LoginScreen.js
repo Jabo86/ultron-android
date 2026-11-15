@@ -13,6 +13,7 @@ import * as api from "../lib/api";
 import { loadPreferredServer, loadServer } from "../lib/store";
 import { RATCHET_PILOT } from "../config";
 import { recoveryKeyfile } from "../lib/recoveryPhrase";
+import RecoveryWordGrid, { emptyRecoveryWords } from "../components/RecoveryWordGrid";
 import { theme } from "../theme";
 
 export default function LoginScreen({ navigation }) {
@@ -26,7 +27,7 @@ export default function LoginScreen({ navigation }) {
   const [password, setPassword] = useState("");
   const [showRecovery, setShowRecovery] = useState(false);
   const [recoveryUser, setRecoveryUser] = useState("");
-  const [recoveryWords, setRecoveryWords] = useState("");
+  const [recoveryWords, setRecoveryWords] = useState(emptyRecoveryWords);
   const en = lang === "en";
   const [showServer, setShowServer] = useState(false);
   const [server, setServer] = useState(api.getServerUrl());
@@ -102,11 +103,11 @@ export default function LoginScreen({ navigation }) {
   };
 
   const recover = async () => {
-    if (busy) return;
+    if (busy || recoveryWords.some(word => !word)) return;
     try {
       const target = api.personalServerUrl(server);
-      const keyfile = recoveryKeyfile(recoveryUser, target, recoveryWords);
-      setRecoveryWords("");
+      const keyfile = recoveryKeyfile(recoveryUser, target, recoveryWords.join(" "));
+      setRecoveryWords(emptyRecoveryWords());
       await doSignIn(keyfile);
     } catch {
       setErr(en ? "Check the account name, server and 12 words." : "Controlla il nome utente, il server e le 12 parole.");
@@ -145,17 +146,16 @@ export default function LoginScreen({ navigation }) {
 
         {RATCHET_PILOT && <>
           <TouchableOpacity style={styles.secondaryBtn} disabled={busy}
-            onPress={() => { setShowRecovery((value) => !value); setRecoveryWords(""); }}>
+            onPress={() => { setShowRecovery((value) => !value); setRecoveryWords(emptyRecoveryWords()); }}>
             <Text style={styles.secondaryBtnText}>{en ? "Sign in with 12 words" : "Accedi con 12 parole"}</Text>
           </TouchableOpacity>
           {showRecovery && <View style={{ width: "100%" }}>
             <TextInput style={styles.serverInput} value={recoveryUser} onChangeText={setRecoveryUser}
               autoCapitalize="none" autoCorrect={false} maxLength={43}
               placeholder={en ? "ULTRON username" : "Nome utente ULTRON"} placeholderTextColor={theme.textFaint} />
-            <TextInput style={styles.serverInput} value={recoveryWords} onChangeText={setRecoveryWords}
-              autoCapitalize="none" autoCorrect={false} secureTextEntry maxLength={MAX_KEY_PASSWORD}
-              placeholder={en ? "12 words in order" : "12 parole in ordine"} placeholderTextColor={theme.textFaint} />
-            <TouchableOpacity style={styles.secondaryBtn} onPress={recover} disabled={busy || !recoveryWords}>
+            <RecoveryWordGrid words={recoveryWords} onChange={setRecoveryWords}
+              onSubmit={recover} editable={!busy} italian={!en} />
+            <TouchableOpacity style={styles.secondaryBtn} onPress={recover} disabled={busy || recoveryWords.some(word => !word)}>
               <Text style={styles.secondaryBtnText}>{t("login.signin")}</Text>
             </TouchableOpacity>
           </View>}

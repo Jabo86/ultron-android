@@ -11,6 +11,7 @@ import { useI18n } from "../lib/i18n";
 import * as api from "../lib/api";
 import { RATCHET_PILOT } from "../config";
 import { generateRecoveryPhrase, recoveryKeyfile } from "../lib/recoveryPhrase";
+import RecoveryWordGrid from "../components/RecoveryWordGrid";
 import { keygen, signMessage } from "../lib/crypto";
 import { saveAppLock } from "../lib/store";
 import { isDeviceSecure } from "../lib/biometrics";
@@ -112,7 +113,7 @@ export default function SignupScreen({ navigation, route }) {
       <ScrollView style={styles.root} contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 24 }]}>
         <Text style={styles.title}>{it ? "Le tue 12 parole" : "Your 12 words"}</Text>
         <Text style={styles.lnsBig}>{username}@{DOMAIN}</Text>
-        <Text style={styles.warnTxt}>{reviewPhrase}</Text>
+        <RecoveryWordGrid words={reviewPhrase.split(" ")} italian={it} />
         <Text style={styles.sub}>{it
           ? "Annota le parole in ordine. Per rientrare dopo «Esci» servono queste parole, il tuo nome utente e lo stesso server. Chi conosce le parole può accedere al tuo account."
           : "Write the words down in order. To sign in after signing out, use these words, your username and the same server. Anyone with these words can access your account."}</Text>
