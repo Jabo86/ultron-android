@@ -155,7 +155,7 @@ class WakeService : Service() {
   private fun notifyCall(rid: String) {
     try {
       val nm = getSystemService(NotificationManager::class.java)
-      incomingCall = rid to (SystemClock.elapsedRealtime() + 35_000L)
+      incomingCall = rid to (SystemClock.elapsedRealtime() + 60_000L)
       val intent = Intent(this, IncomingCallActivity::class.java)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         .putExtra(CALL_RID, rid)
@@ -169,7 +169,7 @@ class WakeService : Service() {
         .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
         .setPriority(NotificationCompat.PRIORITY_MAX)
         .setAutoCancel(true)
-        .setTimeoutAfter(35_000L)
+        .setTimeoutAfter(60_000L)
         .setContentIntent(open)
       if (Build.VERSION.SDK_INT < 34 || nm.canUseFullScreenIntent()) {
         call.setFullScreenIntent(open, true)

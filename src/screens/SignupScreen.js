@@ -9,7 +9,7 @@ import KeyfileExport from "../components/KeyfileExport";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../lib/i18n";
 import * as api from "../lib/api";
-import { RATCHET_PILOT } from "../config";
+import { DEFAULT_SERVER, RATCHET_PILOT } from "../config";
 import { generateRecoveryPhrase, recoveryKeyfile } from "../lib/recoveryPhrase";
 import RecoveryWordGrid from "../components/RecoveryWordGrid";
 import { keygen, signMessage } from "../lib/crypto";
@@ -184,7 +184,7 @@ export default function SignupScreen({ navigation, route }) {
         </TouchableOpacity>
 
         <Text style={styles.title}>{it ? "Crea il tuo account personale" : "Create your personal account"}</Text>
-        <Text style={styles.hint}>{server}</Text>
+        <Text style={styles.hint}>{server === DEFAULT_SERVER ? "Gateway ULTRON" : server}</Text>
         {signupUnavailable && <Text accessibilityLiveRegion="polite" style={styles.err}>
           {it ? "La registrazione non è disponibile su questo server. Puoi riprovare dopo l’aggiornamento del server o tornare all’accesso e scegliere un altro indirizzo."
             : "Registration is unavailable on this server. Try again after the server update, or go back to sign-in and choose another address."}

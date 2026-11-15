@@ -15,6 +15,7 @@ import { suppressLock } from "../lib/lockGuard";
 import { ensureCallPermissions } from "../lib/callPerms";
 import { saveVerifiedSas, loadVerifiedSas } from "../lib/store";
 import { loadRingtone, loadRingVolume, loadVibMode } from "../lib/store";
+const RING_TIMEOUT_MS = 60_000;
 const VIB_PATTERNS = { standard: [0, 700, 900, 700], short: [0, 400, 300, 400], long: [0, 1200, 600, 1200] };
 const RINGTONES = { classic: require("../../assets/ringtone.wav"), chime: require("../../assets/ring_chime.wav"), beep: require("../../assets/ring_beep.wav"), digital: require("../../assets/ring_digital.wav"), marimba: require("../../assets/ring_marimba.wav"), pulse: require("../../assets/ring_pulse.wav") };
 import { DEFAULT_SERVER, iceConfig } from "../config";
@@ -44,7 +45,7 @@ export default function CallScreen({ route, navigation }) {
   const to = (route.params?.to || "").toLowerCase();
   const peerName = (route.params?.to_name || route.params?.from || route.params?.to || "").split("@")[0];
 
-  const [status, setStatus] = useState(incoming ? "answering" : "calling");
+  const [status, setStatus] = useState(incoming ? "answering" : "starting");
   const [video, setVideo] = useState(false);
   const [held, setHeld] = useState(false);
   const [warn, setWarn] = useState("");
@@ -65,6 +66,8 @@ export default function CallScreen({ route, navigation }) {
   const setupComplete = useRef(false);
   const remoteSet = useRef(false);
   const ended = useRef(false);
+  const unansweredTimer = useRef(null);
+  const incomingFallbackDeadline = useRef(Date.now() + RING_TIMEOUT_MS);
   const pushResolved = useRef(false);
   const fromPush = !!route.params?.fromPush;
   // Signaling anonimo
@@ -99,30 +102,37 @@ export default function CallScreen({ route, navigation }) {
       try { if (!systemRing) { ring.loop = true; ring.seekTo(0); ring.play(); } } catch {}
     })();
     try { if (vibMode !== "off") Vibration.vibrate(VIB_PATTERNS[vibMode] || VIB_PATTERNS.standard, true); } catch {}
-    const t = setTimeout(() => { if (alive) { logMissedIn(); dismiss(); } }, 30000);
+    const expires = route.params?.expires_at ?? pushInv?.expires_at;
+    const deadline = Number.isSafeInteger(expires) ? Math.min(expires, incomingFallbackDeadline.current) : incomingFallbackDeadline.current;
+    const t = setTimeout(() => { if (alive) { logMissedIn(); dismiss(false); } }, Math.max(0, deadline - Date.now()));
     return () => { alive = false; try { ring.pause(); } catch {} try { Vibration.cancel(); } catch {} clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [incoming, accepted, systemRing]);
+  }, [incoming, accepted, systemRing, pushInv, route.params?.expires_at]);
 
   const stopRing = useCallback(() => { try { ring.pause(); } catch {} try { Vibration.cancel(); } catch {} }, [ring]);
 
-  // Tono di libero per CHI CHIAMA: prima non si sentiva nulla mentre squillava.
   const ringback = useAudioPlayer(RINGTONES.pulse);
   useEffect(() => {
     if (incoming || status !== "calling" || ended.current) return;
     let alive = true;
     (async () => {
-      try { await setAudioModeAsync({ playsInSilentMode: true }); } catch {}
-      if (!alive) return;
-      try { ringback.volume = 0.5; ringback.loop = true; ringback.seekTo(0); ringback.play(); } catch {}
+      if (await telecom.startRingback() || !alive || ended.current) return;
+      try {
+        await setAudioModeAsync({ playsInSilentMode: true });
+        if (!alive || ended.current) return;
+        ringback.volume = 0.8;
+        ringback.loop = true;
+        ringback.seekTo(0);
+        ringback.play();
+      } catch {}
     })();
-    return () => { alive = false; try { ringback.pause(); } catch {} };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [incoming, status]);
+    return () => { alive = false; telecom.stopRingback(); try { ringback.pause(); } catch {} };
+  }, [incoming, status, ringback]);
 
   const cleanup = useCallback(() => {
     if (ended.current) return;
     ended.current = true;
+    clearTimeout(unansweredTimer.current);
     try { pc.current?.close(); } catch {}
     pc.current = null;
     for (const track of streamRef.current?.getTracks() || []) {
@@ -132,18 +142,23 @@ export default function CallScreen({ route, navigation }) {
     telecom.end();
   }, []);
 
-  const finish = useCallback((sendBye = true) => {
+  const finish = useCallback((sendBye = true, reason, notice) => {
     if (ended.current) return;
     const channel = chan.current;
     stopRing();
+    telecom.stopRingback();
     try { ringback.pause(); } catch {}
     cleanup();
     if (sendBye && channel) {
-      const send = () => api.anonPut(channel, "bye", { t: Date.now() }, { timeout: 3000 });
+      const send = () => api.anonPut(channel, "bye", { t: Date.now(), ...(reason ? { reason } : {}) }, { timeout: 3000 });
       send().catch(() => send()).catch(() => {});
     }
-    if (navigation.isFocused()) navigation.goBack();
-  }, [cleanup, navigation, ringback, stopRing]);
+    if (navigation.isFocused()) {
+      navigation.goBack();
+      if (notice === "declined") Alert.alert(lang === "en" ? "Call declined" : "Chiamata rifiutata");
+      if (notice === "unanswered") Alert.alert(lang === "en" ? "No answer" : "Nessuna risposta");
+    }
+  }, [cleanup, navigation, ringback, stopRing, lang]);
 
   useEffect(() => () => {
     if (ended.current) return;
@@ -157,7 +172,7 @@ export default function CallScreen({ route, navigation }) {
     suppressLock(); stopRing(); setAccepted(true);
   }, [stopRing]);
   const dismiss = finish;
-  const reject = finish;
+  const reject = useCallback(() => finish(true, "declined"), [finish]);
   const hangup = finish;
 
   // Aperta dal PUSH: recupera l'offerta E2EE reale dal rendezvous anonimo (il push non la trasporta).
@@ -191,7 +206,7 @@ export default function CallScreen({ route, navigation }) {
     if (route.params?.offer || pushInv) { autoAnswered.current = true; accept(); }
   }, [pushInv, accepted, accept]);
 
-  // Rifiuto dalla notifica: avvisa il chiamante (bye) appena il canale rendezvous e' pronto, poi esce.
+  // Invia il rifiuto appena il canale di segnalazione è disponibile.
   const declined = useRef(false);
   useEffect(() => {
     if (declined.current || !route.params?.decline || ended.current) return;
@@ -315,7 +330,8 @@ export default function CallScreen({ route, navigation }) {
           const offer = { type: offer0.type, sdp: tuneSdp(offer0.sdp) };
           await pc.current.setLocalDescription(new RTCSessionDescription(offer));
           const sig = user?.sk ? signMessage(offer.sdp, user.sk) : "";
-          const invite = { from: myLns, from_pk: myPk, from_kem: myKem, video: false, chan: chan.current, offer: { type: offer.type, sdp: offer.sdp }, offer_sig: sig };
+          const deadline = Date.now() + RING_TIMEOUT_MS;
+          const invite = { expires_at: deadline, from: myLns, from_pk: myPk, from_kem: myKem, video: false, chan: chan.current, offer: { type: offer.type, sdp: offer.sdp }, offer_sig: sig };
           const ping = sealInvite(invite, calleeKem);
           const shared = anonSharedSecret(user.dh.secretKey, calleeDh);
           const rid = discRid(shared, myLns, to, anonEpoch());
@@ -342,7 +358,9 @@ export default function CallScreen({ route, navigation }) {
           }).catch(() => {});
           addCallLog({ call_id: chan.current, peer: to, direction: "out", video: !!video, created_at: new Date().toISOString(), answered_at: "", ended_at: "" });
           setStatus("calling");
-          setTimeout(() => { if (!ended.current && !remoteSet.current) { try { hangup(); } catch {} } }, 35000);
+          unansweredTimer.current = setTimeout(() => {
+            if (!ended.current && !remoteSet.current) finish(true, undefined, "unanswered");
+          }, Math.max(0, deadline - Date.now()));
         } else {
           // RICEVENTE: applica l'offer ricevuto (verifica firma), crea l'answer cifrato verso il chiamante.
           const off = route.params?.offer || pushInv?.offer;
@@ -390,7 +408,10 @@ export default function CallScreen({ route, navigation }) {
       try {
         const signal = await api.anonGet(channel, iceCFrom.current, iceEFrom.current, { timeout: 3500 });
         if (!alive || ended.current || !signal?.found) return;
-        if (signal.bye) { finish(false); return; }
+        if (signal.bye) {
+          finish(false, undefined, !incoming && !remoteSet.current && signal.reason === "declined" ? "declined" : undefined);
+          return;
+        }
         const connection = pc.current;
         if (!setupComplete.current || !connection) return;
         if (!incoming && !remoteSet.current && signal.answer) {
@@ -409,6 +430,8 @@ export default function CallScreen({ route, navigation }) {
               setStatus("error");
               return;
             }
+            clearTimeout(unansweredTimer.current);
+            setStatus("answering");
             await connection.setRemoteDescription(new RTCSessionDescription(answer.answer));
             if (!alive || ended.current) return;
             remoteSet.current = true;
@@ -454,11 +477,11 @@ export default function CallScreen({ route, navigation }) {
         setHeld(false);
         try { localStream?.getAudioTracks?.().forEach((t) => { t.enabled = !muted; }); } catch { /* niente */ }
       } else if (action === "reject" || action === "end") {
-        try { hangup(); } catch { /* niente */ }
+        try { if (action === "reject" && incoming && !accepted) reject(); else hangup(); } catch { /* niente */ }
       }
     });
     return off;
-  }, [localStream, muted, hangup]);
+  }, [localStream, muted, hangup, reject, incoming, accepted]);
 
   // A chiamata connessa lo si dice al sistema: da quel momento la nostra e' la chiamata
   // "attiva" del telefono e ha la priorita sull'audio.
@@ -466,7 +489,8 @@ export default function CallScreen({ route, navigation }) {
     if (status === "connected") { telecom.setActive(); }
   }, [status]);
 
-  const statusLabel = status === "calling" ? (lang === "en" ? "Calling…" : "Chiamata in corso…")
+  const statusLabel = status === "starting" ? (lang === "en" ? "Preparing call…" : "Avvio chiamata…")
+    : status === "calling" ? (lang === "en" ? "Calling…" : "Chiamata in corso…")
     : status === "answering" ? (lang === "en" ? "Connecting…" : "Connessione…")
     : status === "connected" ? (lang === "en" ? "Connected" : "Connesso")
     : status === "error" ? (lang === "en" ? "Call failed" : "Chiamata non riuscita") : status;

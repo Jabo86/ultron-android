@@ -379,7 +379,7 @@ export default function SettingsScreen({ navigation }) {
           <div><b>${L.proto}</b> ${protocol}</div>
           <div><b>${L.issued}:</b> ${now}</div>
           <div><b>${L.subject}:</b> ${escapeHtml(user?.lns || "—")}</div>
-          <div><b>${L.controller}:</b> ${escapeHtml(base)}</div>
+          <div><b>${L.controller}:</b> ${escapeHtml(base === DEFAULT_SERVER ? "Gateway ULTRON" : base)}</div>
         </div>
         <h2>${L.secTitle}</h2><ul>${li(L.sec)}</ul>
         <h2>${L.privTitle}</h2><ul>${li(L.priv)}</ul>
@@ -460,7 +460,7 @@ export default function SettingsScreen({ navigation }) {
         <View style={styles.divider} />
         <Row icon="finger-print" label={t("settings.identity")} hint={user?.lns} testID="settings-identity" />
         <View style={styles.divider} />
-        <Row icon="server-outline" label={t("settings.server")} hint={base} testID="settings-server" />
+        <Row icon="server-outline" label={t("settings.server")} hint={base === DEFAULT_SERVER ? "Gateway ULTRON" : base} testID="settings-server" />
         <View style={styles.divider} />
         <Row icon="link-outline" label={en ? "Connect a personal server" : "Collega un server personale"}
           onPress={() => setShowServer((value) => !value)} testID="settings-connect-server" />
@@ -468,7 +468,7 @@ export default function SettingsScreen({ navigation }) {
           <Text style={styles.infoText}>{en
             ? "Enter the HTTPS address of your ULTRON server. Use a key file issued by that server or create an account if it supports registration."
             : "Inserisci l’indirizzo HTTPS del tuo server ULTRON. Usa un file chiave emesso da quel server o crea un account se la registrazione è disponibile."}</Text>
-          <TextInput style={styles.serverInput} value={server} onChangeText={setServer} editable={!serverBusy}
+          <TextInput style={styles.serverInput} value={server === DEFAULT_SERVER ? "" : server} onChangeText={setServer} editable={!serverBusy}
             autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://messaggi.example.org"
             placeholderTextColor={theme.textFaint} testID="settings-server-url" />
           <TouchableOpacity style={styles.updBtn} onPress={saveNextServer} disabled={serverBusy}

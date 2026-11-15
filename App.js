@@ -291,7 +291,7 @@ function Root() {
         activeCall.current = call.chan;
         navRef.navigate("Call", { incoming: true, chan: call.chan, from: call.from,
           from_pk: call.from_pk, from_kem: call.from_kem, offer: call.offer, offer_sig: call.offer_sig,
-          autoAnswer: action.answer === true });
+          expires_at: call.expires_at, autoAnswer: action.answer === true });
       } catch { /* expired invite or unavailable connection */ }
       finally { busy = false; }
     };
@@ -359,7 +359,7 @@ function Root() {
         if (!inv || stopped || RNAppState.currentState !== "active"
             || navRef.getCurrentRoute()?.name === "Call") return;
         activeCall.current = inv.chan;
-        navRef.navigate("Call", { incoming: true, anon: true, chan: inv.chan, from: inv.from, from_pk: inv.from_pk, from_kem: inv.from_kem, video: !!inv.video, offer: inv.offer, offer_sig: inv.offer_sig });
+        navRef.navigate("Call", { incoming: true, anon: true, expires_at: inv.expires_at, chan: inv.chan, from: inv.from, from_pk: inv.from_pk, from_kem: inv.from_kem, video: !!inv.video, offer: inv.offer, offer_sig: inv.offer_sig });
       } catch {} finally { busy = false; }
     };
     tick();

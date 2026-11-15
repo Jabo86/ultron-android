@@ -11,7 +11,7 @@ import { useI18n } from "../lib/i18n";
 import { UI_LANGS } from "../lib/locales";
 import * as api from "../lib/api";
 import { loadPreferredServer, loadServer } from "../lib/store";
-import { RATCHET_PILOT } from "../config";
+import { DEFAULT_SERVER, RATCHET_PILOT } from "../config";
 import { recoveryKeyfile } from "../lib/recoveryPhrase";
 import RecoveryWordGrid, { emptyRecoveryWords } from "../components/RecoveryWordGrid";
 import { theme } from "../theme";
@@ -214,7 +214,7 @@ export default function LoginScreen({ navigation }) {
               style={styles.serverInput}
               placeholder="https://server.tuazienda.it"
               placeholderTextColor={theme.textFaint}
-              value={server}
+              value={server === DEFAULT_SERVER ? "" : server}
               onChangeText={(tx) => { setServer(tx); setCustomServer(true); }}
               autoCapitalize="none" autoCorrect={false} keyboardType="url"
               testID="login-server-input"
@@ -225,7 +225,7 @@ export default function LoginScreen({ navigation }) {
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>🔒 NIST FIPS 203/204 · Post-Quantum E2EE</Text>
-          <Text style={styles.footerServer} numberOfLines={1}>{server}</Text>
+          <Text style={styles.footerServer} numberOfLines={1}>{server === DEFAULT_SERVER ? "Gateway ULTRON" : server}</Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

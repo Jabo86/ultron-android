@@ -36,6 +36,8 @@ export const available = () => call("available");
 export const register = () => call("register");
 export const setActive = () => call("setActive");
 export const end = () => call("end");
+export const startRingback = () => call("startRingback");
+export const stopRingback = () => call("stopRingback");
 export const state = async () => {
   if (!N) return "none";
   try { return await N.state(); } catch { return "none"; }

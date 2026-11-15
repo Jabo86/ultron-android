@@ -3,9 +3,13 @@ package com.ultron.messenger
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.telecom.Connection
 import android.telecom.DisconnectCause
 import android.telecom.TelecomManager
@@ -25,6 +29,56 @@ class CallControlModule(private val ctx: ReactApplicationContext) : ReactContext
   override fun getName() = "LatticeCallControl"
 
   init { react = ctx }
+
+  private val audioHandler = Handler(Looper.getMainLooper())
+  private var ringback: ToneGenerator? = null
+  private val ringbackTick = object : Runnable {
+    override fun run() {
+      val tone = ringback ?: return
+      try {
+        tone.startTone(ToneGenerator.TONE_SUP_RINGTONE, 1000)
+        audioHandler.postDelayed(this, 4000)
+      } catch (e: RuntimeException) { clearRingback() }
+    }
+  }
+
+  private fun clearRingback() {
+    audioHandler.removeCallbacks(ringbackTick)
+    ringback?.release()
+    ringback = null
+  }
+
+  @ReactMethod
+  fun startRingback(promise: Promise) {
+    audioHandler.post {
+      clearRingback()
+      try {
+        val tone = ToneGenerator(AudioManager.STREAM_VOICE_CALL, 80)
+        ringback = tone
+        if (!tone.startTone(ToneGenerator.TONE_SUP_RINGTONE, 1000)) {
+          clearRingback()
+          promise.resolve(false)
+        } else {
+          audioHandler.postDelayed(ringbackTick, 4000)
+          promise.resolve(true)
+        }
+      } catch (e: RuntimeException) {
+        clearRingback()
+        promise.resolve(false)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun stopRingback(promise: Promise) {
+    audioHandler.post { clearRingback(); promise.resolve(true) }
+  }
+
+  override fun invalidate() {
+    audioHandler.post { clearRingback() }
+    super.invalidate()
+  }
+
 
   @ReactMethod
   fun available(promise: Promise) {
@@ -77,6 +131,7 @@ class CallControlModule(private val ctx: ReactApplicationContext) : ReactContext
 
   @ReactMethod
   fun end(promise: Promise) {
+    audioHandler.post { clearRingback() }
     try {
       val c = UltronConnectionService.current
       c?.setDisconnected(DisconnectCause(DisconnectCause.LOCAL))
