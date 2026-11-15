@@ -57,7 +57,7 @@ export default function SettingsScreen({ navigation }) {
   const { user, signOut, lock } = useAuth();
   const isOss = (user?.lns || "").endsWith("@tuttooss.lns");
   const isOwner = canaryIsOwner(user);
-  const hostedCalls = !RATCHET_PILOT && api.getServerUrl() === DEFAULT_SERVER;
+  const hostedCalls = api.getServerUrl() === DEFAULT_SERVER;
   const [callDirect, setCallDirect] = useState(false);
   const [relayStatus, setRelayStatus] = useState("checking");
   const [chaff, setChaff] = useState(true);

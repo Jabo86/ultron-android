@@ -145,11 +145,16 @@ export default function VerifyContactScreen({ route, navigation }) {
   };
 
   const onScanFail = (why) => {
+    if (why === "scanner") {
+      Alert.alert(en ? "Scanner unavailable" : "Scanner non disponibile",
+        en ? "Try the camera again or paste the code." : "Riprova con la fotocamera oppure incolla il codice.");
+      return;
+    }
     Alert.alert(
       why === "perm" ? (en ? "Camera permission denied" : "Permesso fotocamera negato") : (en ? "No code found" : "Nessun codice trovato"),
       why === "perm"
         ? (en ? "Allow the camera, or paste the code as text." : "Consenti la fotocamera, oppure incolla il codice come testo.")
-        : (en ? "Frame the QR on the other phone filling the picture, with good light." : "Inquadra il QR dell'altro telefono riempiendo la foto, con buona luce."),
+        : (en ? "Frame the QR on the other phone with good light." : "Inquadra il QR dell'altro telefono con buona luce."),
     );
   };
 
