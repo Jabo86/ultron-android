@@ -48,6 +48,7 @@ export async function uploadFileChunked({ uri, name, mime, size, allowed, onProg
   const key = rand(32);
   const iv = rand(12);
   const n = Math.max(1, Math.ceil(total / ATT_CHUNK));
+  const generation = await api.pilotAttachmentGeneration(allowed);
   const { upload_id } = await api.blobInit();
   const h = src.open(FileMode.ReadOnly);
   try {
@@ -58,7 +59,7 @@ export async function uploadFileChunked({ uri, name, mime, size, allowed, onProg
       onProgress?.((i + 1) / n);
     }
   } finally { try { h.close(); } catch { /* niente */ } }
-  const { id } = await api.blobFinalize(upload_id, allowed);
+  const { id } = await api.blobFinalize(upload_id, allowed, generation);
   return {
     id, name, mime: mime || "application/octet-stream", size: total,
     key: bytesToHex(key), iv: bytesToHex(iv), cs: ATT_CHUNK, n,

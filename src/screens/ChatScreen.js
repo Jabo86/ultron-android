@@ -44,6 +44,7 @@ import { archiveForConv } from "../lib/backup";
 import { usePoll } from "../lib/usePoll";
 import * as msgCache from "../lib/msgCache";
 import * as convCache from "../lib/convCache";
+import { checkPilotChat, deletePilotChat } from "../lib/pilotChatPurge";
 import { flushBlobs } from "../lib/lock";
 import { exportConversation } from "../lib/legalExport";
 import { useTint } from "../lib/appearance";
@@ -236,14 +237,37 @@ export default function ChatScreen({ route, navigation }) {
   }, [navigation, title, convId, others, exporting, onExport, vfy, user, lang]);
 
   const pilot = hostedRatchetPilot(user);
+  const deletingChat = useRef(false);
+  const deletionRevision = useRef(0);
+  const shownGeneration = useRef(null);
+  const peer = others.length === 1 ? others[0] : null;
   const onDeleteChat = () => {
-    if (!convId) return;
-    Alert.alert(pilot ? (lang === "en" ? "Hide chat?" : "Nascondere la chat?") : t("chat.deleteChat.title"),
-      pilot ? (lang === "en" ? "It will disappear from your list. New messages can bring it back." : "Sparirà dalla tua lista. I nuovi messaggi possono farla ricomparire.") : t("chat.deleteChat.text"), [
+    if (!convId || deletingChat.current || (pilot && !peer)) return;
+    Alert.alert(pilot ? (lang === "en" ? "Permanently delete this chat?" : "Eliminare la chat definitivamente?") : t("chat.deleteChat.title"),
+      pilot ? (lang === "en"
+        ? "Delete the history and its attachments from the gateway for both participants. A new message starts an empty chat. Copies saved or exported outside ULTRON stay on those devices."
+        : "Elimina la cronologia e gli allegati dal gateway per entrambi. Un nuovo messaggio aprirà una chat vuota. Le copie salvate o esportate fuori da ULTRON restano sui dispositivi.")
+        : t("chat.deleteChat.text"), [
       { text: t("cancel"), style: "cancel" },
-      { text: pilot ? (lang === "en" ? "Hide" : "Nascondi") : t("delete"), style: "destructive", onPress: async () => {
-        try { await api.deleteConversation(convId); navigation.goBack(); }
-        catch (e) { setErr(api.apiErr(e)); }
+      { text: t("delete"), style: "destructive", onPress: async () => {
+        if (deletingChat.current) return;
+        deletingChat.current = true;
+        deletionRevision.current++;
+        try {
+          if (pilot) {
+            await deletePilotChat(user, peer, convId);
+            sendingRef.current = [];
+            setMsgs([]);
+            setText("");
+            setReplyTo(null);
+          } else await api.deleteConversation(convId);
+          navigation.goBack();
+        } catch (e) {
+          const message = pilot && e?.response?.status === 404
+            ? (lang === "en" ? "The gateway did not confirm permanent deletion." : "Il gateway non ha confermato l’eliminazione definitiva.")
+            : api.apiErr(e);
+          setErr(message);
+        } finally { deletingChat.current = false; }
       } },
     ]);
   };
@@ -284,13 +308,33 @@ export default function ChatScreen({ route, navigation }) {
   // alto. Prima si costruiva l'intera cronologia ad ogni giro, anche di 4 secondi in 4.
   const load = useCallback(async (cid, limit, deepMode, preRaw) => {
     if (!cid) { setMsgs([]); setLoading(false); return; }
+    if (deletingChat.current) return;
+    if (hostedRatchetPilot(user) && !peer) { setLoading(false); return; }
+    const revision = deletionRevision.current;
+    const active = () => mounted.current && !deletingChat.current && revision === deletionRevision.current;
     try {
       // Si chiede UNA riga in più della finestra: se arriva, si sa che esiste cronologia
       // più vecchia (e si mostra "Messaggi precedenti") senza scaricarla.
       const want = (typeof limit === "number" ? limit : winRef.current);
       // `preRaw` = pagina già sul telefono: si disegna senza rete. Se la rete ha già
       // risposto la si scarta, per non tornare indietro nel tempo.
-      const raw0 = preRaw || await api.messages(cid, want + 1);
+      const status = hostedRatchetPilot(user) && peer ? await checkPilotChat(user, peer) : null;
+      if (status && active()) {
+        const previous = shownGeneration.current;
+        if (previous?.cid === cid && previous.generation > status.generation) return;
+        if (previous?.cid === cid && previous.generation < status.generation) {
+          sendingRef.current = [];
+          setMsgs([]);
+          setText("");
+          setReplyTo(null);
+          setEditing(null);
+          setActionItem(null);
+        }
+        shownGeneration.current = { cid, generation: status.generation };
+      }
+      const rows = preRaw || await api.messages(cid, want + 1);
+      if (!active()) return;
+      const raw0 = status ? rows.filter(row => (row.generation || 0) === status.generation) : rows;
       if (preRaw) { if (netDone.current) return; } else { netDone.current = true; convCache.save(cid, raw0, user); }
       if (!preRaw && mounted.current) {
         const lastId = raw0[raw0.length - 1]?.message_id;
@@ -318,6 +362,7 @@ export default function ChatScreen({ route, navigation }) {
       let heavy = 0;
       let deferred = false;
       for (let mi = 0; mi < raw.length; mi++) {
+        if (!active()) return;
         const m = raw[mi];
         if (mi < from) continue; // fuori finestra: si vedrà solo se l'utente scorre in alto
         let body = "🔒";
@@ -433,6 +478,7 @@ export default function ChatScreen({ route, navigation }) {
         }
       } catch { /* nessun archivio */ }
       // Messaggi appena inviati e ancora in viaggio: restano visibili.
+      if (!active() || (status && shownGeneration.current?.generation !== status.generation)) return;
       if (sendingRef.current.length) out.push(...sendingRef.current);
       pendingRef.current = deferred;
       // Stato del ratchet e chiavi: su disco una volta, non a ogni messaggio.
@@ -459,7 +505,7 @@ export default function ChatScreen({ route, navigation }) {
         }
       }
     } catch { if (mounted.current) setLoading(false); }
-  }, [navigation, refresh, user]);
+  }, [navigation, refresh, user, peer]);
 
   // Passata profonda (tentativi a tentoni sulle buste ancora chiuse): parte SOLO quando
   // l'utente non sta interagendo, una volta ogni 30 secondi al massimo, e non tocca il
@@ -603,6 +649,7 @@ export default function ChatScreen({ route, navigation }) {
   };
 
   const onSend = async (override) => {
+    if (deletingChat.current) return;
     atBottomRef.current = true; // dopo un invio è giusto tornare in fondo
     const body = (typeof override === "string" ? override : text).trim();
     if (!body || others.length === 0 || !user?.kem) return;
@@ -653,6 +700,7 @@ export default function ChatScreen({ route, navigation }) {
 
   // Cifra e invia un asset (foto o video) come allegato E2EE (blob + envelope).
   const sendAsset = async (asset) => {
+    if (deletingChat.current) return;
     if (!asset?.uri || others.length === 0 || !user?.kem) return;
     try { if (!(await maySendToContact())) return; }
     catch (e) { setErr(api.apiErr(e)); return; }
@@ -721,6 +769,7 @@ export default function ChatScreen({ route, navigation }) {
   };
   const cancelRec = async () => { try { await recorder.stop(); } catch { /* */ } };
   const stopRecAndSend = async () => {
+    if (deletingChat.current) return;
     let uri;
     try { await recorder.stop(); uri = recorder.uri; } catch { /* */ }
     if (!uri) return;
@@ -764,6 +813,7 @@ export default function ChatScreen({ route, navigation }) {
   };
   // File generico (documenti, qualsiasi tipo) via DocumentPicker, cifrato E2EE come gli altri allegati.
   const attachFile = async () => {
+    if (deletingChat.current) return;
     if (others.length === 0 || !user?.kem) { setErr(t("chat.attach.noconv")); return; }
     try { if (!(await maySendToContact())) return; }
     catch (e) { setErr(api.apiErr(e)); return; }

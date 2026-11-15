@@ -456,6 +456,10 @@ export const pinMessage = (message_id, pin) =>
   withAuth((a) => client.post("/public/pulse/message/pin", { message_id, pin }, a).then((r) => r.data));
 export const reportMessage = (message_id, reason) =>
   withAuth((a) => client.post("/public/pulse/message/report", { message_id, reason: reason || "" }, a).then((r) => r.data));
+export const pilotPurgeStatus = (peer, params) =>
+  withAuth((a, transport) => transport.get(`/public/pulse/chat-purge/${encodeURIComponent(peer)}`, { ...a, params }).then((r) => r.data));
+export const pilotPurgeChat = (peer, generation) =>
+  withAuth((a, transport) => transport.delete(`/public/pulse/chat-purge/${encodeURIComponent(peer)}`, { ...a, params: { generation } }).then((r) => r.data));
 export const deleteConversation = (conv_id) =>
   withAuth((a) => client.delete(`/public/pulse/conversations/${encodeURIComponent(conv_id)}`, a).then((r) => r.data));
 
@@ -544,8 +548,19 @@ export const linkPreview = (url) =>
 // ── E2EE blob storage (chunked upload of opaque ciphertext) ──
 const BLOB_CHUNK = 3 * 1024 * 1024;
 
+export async function pilotAttachmentGeneration(allowed) {
+  if (!RATCHET_PILOT || allowed?.length !== 1) return undefined;
+  try { return (await pilotPurgeStatus(allowed[0])).generation; }
+  catch (error) {
+    if (error?.response?.status === 404) return undefined;
+    throw error;
+  }
+}
+
 export async function blobUpload(ciphertext, onProgress, allowed) {
   const { signal } = session;
+  const generation = await pilotAttachmentGeneration(allowed);
+  checkSession(signal);
   const { upload_id } = await blobInit();
   checkSession(signal);
   const total = Math.max(1, Math.ceil(ciphertext.length / BLOB_CHUNK));
@@ -555,7 +570,7 @@ export async function blobUpload(ciphertext, onProgress, allowed) {
     await blobPutChunk(upload_id, i, chunk, (fraction) => onProgress?.((i + fraction) / total));
   }
   checkSession(signal);
-  return blobFinalize(upload_id, allowed);
+  return blobFinalize(upload_id, allowed, generation);
 }
 // ── logout: revoca la sessione lato server (SEC-002) ──
 export const logout = () =>
@@ -597,9 +612,9 @@ export const blobPutChunk = (upload_id, index, bytes, onProgress) =>
       return data;
     })));
 
-export const blobFinalize = (upload_id, allowed) =>
+export const blobFinalize = (upload_id, allowed, generation) =>
   blobRequest("finalizzazione", () => withAuth((a, transport) =>
-    transport.post("/public/blob/finalize", { upload_id, allowed: allowed || [] }, { ...a, timeout: 60000 })
+    transport.post("/public/blob/finalize", { upload_id, allowed: allowed || [], generation }, { ...a, timeout: 60000 })
       .then(({ data }) => {
         if (!data?.id) throw new Error("Il server non ha restituito l’identificativo del file.");
         return data;

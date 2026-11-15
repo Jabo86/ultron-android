@@ -42,8 +42,14 @@ export function save(cid, raw, user) {
   try { lock.setBlobSoon(name, cut); } catch { /* si riproverà */ }
 }
 
-export async function drop(cid, user) {
+export async function drop(cid, user, { strict = false } = {}) {
   const name = NAME(cid, user);
   sigs.delete(name);
-  try { await lock.removeBlob(name); } catch { /* niente */ }
+  try {
+    await lock.flushBlobs({ strict });
+    await lock.removeBlob(name);
+    if (RATCHET_PILOT && user?.lns) await lock.removeBlob(NAME(cid));
+  } catch (error) {
+    if (strict) throw error;
+  }
 }

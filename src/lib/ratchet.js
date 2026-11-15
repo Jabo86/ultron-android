@@ -4,7 +4,7 @@
 // serve a niente e non gli dice con chi stai parlando più di quanto già sappia.
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { bytesToHex, randomHex, sha256Hex } from "./crypto";
-import { getBlob, setBlob, setBlobDurably, setBlobsDurably } from "./lock";
+import { getBlob, setBlob, setBlobDurably, setBlobsDurably, removeBlob } from "./lock";
 import * as api from "./api";
 import {
   CAP, CAP2, sessionKey, initSender, initReceiver, initSender2, initReceiver2,
@@ -226,6 +226,10 @@ export function tryRatchetDecrypt(list, user, peerHint, archivedMessage) {
   return withRatchetState(() => tryRatchetDecryptLocked(list, user, peerHint, archivedMessage));
 }
 
+function hostedPendingName(user, peer, device) {
+  return "ratchet-pending:" + sha256Hex(JSON.stringify([user.server, user.lns, peer, device]));
+}
+
 function hostedSessionName(user, peer, identityKey, device, peerDevice, sessionId) {
   return "hosted:" + sha256Hex(JSON.stringify([user.server, user.lns, peer, identityKey, device, peerDevice, sessionId]));
 }
@@ -235,7 +239,16 @@ export function sendHostedRatchet(payload, user, peer, installation, contact) {
   return withRatchetState(async () => {
     check();
     const device = hostedPrekeyDevice(user, installation);
-    const pendingName = "ratchet-pending:" + sha256Hex(JSON.stringify([user.server, user.lns, peer, device]));
+    const pendingName = hostedPendingName(user, peer, device);
+    const thread = typeof api.pilotPurgeStatus === "function"
+      ? await api.pilotPurgeStatus(peer).catch(error => {
+        if (error?.response?.status === 404) return null;
+        throw error;
+      })
+      : null;
+    check();
+    const generation = thread?.generation ?? 0;
+    if (!Number.isSafeInteger(generation) || generation < 0) throw new Error("Generazione della chat non valida.");
     const payloadHash = sha256Hex(payload);
     const previous = await getBlob(pendingName);
 
@@ -253,6 +266,11 @@ export function sendHostedRatchet(payload, user, peer, installation, contact) {
       return result;
     };
 
+    if (previous && (previous.wire.generation || 0) !== generation) {
+      await removeBlob(hostedSentRecord(user, peer, previous.wire.send_id));
+      await removeBlob(pendingName);
+      throw new Error("La chat è stata eliminata. Scrivi un nuovo messaggio per riaprirla.");
+    }
     if (previous) {
       const result = await deliver(previous);
       if (previous.payloadHash === payloadHash) return result;
@@ -266,7 +284,7 @@ export function sendHostedRatchet(payload, user, peer, installation, contact) {
     const matches = Object.values(all).filter((entry) =>
       entry?.hosted && entry.myDev === device && entry.theirDev === target.device &&
       entry.peer === peer && entry.hosted.owner === user.lns && entry.hosted.server === user.server &&
-      entry.hosted.identityKey === contact.identityKey
+      entry.hosted.identityKey === contact.identityKey && (entry.hosted.generation || 0) === generation
     );
     matches.sort((a, b) => b.at - a.at);
     let state = matches[0];
@@ -277,7 +295,7 @@ export function sendHostedRatchet(payload, user, peer, installation, contact) {
         theirStaticPk: contact.kem, theirDhPk: contact.dh, theirRatchetPk: prekey.kem,
         pkId: prekey.id, myDev: device, theirDev: target.device, peer,
       });
-      state.hosted = { owner: user.lns, server: user.server, identityKey: contact.identityKey, sessionId: prekey.id };
+      state.hosted = { owner: user.lns, server: user.server, identityKey: contact.identityKey, sessionId: prekey.id, generation };
     }
     const encrypted = ratchetEncrypt(state, payload);
     const sessionId = state.hosted.sessionId;
@@ -285,7 +303,7 @@ export function sendHostedRatchet(payload, user, peer, installation, contact) {
     const sendId = randomHex(16);
     const pending = {
       payloadHash,
-      wire: { to_lns: [peer], send_id: sendId,
+      wire: { to_lns: [peer], send_id: sendId, ...(thread ? { generation, attachment_ids: (JSON.parse(payload).a || []).map(att => att.id) } : {}),
         envelope: envelope.h.init ? signHostedRatchetInit(user.lns, envelope, user.sk) : envelope },
     };
     all[hostedSessionName(user, peer, contact.identityKey, device, target.device, sessionId)] = encrypted.state;
@@ -348,6 +366,7 @@ async function tryRatchetDecryptLocked(list, user, peerHint, archivedMessage, ho
       ? hostedSessionName(user, peerHint, hosted.identityKey, myDev, h.sdev, env.session_id)
       : sessionKey(h.sdev, myDev);
     let st = all[k];
+    if (hosted && st && (st.hosted?.generation || 0) !== (archivedMessage.generation || 0)) continue;
     if (st?.peer && peerHint && st.peer !== peerHint) continue;
     let fresh = "";
     let consumed = [];
@@ -391,7 +410,7 @@ async function tryRatchetDecryptLocked(list, user, peerHint, archivedMessage, ho
     if (r) {
       if (peerHint && !r.state.peer) r.state.peer = peerHint;
       if (hosted) r.state.hosted = {
-        owner: user.lns, server: user.server, identityKey: hosted.identityKey, sessionId: env.session_id,
+        owner: user.lns, server: user.server, identityKey: hosted.identityKey, sessionId: env.session_id, generation: archivedMessage.generation || 0,
       };
       all[k] = r.state;
       hosted?.checkScope();
@@ -457,4 +476,29 @@ async function resetRatchetLocked(peer) {
   const probes = (await getBlob(PROBE_BLOB)) || {};
   delete probes[peer];
   await setBlob(PROBE_BLOB, probes);
+}
+
+export function dropPurgedRatchet(user, peer, installation, generation, historyNames) {
+  return withRatchetState(async () => {
+    const check = api.authenticatedScope(user);
+    check();
+    const device = hostedPrekeyDevice(user, installation);
+    const pendingName = hostedPendingName(user, peer, device);
+    const pending = await getBlob(pendingName);
+    const all = await loadAll();
+    for (const [name, entry] of Object.entries(all)) {
+      if (entry?.peer === peer && entry.hosted?.owner === user.lns &&
+          entry.hosted.server === user.server && (entry.hosted.generation || 0) < generation) delete all[name];
+    }
+    check();
+    await saveAll(all);
+    if (pending && (pending.wire.generation || 0) < generation) {
+      historyNames.add(hostedSentRecord(user, peer, pending.wire.send_id));
+      historyNames.add(pendingName);
+    }
+    for (const name of historyNames) {
+      check();
+      if (name) await removeBlob(name);
+    }
+  });
 }

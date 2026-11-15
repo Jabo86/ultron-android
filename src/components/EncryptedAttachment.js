@@ -1,3 +1,4 @@
+import { writeCachedAttachment } from "../lib/attachmentCache";
 import React, { useState, useEffect, useRef } from "react";
 import { View, Text, Image, TouchableOpacity, ActivityIndicator, Alert, StyleSheet, Modal, Pressable } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
@@ -60,7 +61,7 @@ export default function EncryptedAttachment({ att }) {
 
   useEffect(() => {
     alive.current = true;
-    (async () => {
+    writeCachedAttachment(async () => {
       try {
         const path = FileSystem.cacheDirectory + "att_" + cacheKey + "_" + fileNameFor(att);
         const info = await FileSystem.getInfoAsync(path);
@@ -96,7 +97,7 @@ export default function EncryptedAttachment({ att }) {
       } catch {
         if (alive.current) setFailed(true);
       }
-    })();
+    }).catch(() => { if (alive.current) setFailed(true); });
     return () => { alive.current = false; };
   }, [cacheKey]);
 

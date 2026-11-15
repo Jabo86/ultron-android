@@ -14,8 +14,7 @@ export function historyRecord(user, message, envelope) {
     h.v, h.sdev, h.pf, h.xpk, h.pk, h.ct, h.kf, h.n, h.pn,
     init && [init.ct1, init.pk_id, init.epk, init.k, init.sct, init.spk],
   ]));
-  const id = sha256Hex(JSON.stringify([user.server, user.lns, message.conv_id, message.message_id, message.from_lns]));
-  return { name: "ratchet-msg:" + id, digest };
+  return { name: receivedHistoryName(user, message.conv_id, message.message_id, message.from_lns), digest };
 }
 
 export function archivablePayload(plaintext) {
@@ -34,4 +33,9 @@ export function hostedSentRecord(user, peer, sendId) {
   return typeof sendId === "string" && /^[0-9a-f]{32}$/.test(sendId)
     ? "ratchet-sent:" + sha256Hex(JSON.stringify([user.server, user.lns, peer, sendId]))
     : null;
+}
+
+
+export function receivedHistoryName(user, conversation, message, sender) {
+  return "ratchet-msg:" + sha256Hex(JSON.stringify([user.server, user.lns, conversation, message, sender]));
 }

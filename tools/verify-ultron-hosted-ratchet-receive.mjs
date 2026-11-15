@@ -40,7 +40,7 @@ const local = new Map();
 const pool = "hosted-prekeys:" + myDev;
 local.set(pool, { generation: 1, privateKeys: { [pkId]: { pub: bytesToHex(prekey.publicKey), sec: bytesToHex(prekey.secretKey) } } });
 const raw = readFileSync(new URL("../src/lib/ratchet.js", import.meta.url), "utf8");
-const receipt = raw.slice(raw.indexOf("function hostedSessionName"), raw.indexOf("/// Numeri per il pannello"))
+const receipt = raw.slice(raw.indexOf("function hostedPendingName"), raw.indexOf("/// Numeri per il pannello"))
   .replaceAll("export ", "");
 const save = raw.slice(raw.indexOf("async function saveAll"), raw.indexOf("let stateQueue"));
 let fail = false, writes = 0;
@@ -82,11 +82,12 @@ const bobDisk = new Map([[pool, structuredClone({
 })]]);
 const rows = new Map();
 const migrated = new Set();
-let attempts = 0, claims = 0, lost = true;
+let attempts = 0, claims = 0, lost = true, generation = null;
 const saveReads = (disk) => ({
   loadAll: async () => structuredClone(disk.get("rat") || {}),
   getBlob: async (name) => structuredClone(disk.get(name)),
   setBlobDurably: async (name, value) => disk.set(name, structuredClone(value)),
+  removeBlob: async (name) => disk.delete(name),
   setBlobsDurably: async (entries) => {
     for (const [name, value] of entries) disk.set(name, structuredClone(value));
   },
@@ -99,9 +100,10 @@ function app(user, dev, partnerDev, disk) {
     hostedPrekeyDevice: () => dev, parsePools: ({ devices }) => devices,
     requireHostedRatchet: async (u, peer) => { migrated.add(u.lns + peer); },
     withRatchetState: async (fn) => fn(), withHostedPrekeyStorage: async (fn) => fn(),
-    claimVerifiedHostedPrekey: async () => { claims++; return { id: pkId, kem: bytesToHex(prekey.publicKey) }; },
+    claimVerifiedHostedPrekey: async () => { claims++; return { id: claims === 1 ? pkId : randomHex(16), kem: bytesToHex(prekey.publicKey) }; },
     api: {
       authenticatedScope: () => () => {},
+      pilotPurgeStatus: async () => generation === null ? null : { generation },
       hostedPrekeyPools: async () => ({ devices: [{ device: partnerDev }] }),
       sendHostedRatchet: async (wire) => {
         attempts++;
@@ -140,3 +142,18 @@ assert.equal(secondRow.envelope.session_id, firstRow.envelope.session_id);
 assert.equal(await app(alice, theirDev, myDev, aliceDisk).receiveHostedRatchet(secondRow, alice, "", bob.publicKeyHex), answer);
 assert.equal(claims, 1);
 console.log("ULTRON pilot: loss of HTTP response, idempotent retry after restart, own encrypted history and reply on the same ratchet verified in simulation.");
+
+generation = 0;
+lost = true;
+await assert.rejects(sendFromAlice(packMessage("invio prima della cancellazione")), /response lost/);
+const old = [...rows.values()].at(-1);
+const oldAttempts = attempts;
+generation = 1;
+await assert.rejects(sendFromAlice(packMessage("invio prima della cancellazione")), /è stata eliminata/);
+assert.equal(attempts, oldAttempts);
+await sendFromAlice(packMessage("nuova cronologia"));
+const fresh = [...rows.values()].at(-1);
+assert.equal(fresh.wire.generation, 1);
+assert.notEqual(fresh.envelope.session_id, old.envelope.session_id);
+assert.ok(fresh.envelope.h.init);
+console.log("ULTRON pilot: retired outbox cannot replay and a new generation starts a new session.");

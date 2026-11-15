@@ -23,3 +23,5 @@ export function put(cid, id, entry) {
 export function clearAll() {
   store.clear();
 }
+
+export function drop(cid) { store.delete(cid); }
