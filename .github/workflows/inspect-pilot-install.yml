@@ -4,7 +4,7 @@ on:
     branches: [apk-install-diagnostics]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   inspect:
@@ -35,3 +35,15 @@ jobs:
           done
           diff -u pilot-5/cert.txt pilot-6/cert.txt
           echo "Both releases use the same APK signing certificates."
+
+      - name: Publish versioned copy of pilot 6
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          source=pilot-6/ULTRON-Ratchet-Pilota.apk
+          copy=pilot-6/ULTRON-Ratchet-Pilota-306.apk
+          printf '%s  %s\n' '915b6dcbe9c778336af37b2acd610802a61ec5839c9852f725099b961b0f1650' "$source" | sha256sum --check
+          cp "$source" "$copy"
+          gh release upload ratchet-pilot-6 "$copy" -R "$GITHUB_REPOSITORY"
