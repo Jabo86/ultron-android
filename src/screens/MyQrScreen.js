@@ -1,3 +1,5 @@
+import { RATCHET_PILOT } from "../config";
+import { groupIdentityFingerprint } from "../lib/groupMemberProof";
 // IL MIO QR — il codice da far inquadrare per aggiungersi a vicenda, e il lettore che
 // aggiunge il contatto e lo segna verificato quando l'impronta combacia.
 // La foto la scatta la fotocamera di sistema e viene letta e buttata qui sul telefono.
@@ -73,7 +75,7 @@ export default function MyQrScreen({ navigation }) {
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}>
         <View style={styles.qrBox}>
-          <QrCode value={myFp ? qrPayload(user?.lns, myFp) : ""} size={236} testID="myqr-code" />
+          <QrCode value={myFp ? qrPayload(user?.lns, myFp, RATCHET_PILOT ? groupIdentityFingerprint(user?.lns, user?.pk) : null) : ""} size={236} testID="myqr-code" />
           <Text style={styles.lns}>{user?.lns}</Text>
           <Text style={styles.hint}>{t("qr.mineHint")}</Text>
         </View>

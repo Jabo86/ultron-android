@@ -7,6 +7,11 @@ const MAX_CREDENTIAL_BYTES = 7500;
 const VALID_ACCOUNT = /^(?=.{3,32}@)[a-z0-9._-]+@ultron\.uns$/;
 const isHex = (value, size) => typeof value === "string" && value.length === size && /^[a-f0-9]+$/.test(value);
 
+export function groupIdentityFingerprint(account, key) {
+  if (!VALID_ACCOUNT.test(account) || !isHex(key, 3904)) return null;
+  return sha256Hex(JSON.stringify(["ultron-mls-identity-v1", account, key]));
+}
+
 function fields(server, account, device, publicKey) {
   if (!/^https:\/\/[^\s?#]{1,200}$/.test(server) || !VALID_ACCOUNT.test(account) ||
       !isHex(device, 32) || !(publicKey instanceof Uint8Array) || publicKey.length !== MLS_KEY_BYTES) {
