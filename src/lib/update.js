@@ -7,12 +7,13 @@ import * as IntentLauncher from "expo-intent-launcher";
 import { NativeModules, Platform } from "react-native";
 import { flushBlobs } from "./lock";
 import { withSystemActivity } from "./lockGuard";
+import { RATCHET_PILOT } from "../config";
 import { VENDOR_PUB } from "./vendorKey";
 import { verifyManifest, fileSha256 } from "./apkVerify";
 
 const releaseBase = "https://github.com/Jabo86/ultron-android/releases";
 const currentCode = Number(process.env.EXPO_PUBLIC_ULTRON_VERSION_CODE);
-export const updatesConfigured = Platform.OS === "android" && !!VENDOR_PUB && Number.isSafeInteger(currentCode) && currentCode > 0;
+export const updatesConfigured = !RATCHET_PILOT && Platform.OS === "android" && !!VENDOR_PUB && Number.isSafeInteger(currentCode) && currentCode > 0;
 
 function authentic(m) {
   return Number.isSafeInteger(m?.versionCode) && Number.isSafeInteger(m.size)

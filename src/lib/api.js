@@ -2,7 +2,7 @@
 // Node-safe: only depends on axios + crypto.js (no React Native imports here),
 // so the same code path is exercised by the Node E2E test.
 import axios from "axios";
-import { DEFAULT_SERVER } from "../config";
+import { DEFAULT_SERVER, RATCHET_PILOT } from "../config";
 import { signChallenge } from "./crypto";
 import { randPad } from "./pad";
 
@@ -10,12 +10,18 @@ export function normalizeServer(url) {
   let u = (url || "").trim();
   if (!u) return DEFAULT_SERVER;
   if (!/^https?:\/\//i.test(u)) u = "https://" + u;
-  return u.replace(/\/+$/, "");
+  u = u.replace(/\/+$/, "");
+  if (RATCHET_PILOT && u !== DEFAULT_SERVER) throw new Error("Usa un account di prova del gateway ratchet.");
+  return u;
 }
 
 export function personalServerUrl(value) {
   const input = value.trim();
   const url = (/^[a-z][a-z0-9+.-]*:\/\//i.test(input) ? input : "https://" + input).replace(/\/+$/, "");
+  if (RATCHET_PILOT) {
+    if (!input || url === DEFAULT_SERVER) return DEFAULT_SERVER;
+    throw new Error("Questa app usa solo il gateway ratchet di prova.");
+  }
   const match = /^https:\/\/(?:[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?|\[[a-f0-9:]+\])(?::(\d{1,5}))?$/i.exec(url);
   if (!match || (match[1] && (+match[1] < 1 || +match[1] > 65535))) {
     throw new Error("Inserisci l’indirizzo HTTPS del server senza percorso, ad esempio https://messaggi.example.org.");
@@ -630,9 +636,9 @@ export const certifyContacts = () =>
   withAuth((a) => client.get("/public/certify/contacts", a).then((r) => r.data));
 // ── Account personali (username@ultron.uns) ──
 export const personalCheck = (username, server) =>
-  (server ? makeClient(server) : client).get("/public/personal/check", { params: { username } }).then((r) => r.data);
+  (server ? makeClient(RATCHET_PILOT ? personalServerUrl(server) : server) : client).get("/public/personal/check", { params: { username } }).then((r) => r.data);
 export const personalSignup = (payload, server) =>
-  (server ? makeClient(server) : client).post("/public/personal/signup", payload).then((r) => r.data);
+  (server ? makeClient(RATCHET_PILOT ? personalServerUrl(server) : server) : client).post("/public/personal/signup", payload).then((r) => r.data);
 export const personalDiscoverable = (enabled) =>
   withAuth((a) => client.post("/public/personal/discoverable", { enabled }, a).then((r) => r.data));
 export const directorySearch = (q) =>

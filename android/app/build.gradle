@@ -89,7 +89,9 @@ android {
 
     namespace 'com.ultron.messenger'
     defaultConfig {
-        applicationId 'com.ultron.messenger'
+        def ratchetPilot = System.getenv("EXPO_PUBLIC_ULTRON_RATCHET_PILOT") == "1"
+        applicationId(ratchetPilot ? 'com.ultron.messenger.pilot' : 'com.ultron.messenger')
+        resValue "string", "ultron_display_name", ratchetPilot ? "ULTRON Ratchet Pilota" : "ULTRON"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode Integer.parseInt(System.getenv("EXPO_PUBLIC_ULTRON_VERSION_CODE") ?: "187")

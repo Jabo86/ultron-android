@@ -1,5 +1,5 @@
 import * as api from "./api";
-import { DEFAULT_SERVER } from "../config";
+import { DEFAULT_SERVER, RATCHET_PILOT } from "../config";
 import { deviceId } from "./devices";
 import { getBlob } from "./lock";
 import { getVerified, keyFingerprint } from "./verify";
@@ -8,9 +8,8 @@ import { parsePools, publishHostedPrekeys } from "./hostedPrekeys";
 import { receiveHostedRatchet, sendHostedRatchet } from "./ratchet";
 import { archivablePayload, hostedSentRecord } from "./ratchetHistory";
 
-const pilot = process.env.EXPO_PUBLIC_ULTRON_RATCHET_PILOT === "1";
 export function hostedRatchetPilot(user) {
-  return pilot && user?.server === DEFAULT_SERVER && api.getServerUrl() === DEFAULT_SERVER;
+  return RATCHET_PILOT && user?.server === DEFAULT_SERVER && api.getServerUrl() === DEFAULT_SERVER;
 }
 
 async function verifiedContact(user, peer) {

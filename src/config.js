@@ -1,6 +1,9 @@
 // Default server (trial/hosted). Companies with a license run their OWN server:
 // the employee points the app to their company server (or the keyfile embeds it).
-export const DEFAULT_SERVER = "https://49.12.242.0";
+export const RATCHET_PILOT = process.env.EXPO_PUBLIC_ULTRON_RATCHET_PILOT === "1";
+export const DEFAULT_SERVER = RATCHET_PILOT
+  ? "https://49.12.242.0/ratchet-pilot"
+  : "https://49.12.242.0";
 // Compilare dopo il provisioning degli amministratori.
 export const OWNER_LNS_LIST = [];
 

@@ -1,0 +1,67 @@
+name: ULTRON Ratchet Pilot APK
+on:
+  push:
+    branches: [ratchet-integration]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: ultron-ratchet-pilot
+  cancel-in-progress: true
+jobs:
+  pilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      EXPO_PUBLIC_ULTRON_RATCHET_PILOT: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-36 build-tools;36.0.0 ndk;27.1.12297006"
+      - name: Install dependencies and verify pilot
+        run: |
+          npm ci --legacy-peer-deps --no-fund
+          npm audit --audit-level=low
+          node tools/verify-ultron-hosted-ratchet-receive.mjs
+          node tools/verify-ultron-hosted-prekeys.mjs
+          node tools/verify-ultron-ratchet-history.mjs
+          node tools/verify-ultron-signed-keys.mjs
+      - name: Configure signing
+        env:
+          ULTRON_KEYSTORE: ${{ secrets.ULTRON_ANDROID_KEYSTORE_B64 }}
+          ULTRON_KEYSTORE_PASSWORD: ${{ secrets.ULTRON_ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          [[ "$ULTRON_KEYSTORE_PASSWORD" =~ ^[A-Za-z0-9]+$ ]]
+          umask 077
+          printf '%s' "$ULTRON_KEYSTORE" | base64 --decode > "$RUNNER_TEMP/ultron-pilot.p12"
+          printf 'ULTRON_STORE_FILE=%s\nULTRON_STORE_PASSWORD=%s\nULTRON_KEY_ALIAS=ultron\nULTRON_KEY_PASSWORD=%s\n' \
+            "$RUNNER_TEMP/ultron-pilot.p12" "$ULTRON_KEYSTORE_PASSWORD" "$ULTRON_KEYSTORE_PASSWORD" > android/keystore.properties
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
+          echo "EXPO_PUBLIC_ULTRON_VERSION_CODE=$((300 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+      - name: Build isolated pilot APK
+        working-directory: android
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+      - name: Verify application ID and publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          test "$("$tools/aapt" dump badging "$apk" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")" = com.ultron.messenger.pilot
+          "$tools/apksigner" verify "$apk"
+          mkdir -p dist
+          cp "$apk" dist/ULTRON-Ratchet-Pilota.apk
+          sha256sum dist/ULTRON-Ratchet-Pilota.apk
+          gh release create "ratchet-pilot-${GITHUB_RUN_NUMBER}" dist/ULTRON-Ratchet-Pilota.apk \
+            --target "$GITHUB_SHA" --prerelease --latest=false --title "ULTRON Ratchet Pilota ${GITHUB_RUN_NUMBER}" \
+            --notes "App separata per account di prova. Gateway HTTPS /ratchet-pilot."
