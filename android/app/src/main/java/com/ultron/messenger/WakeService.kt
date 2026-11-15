@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import org.json.JSONObject
 import java.io.File
@@ -32,6 +33,13 @@ class WakeService : Service() {
     const val MESSAGE_ID = 4712
     const val CONTACT_ID = 4714
     const val CALL_RID = "com.ultron.messenger.CALL_RID"
+    const val CALL_ANSWER = "com.ultron.messenger.CALL_ANSWER"
+    @Volatile private var incomingCall: Pair<String, Long>? = null
+
+    fun isIncomingCall(rid: String): Boolean {
+      val current = incomingCall ?: return false
+      return current.first == rid && SystemClock.elapsedRealtime() < current.second
+    }
     const val CH_MSG = "lattice-wake-msg"
     const val FG_ID = 4711
 
@@ -147,17 +155,18 @@ class WakeService : Service() {
   private fun notifyCall(rid: String) {
     try {
       val nm = getSystemService(NotificationManager::class.java)
-      val intent = Intent(this, MainActivity::class.java)
+      incomingCall = rid to (SystemClock.elapsedRealtime() + 35_000L)
+      val intent = Intent(this, IncomingCallActivity::class.java)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         .putExtra(CALL_RID, rid)
       val open = PendingIntent.getActivity(this, CALL_ID, intent,
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
       val call = NotificationCompat.Builder(this, CH_CALL)
         .setContentTitle("Chiamata ULTRON")
-        .setContentText("Tocca per aprire la chiamata")
+        .setContentText("Tocca per vedere la chiamata")
         .setSmallIcon(applicationInfo.icon)
         .setCategory(NotificationCompat.CATEGORY_CALL)
-        .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+        .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
         .setPriority(NotificationCompat.PRIORITY_MAX)
         .setAutoCancel(true)
         .setTimeoutAfter(35_000L)
@@ -191,6 +200,7 @@ class WakeService : Service() {
         previousRid = rid
         previousCount = 0
         previousCall = ""
+        incomingCall = null
         previousContact = ""
       }
       try {
@@ -213,6 +223,7 @@ class WakeService : Service() {
           if (running && current?.optBoolean("on", false) == true && current.optString("rid") == rid) {
             if (incoming.isNotEmpty() && incoming != previousCall) notifyCall(incoming)
             if (incoming.isEmpty() && previousCall.isNotEmpty()) {
+              incomingCall = null
               getSystemService(NotificationManager::class.java).cancel(CALL_ID)
             }
             previousCall = incoming
@@ -284,6 +295,7 @@ class WakeService : Service() {
 
   override fun onDestroy() {
     running = false
+    incomingCall = null
     worker?.interrupt()
     chaffWorker?.interrupt()
     super.onDestroy()

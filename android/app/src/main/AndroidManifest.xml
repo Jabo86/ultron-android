@@ -40,7 +40,7 @@
     <meta-data android:name="expo.modules.updates.ENABLE_BSDIFF_PATCH_SUPPORT" android:value="true"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="ALWAYS"/>
     <meta-data android:name="expo.modules.updates.EXPO_UPDATES_LAUNCH_WAIT_MS" android:value="0"/>
-    <activity android:name="com.ultron.messenger.MainActivity" android:showWhenLocked="true" android:turnScreenOn="true" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode|smallestScreenSize|assetsPaths" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true" android:screenOrientation="portrait">
+    <activity android:name="com.ultron.messenger.MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode|smallestScreenSize|assetsPaths" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true" android:screenOrientation="portrait">
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>
         <category android:name="android.intent.category.LAUNCHER"/>
@@ -52,6 +52,7 @@
         <data android:scheme="ultron"/>
       </intent-filter>
     </activity>
+    <activity android:name="com.ultron.messenger.IncomingCallActivity" android:showWhenLocked="true" android:turnScreenOn="true" android:excludeFromRecents="true" android:exported="false" android:launchMode="singleTop" />
     <!-- ASPETTO DISCRETO (v1.5.0): icone e nomi alternativi mostrati dalla home. Sono
          spenti di serie; l'utente ne accende uno da Impostazioni e il modulo nativo
          AppDisguise spegne gli altri. Il nome vero resta in Impostazioni Android → App. -->

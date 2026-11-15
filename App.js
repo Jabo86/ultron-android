@@ -266,7 +266,8 @@ function Root() {
           navRef.getCurrentRoute()?.name === "Call") return;
       busy = true;
       try {
-        const rid = await NativeModules.WakeControl?.takeIncomingCall();
+        const action = await NativeModules.WakeControl?.takeIncomingCall();
+        const rid = action?.rid;
         if (!rid) return;
         const event = await api.anonGet(rid);
         const call = event?.ping && openInvite(event.ping, user.kem.secretKey);
@@ -289,7 +290,8 @@ function Root() {
             navRef.getCurrentRoute()?.name === "Call") return;
         activeCall.current = call.chan;
         navRef.navigate("Call", { incoming: true, chan: call.chan, from: call.from,
-          from_pk: call.from_pk, from_kem: call.from_kem, offer: call.offer, offer_sig: call.offer_sig });
+          from_pk: call.from_pk, from_kem: call.from_kem, offer: call.offer, offer_sig: call.offer_sig,
+          autoAnswer: action.answer === true });
       } catch { /* expired invite or unavailable connection */ }
       finally { busy = false; }
     };

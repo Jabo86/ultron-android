@@ -94,8 +94,9 @@ android {
         resValue "string", "ultron_display_name", ratchetPilot ? "ULTRON Ratchet Pilota" : "ULTRON"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode Integer.parseInt(System.getenv("EXPO_PUBLIC_ULTRON_VERSION_CODE") ?: "187")
-        versionName "3.5.20"
+        def buildNumber = Integer.parseInt(System.getenv("EXPO_PUBLIC_ULTRON_VERSION_CODE") ?: "187")
+        versionCode buildNumber
+        versionName(ratchetPilot ? "3.5.20-pilot.${buildNumber}" : "3.5.20")
 
         // Solo arm64-v8a: copre tutti gli smartphone moderni e riduce l'APK da ~137MB a ~50MB
         // (download mobile affidabile). x86/x86_64 servono solo agli emulatori.

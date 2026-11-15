@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -44,8 +45,17 @@ class WakeControlModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModu
         activity.runOnUiThread {
             val intent = activity.intent
             val rid = intent?.getStringExtra(WakeService.CALL_RID)
+            val answer = intent?.getBooleanExtra(WakeService.CALL_ANSWER, false) == true
             intent?.removeExtra(WakeService.CALL_RID)
-            promise.resolve(rid?.takeIf { it.matches(Regex("[a-f0-9]{32}")) })
+            intent?.removeExtra(WakeService.CALL_ANSWER)
+            if (rid == null || !WakeService.isIncomingCall(rid)) {
+                promise.resolve(null)
+            } else {
+                promise.resolve(Arguments.createMap().apply {
+                    putString("rid", rid)
+                    putBoolean("answer", answer)
+                })
+            }
         }
     }
 

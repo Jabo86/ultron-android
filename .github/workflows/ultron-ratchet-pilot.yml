@@ -58,6 +58,9 @@ jobs:
           apk=android/app/build/outputs/apk/release/app-release.apk
           tools="$ANDROID_HOME/build-tools/36.0.0"
           test "$("$tools/aapt" dump badging "$apk" | sed -n "s/^package: name='\([^']*\)'.*/\1/p")" = com.ultron.messenger.pilot
+          badging=$("$tools/aapt" dump badging "$apk")
+          grep -Fq "versionCode='${EXPO_PUBLIC_ULTRON_VERSION_CODE}'" <<< "$badging"
+          grep -Fq "versionName='3.5.20-pilot.${EXPO_PUBLIC_ULTRON_VERSION_CODE}'" <<< "$badging"
           "$tools/apksigner" verify "$apk"
           mkdir -p dist
           asset="dist/ULTRON-Ratchet-Pilota-${EXPO_PUBLIC_ULTRON_VERSION_CODE}.apk"
