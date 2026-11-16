@@ -2,13 +2,13 @@ import PilotGroupsScreen from "./src/screens/PilotGroupsScreen";
 import { hostedRatchetPilot, verifiedContact } from "./src/lib/hostedRatchetChat";
 import { setNativeExportKdf } from "./src/lib/exportKdf";
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { View, ActivityIndicator, AppState as RNAppState, NativeModules, Platform } from "react-native";
+import { View, ActivityIndicator, AppState as RNAppState, Linking, NativeModules, Platform } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import notifee, { EventType } from "react-native-notify-kit";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardProvider } from "react-native-keyboard-controller";
-import { NavigationContainer, DarkTheme, createNavigationContainerRef } from "@react-navigation/native";
+import { NavigationContainer, DarkTheme, StackActions, createNavigationContainerRef } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
@@ -187,6 +187,7 @@ function Root() {
   const pendingNotif = useRef(null);
   const routeFromData = (data) => {
     if (!data) return null;
+    if (data.type === "group_invite") return { name: "PilotGroups", params: { inviteCode: data.code } };
     if (data.type === "lead") return { name: "Leads", params: { focusId: data.lead_id || null } };
     // I dati della push server ULTRON sono stringhe: "false" sarebbe truthy con !!.
     const flag = (v) => v === true || v === "true" || v === "1";
@@ -210,7 +211,10 @@ function Root() {
     if (!r) return;
     if (!navRef.isReady() || !userRef.current) return; // aspetta navigazione pronta + login
     pendingNotif.current = null;
-    try { navRef.navigate(r.name, r.params); } catch (e) {}
+    try {
+      if (r.name === "PilotGroups") navRef.dispatch(StackActions.push(r.name, r.params));
+      else navRef.navigate(r.name, r.params);
+    } catch (e) {}
   }, []);
   const handleNotif = useCallback((data) => {
     const r = routeFromData(data);
@@ -221,6 +225,17 @@ function Root() {
     let tries = 0;
     const iv = setInterval(() => { tries++; flushNotif(); if (!pendingNotif.current || tries > 25) clearInterval(iv); }, 400);
   }, [flushNotif]);
+  useEffect(() => {
+    let mounted = true;
+    const receive = (url) => {
+      const match = /^ultron:\/\/group-invite\/([a-f0-9]{64}\.[a-f0-9]{64})$/.exec(url || "");
+      if (mounted && match) handleNotif({ type: "group_invite", code: match[1] });
+    };
+    Linking.getInitialURL().then(receive).catch(() => {});
+    const sub = Linking.addEventListener("url", ({ url }) => receive(url));
+    return () => { mounted = false; sub.remove(); };
+  }, [handleNotif]);
+  useEffect(() => { if (user && !locked) flushNotif(); }, [flushNotif, user, locked]);
   // Routing dalla notifica full-screen chiamata (notify-kit): cold start + press in foreground.
   useEffect(() => {
     let mounted = true;

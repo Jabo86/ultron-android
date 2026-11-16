@@ -472,13 +472,43 @@ export const mlsDecideInvitation = (id, payload) =>
 export const mlsCreate = (payload) =>
   withAuth((a, transport) => transport.post(`${mlsRoot}/groups`, payload, a).then(r => r.data));
 export const mlsEvents = (id, cursor) =>
-  withAuth((a, transport) => transport.get(`${mlsRoot}/groups/${encodeURIComponent(id)}/events`, { ...a, params: { cursor } }).then(r => r.data));
+  withAuth((a, transport) => transport.get(`${mlsRoot}/groups/${encodeURIComponent(id)}/events`, { ...a, params: { cursor, protocol: 1 } }).then(r => r.data));
 export const mlsAppend = (id, payload) =>
   withAuth((a, transport) => transport.post(`${mlsRoot}/groups/${encodeURIComponent(id)}/events`, payload, a).then(r => r.data));
 export const mlsPublishPackage = (wire) =>
   withAuth((a, transport) => transport.post(`${mlsRoot}/package`, { wire }, a).then(r => r.data));
 export const mlsClaimPackage = (account, op) =>
   withAuth((a, transport) => transport.post(`${mlsRoot}/package/${encodeURIComponent(account)}`, { op }, a).then(r => r.data));
+
+export const mlsAccount = () =>
+  withAuth((a, transport) => transport.get(`${mlsRoot}/account`, a).then(r => r.data));
+export const mlsVerifyAccount = (signature) =>
+  withAuth((a, transport) => transport.post(`${mlsRoot}/account`, { signature }, a).then(r => r.data));
+export const mlsRedeem = (code) =>
+  withAuth((a, transport) => transport.post(`${mlsRoot}/redeem`, { code }, a).then(r => r.data));
+export const mlsReview = (id, accept) =>
+  withAuth((a, transport) => transport.post(`${mlsRoot}/invitations/${encodeURIComponent(id)}/review`, { accept }, a).then(r => r.data));
+const mlsGroup = (id) => `${mlsRoot}/groups/${encodeURIComponent(id)}`;
+export const mlsPolicy = (id) =>
+  withAuth((a, transport) => transport.get(`${mlsGroup(id)}/control`, a).then(r => r.data));
+export const mlsAction = (id, payload) =>
+  withAuth((a, transport) => transport.post(`${mlsGroup(id)}/control`, payload, a).then(r => r.data));
+export const mlsDeleteGroup = (id) =>
+  withAuth((a, transport) => transport.delete(`${mlsGroup(id)}/control`, a).then(r => r.data));
+export const mlsReport = (id, payload) =>
+  withAuth((a, transport) => transport.post(`${mlsGroup(id)}/reports`, payload, a).then(r => r.data));
+export const mlsReports = (id) =>
+  withAuth((a, transport) => transport.get(`${mlsGroup(id)}/reports`, a).then(r => r.data));
+const mlsFile = (group, id) => `${mlsGroup(group)}/files/${encodeURIComponent(id)}`;
+export const mlsUpload = (group, id, bytes) =>
+  withAuth((a, transport) => transport.post(mlsFile(group, id), bytes.slice().buffer, {
+    ...a, adapter: "xhr", headers: { ...a.headers, "Content-Type": "application/octet-stream" }, timeout: 30000,
+  }).then(r => r.data));
+export const mlsDownload = (group, id) =>
+  withAuth(async (a, transport) => {
+    const r = await transport.get(mlsFile(group, id), { ...a, responseType: "arraybuffer", timeout: 30000 });
+    return new Uint8Array(r.data);
+  });
 
 export const pilotPurgeStatus = (peer, params) =>
   withAuth((a, transport) => transport.get(`/public/pulse/chat-purge/${encodeURIComponent(peer)}`, { ...a, params }).then((r) => r.data));

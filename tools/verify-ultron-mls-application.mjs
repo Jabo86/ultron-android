@@ -220,3 +220,30 @@ const publicDetails = await app.openPilotGroup(b,publicMemberRow);
 assert.equal(publicDetails.title,"Piazza ULTRON");
 assert.equal(publicDetails.profile.visibility,"public");
 console.log("Three pilot clients: create, invite, signed text, scoped title, encrypted polls, signed consent, public listing, unread counts, encrypted profile and attachment, automatic invitation completion, removal and durable send retry passed.");
+
+// Execute the first render of both group routes to catch errors Babel alone
+// cannot detect, including access to a hook value before its initialization.
+const { createRequire } = await import("node:module");
+const require = createRequire(import.meta.url);
+const babel = require("@babel/core");
+const jsx = require("@babel/plugin-transform-react-jsx");
+const screenSource = readFileSync(new URL("../src/screens/PilotGroupsScreen.js", import.meta.url), "utf8")
+  .replace(/^import\s+[\s\S]*?\sfrom\s+"[^"]+";\s*$/gm, "")
+  .replace(/^export default /m, "");
+const screen = babel.transformSync(screenSource, { babelrc: false, configFile: false, plugins: [jsx] }).code;
+const view = name => name;
+const renderGroup = runInNewContext(screen + "\nPilotGroupsScreen", {
+  React: { createElement: (...args) => args, Fragment: "Fragment" },
+  useState: initial => [typeof initial === "function" ? initial() : initial, () => {}],
+  useRef: current => ({ current }), useMemo: callback => callback(), useCallback: callback => callback,
+  useEffect: () => {}, useLayoutEffect: () => {}, useFocusEffect: () => {}, usePoll: () => {},
+  useAuth: () => ({ user: a }), useI18n: () => ({ lang: "it" }), useSafeAreaInsets: () => ({ top: 24, bottom: 48 }),
+  presentPilotGroupHistory: app.presentPilotGroupHistory, StyleSheet: { create: value => value }, theme: {},
+  Ionicons: view("Ionicons"), Text: view("Text"), TextInput: view("TextInput"), View: view("View"),
+  ScrollView: view("ScrollView"), TouchableOpacity: view("TouchableOpacity"), ActivityIndicator: view("ActivityIndicator"),
+  KeyboardAvoidingView: view("KeyboardAvoidingView"), FlatList: view("FlatList"),
+});
+for (const params of [{}, { group: row }, { inviteCode: "a".repeat(64) + "." + "b".repeat(64) }]) {
+  assert.ok(renderGroup({ navigation: {}, route: { params } }));
+}
+console.log("Group list, conversation and invitation routes mount without runtime initialization errors.");

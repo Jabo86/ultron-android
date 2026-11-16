@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Image, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import EncryptedAttachment from "../components/EncryptedAttachment";
@@ -9,16 +9,19 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../lib/i18n";
 import { useFocusEffect } from "@react-navigation/native";
-import { apiErr, contacts } from "../lib/api";
+import { apiErr, contacts, mlsAction, mlsDeleteGroup, mlsRedeem, mlsReport, mlsReports, mlsReview,
+  mlsUpload } from "../lib/api";
 import { contactAddress, matchesContact } from "../lib/contactAddress";
 import { pickAvatarDataUrl } from "../lib/avatar";
-import { randomHex } from "../lib/crypto";
+import { base64ToBytes, encryptFileBytes, randomHex } from "../lib/crypto";
 import { withSystemActivity } from "../lib/lockGuard";
 import { usePoll } from "../lib/usePoll";
 import { getVerified } from "../lib/verify";
-import { cachedPilotGroupTitle, createPilotGroup, decidePilotGroupInvitation, listPilotGroups, listPublicPilotGroups, openPilotGroup,
+import { cachedPilotGroupTitle, createPilotGroup, decidePilotGroupInvitation, finishAcceptedPilotGroupInvites,
+  forgetPilotGroup, listPilotGroups, listPublicPilotGroups, openPilotGroup, pilotGroupPolicy,
   pilotGroupInvitations, pilotInvitationInbox, pilotInvitationTitle, preparePilotGroupInvites, presentPilotGroupHistory,
-  PILOT_GROUP_AVATAR_LIMIT, PILOT_GROUP_FILE_LIMIT, requestPilotGroupInvitation, updatePilotGroup } from "../lib/pilotGroups";
+  PILOT_GROUP_AVATAR_LIMIT, PILOT_GROUP_FILE_LIMIT, PILOT_GROUP_UPLOAD_LIMIT, requestPilotGroupInvitation,
+  updatePilotGroup, verifyPilotGroupAccount } from "../lib/pilotGroups";
 import { theme } from "../theme";
 
 export default function PilotGroupsScreen({ navigation, route }) {
@@ -37,12 +40,21 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const triedInvites = useRef(new Set());
   const routedGroup = route?.params?.group || null;
   const [group, setGroup] = useState(routedGroup);
-  const fileDraft = pendingFile?.groupId === group?.id ? pendingFile : null;
   const [details, setDetails] = useState(null);
   const [name, setName] = useState("");
   const [initialAvatar, setInitialAvatar] = useState(null);
   const [composerMenu, setComposerMenu] = useState(false);
   const [pendingFile, setFileDraft] = useState(null);
+  const fileDraft = pendingFile?.groupId === group?.id ? pendingFile : null;
+  const [policy, setPolicy] = useState(null);
+  const [inviteCode, setInviteCode] = useState("");
+  const [joiningLink, setJoiningLink] = useState(route?.params?.inviteCode || "");
+  const [redeemOpen, setRedeemOpen] = useState(!!route?.params?.inviteCode);
+  const [reportForm, setReportForm] = useState(null);
+  const [reportReason, setReportReason] = useState("");
+  const [reports, setReports] = useState(null);
+  const [moderate, setModerate] = useState(null);
+  const [editTitle, setEditTitle] = useState("");
   const [message, setMessage] = useState("");
   const draft = useRef(null);
   const [groupTab, setGroupTab] = useState("members");
@@ -54,7 +66,10 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const [choices, setChoices] = useState(["", ""]);
   const listRef = useRef(null);
   const stickToBottom = useRef(true);
-  const history = useMemo(() => presentPilotGroupHistory(details?.history || [], user?.lns), [details, user?.lns]);
+  const history = useMemo(() => {
+    const hidden = new Set(policy?.hidden || []);
+    return presentPilotGroupHistory((details?.history || []).filter(item => !hidden.has(item.seq)), user?.lns);
+  }, [details, policy?.hidden, user?.lns]);
   const [newGroup, setNewGroup] = useState(false);
   const [book, setBook] = useState([]);
   const [bookError, setBookError] = useState("");
@@ -71,21 +86,29 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const refresh = useCallback(async (row) => {
     const version = refreshVersion.current;
     const current = () => alive.current && version === refreshVersion.current;
+    let access;
     async function pendingFor() {
-      if (row?.admin !== user.lns) return [];
+      if (row?.admin !== user.lns && access?.role !== "admin") return [];
       return pilotGroupInvitations(user, row).catch(error => {
         if (error?.response?.status === 404) return [];
         throw error;
       });
     }
     if (row) {
+      access = await pilotGroupPolicy(row);
+      if (current()) setPolicy(access);
+      if (row.admin === user.lns && access?.leaving?.length) {
+        for (const account of access.leaving) await updatePilotGroup(user, row, "remove", account);
+        access = await pilotGroupPolicy(row);
+        if (current()) setPolicy(access);
+      }
       let next = await openPilotGroup(user, row, { read: true });
       if (current()) setDetails(next);
       let invitations = await pendingFor();
       let changed = false;
       for (const invitation of invitations) {
         if (!current()) return;
-        if (invitation.status !== "accepted" || triedInvites.current.has(invitation.id)) continue;
+        if (row.admin !== user.lns || invitation.status !== "accepted" || triedInvites.current.has(invitation.id)) continue;
         triedInvites.current.add(invitation.id);
         try {
           next = await updatePilotGroup(user, row, "add", invitation.target, invitation);
@@ -176,6 +199,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
     stickToBottom.current = true;
     draft.current = null;
     setComposerMenu(false); setFileDraft(null); setQuestion(""); setChoices(["", ""]);
+    setPolicy(null); setInviteCode(""); setModerate(null); setReports(null); setReportForm(null);
     setDetails(null); setGroup(row); setManage(false); setMessage(""); setPollEditor(false); setQuery(""); setSelected([]);
     setOutgoing([]);
     await refresh(row);
@@ -217,6 +241,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
     const title = name.trim();
     if (!title) return;
     const row = await createPilotGroup(user, title, visibility, initialAvatar);
+    setPolicy(await pilotGroupPolicy(row)); setInviteCode(""); setModerate(null); setReports(null); setReportForm(null);
     stickToBottom.current = true;
     draft.current = null;
     setMessage(""); setFileDraft(null); setComposerMenu(false); setPollEditor(false); setQuestion(""); setChoices(["", ""]);
@@ -242,11 +267,13 @@ export default function PilotGroupsScreen({ navigation, route }) {
     try {
       const info = await FileSystem.getInfoAsync(asset.uri, { size: true });
       const size = info.size;
-      if (!info.exists || !Number.isSafeInteger(size) || size < 1 || size > PILOT_GROUP_FILE_LIMIT) {
-        throw new Error(say("Scegli un file fino a 96 KB.", "Choose a file up to 96 KB."));
+      const limit = policy ? PILOT_GROUP_UPLOAD_LIMIT : PILOT_GROUP_FILE_LIMIT;
+      if (!info.exists || !Number.isSafeInteger(size) || size < 1 || size > limit) {
+        throw new Error(policy ? say("Scegli un file fino a 1 MiB.", "Choose a file up to 1 MiB.") :
+          say("Scegli un file fino a 96 KB.", "Choose a file up to 96 KB."));
       }
       const data = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64,
-        position: 0, length: PILOT_GROUP_FILE_LIMIT + 1 });
+        position: 0, length: limit + 1 });
       const mime = /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(asset.mimeType || "") ? asset.mimeType : "application/octet-stream";
       const name = asset.name?.replace(/[\x00-\x1f\x7f]/g, "").trim().slice(0, 160) || say("Allegato", "Attachment");
       setFileDraft({ id: randomHex(16), groupId: group.id, attachment: { name, mime, size, data } });
@@ -258,7 +285,20 @@ export default function PilotGroupsScreen({ navigation, route }) {
   });
   const sendFile = () => run(async () => {
     if (!fileDraft) return;
-    setDetails(await updatePilotGroup(user, group, "attachment", fileDraft.attachment, undefined, fileDraft.id));
+    let attachment = fileDraft.attachment;
+    if (!attachment.id && attachment.size > PILOT_GROUP_FILE_LIMIT) {
+      const { data, ...metadata } = attachment;
+      const bytes = base64ToBytes(data);
+      if (bytes.length !== metadata.size) throw new Error(say("File incompleto.", "Incomplete file."));
+      const sealed = fileDraft.sealed || encryptFileBytes(bytes);
+      if (!fileDraft.sealed) setFileDraft({ ...fileDraft, sealed });
+      const { ciphertext, key, iv } = sealed;
+      const result = await mlsUpload(group.id, fileDraft.id, ciphertext);
+      if (result?.id !== fileDraft.id) throw new Error(say("Caricamento non confermato.", "Upload not confirmed."));
+      attachment = { ...metadata, id: result.id, key, iv };
+      setFileDraft({ ...fileDraft, attachment });
+    }
+    setDetails(await updatePilotGroup(user, group, "attachment", attachment, undefined, fileDraft.id));
     setFileDraft(null);
   });
   const createPoll = () => run(async () => {
@@ -281,7 +321,68 @@ export default function PilotGroupsScreen({ navigation, route }) {
     });
   };
 
+  const changePolicy = (payload) => run(async () => {
+    await mlsAction(group.id, payload);
+    if (payload.action === "remove" && group.admin === user.lns) await finishAcceptedPilotGroupInvites(user, group);
+    await refresh(group);
+  });
+  const reviewInvite = (id, accept) => run(async () => {
+    await mlsReview(id, accept);
+    await refresh(group);
+  });
+  const verifyAccount = () => run(async () => {
+    await verifyPilotGroupAccount(user);
+    await refresh(null);
+  });
+  const redeem = () => run(async () => {
+    const code = joiningLink.trim().replace(/^ultron:\/\/group-invite\//i, "");
+    if (!/^[a-f0-9]{64}\.[a-f0-9]{64}$/.test(code)) throw new Error(say("Link ULTRON non valido.", "Invalid ULTRON link."));
+    await mlsRedeem(code);
+    setJoiningLink(""); setRedeemOpen(false);
+    await refresh(null);
+  });
+  useEffect(() => {
+    if (route?.params?.inviteCode && !routedGroup) {
+      setJoiningLink(route.params.inviteCode); setRedeemOpen(true);
+      navigation.setParams({ inviteCode: undefined });
+    }
+  }, [route?.params?.inviteCode, routedGroup, navigation]);
+  const renewLink = () => run(async () => {
+    const result = await mlsAction(group.id, { action: "link" });
+    if (!/^[a-f0-9]{64}\.[a-f0-9]{64}$/.test(result?.code || "")) throw new Error(say("Link non confermato.", "Link not confirmed."));
+    setInviteCode(`ultron://group-invite/${result.code}`);
+  });
+  const exitGroup = async (deleting, block = false) => {
+    if (deleting) await mlsDeleteGroup(group.id);
+    else await mlsAction(group.id, { action: "leave" });
+    await forgetPilotGroup(user, group.id, block);
+    if (routedGroup) navigation.goBack();
+    else {
+      setGroup(null); setDetails(null); setPolicy(null); setManage(false);
+      await refresh(null);
+    }
+  };
+  const confirmExit = (deleting) => Alert.alert(
+    deleting ? say("Elimina gruppo", "Delete group") : say("Abbandona gruppo", "Leave group"),
+    deleting ? say("Il gruppo e i suoi contenuti saranno rimossi dal gateway.", "The group and its contents will be removed from the gateway.") :
+      say("Il gruppo sparirà dalla tua lista chat.", "The group will disappear from your chat list."),
+    [{ text: say("Annulla", "Cancel"), style: "cancel" }, {
+      text: deleting ? say("Elimina", "Delete") : say("Abbandona", "Leave"), style: "destructive",
+      onPress: () => run(() => exitGroup(deleting)),
+    }],
+  );
+  const startReport = (target = null) => {
+    setReportReason(""); setReportForm({ target });
+  };
+  const submitReport = (leave) => run(async () => {
+    await mlsReport(group.id, { target: reportForm.target, reason: reportReason.trim() });
+    setReportForm(null);
+    if (leave) await exitGroup(false, true);
+    else Alert.alert(say("Segnalazione inviata", "Report sent"));
+  });
+
   const editProfile = () => {
+    setEditTitle(details?.title || group.title || say("Gruppo", "Group"));
     setDescription(details?.profile?.description || "");
     setAvatar(details?.profile?.avatar || null);
     setEditing(true);
@@ -295,7 +396,11 @@ export default function PilotGroupsScreen({ navigation, route }) {
     if (photo.dataUrl) onPhoto(photo.dataUrl);
   });
   const saveProfile = () => run(async () => {
-    setDetails(await updatePilotGroup(user, group, "profile", { description, avatar }));
+    setDetails(await updatePilotGroup(user, group, group.admin === user.lns ? "profile" : "managed-profile",
+      { title: editTitle, description, avatar }));
+    if (policy?.visibility === "public" && editTitle.trim()) {
+      await mlsAction(group.id, { action: "visibility", visibility: "public", name: editTitle.trim() });
+    }
     setEditing(false);
   });
   const showInfo = () => {
@@ -376,6 +481,13 @@ export default function PilotGroupsScreen({ navigation, route }) {
         {iconButton("arrow-back", backLabel, () => navigation.goBack())}
         <Text style={styles.title}>{say("Gruppi", "Groups")}</Text>
         {warning}
+        {button(say("Usa link d’invito", "Use invitation link"), () => setRedeemOpen(value => !value))}
+        {redeemOpen && <View style={styles.card}>
+          <TextInput {...inputProps} style={styles.input} value={joiningLink} onChangeText={setJoiningLink}
+            autoCapitalize="none" autoCorrect={false} maxLength={200}
+            placeholder={say("Incolla il link ULTRON", "Paste the ULTRON link")} />
+          {button(say("Apri invito", "Open invitation"), redeem, { primary: true, disabled: busy || !joiningLink.trim() })}
+        </View>}
         {inbox.map(invitation => (
           <View key={invitation.id} style={styles.card}>
             <Text style={styles.section}>{invitation.title || say("Invito al gruppo", "Group invitation")}</Text>
@@ -385,7 +497,12 @@ export default function PilotGroupsScreen({ navigation, route }) {
             {invitation.status === "pending" ? <View style={styles.actions}>
               {button(say("Accetta", "Accept"), () => decide(invitation, "accepted"), { primary: true })}
               {button(say("Rifiuta", "Decline"), () => decide(invitation, "declined"))}
-            </View> : <Text style={styles.dim}>{say("Accettato. L’ingresso si completa quando il fondatore è online in Chat o nel gruppo.", "Accepted. Entry completes when the founder is online in Chats or in the group.")}</Text>}
+            </View> : invitation.status === "verification" ? <View style={styles.picker}>
+              <Text style={styles.dim}>{say("Verifica l’account per attivare lettura e scrittura.", "Verify your account to enable reading and writing.")}</Text>
+              {button(say("Verifica account", "Verify account"), verifyAccount, { primary: true })}
+            </View> : <Text style={styles.dim}>{invitation.status === "review" ?
+              say("In attesa di approvazione.", "Waiting for approval.") :
+              say("Accettato. L’ingresso si completa quando il fondatore è online in Chat o nel gruppo.", "Accepted. Entry completes when the founder is online in Chats or in the group.")}</Text>}
           </View>
         ))}
         {groups.map(row => (
@@ -423,12 +540,21 @@ export default function PilotGroupsScreen({ navigation, route }) {
   }
   const groupTitle = details?.title || group.title || say("Gruppo", "Group");
   const isFounder = group.admin === user.lns;
-  const privacy = details?.profile?.visibility || group.profile?.visibility || group.visibility;
+  const isAdmin = isFounder || policy?.role === "admin";
+  const ranks = { member: 1, moderator: 2, admin: 3, founder: 4 };
+  const myRank = ranks[policy?.role || (isFounder ? "founder" : "member")];
+  const roleOf = (account) => policy?.members?.find(entry => entry.account === account)?.role ||
+    (group.admin === account ? "founder" : "member");
+  const canModerate = (target) => myRank >= 2 && target !== user.lns && ranks[roleOf(target)] < myRank;
+  const roleLabel = (account) => ({ founder: say("Fondatore", "Founder"), admin: say("Admin", "Admin"),
+    moderator: say("Moderatore", "Moderator") })[roleOf(account)];
+  const privacy = policy?.visibility || details?.profile?.visibility || group.profile?.visibility || group.visibility;
   const privacyLabel = privacy === "public" ? say("Pubblico", "Public") : privacy === "private" ? say("Privato", "Private") : null;
-  const renderAttachment = (item) => item.attachment?.data ? (
-    <EncryptedAttachment att={{ ...item.attachment, id: `${group.id}:${item.seq}` }} inlineData={item.attachment.data} />
+  const renderAttachment = (item) => item.attachment?.id || item.attachment?.data ? (
+    <EncryptedAttachment att={{ ...item.attachment, id: item.attachment.id || `${group.id}:${item.seq}` }}
+      inlineData={item.attachment.data} pilotGroup={item.attachment.id ? group.id : undefined} />
   ) : <Text style={styles.dim}>{say("File non più disponibile su questo dispositivo.", "File no longer available on this device.")}</Text>;
-  const hasRecipients = details?.members.length > 1;
+  const hasRecipients = details?.members.length > 1 && !policy?.muted && !policy?.rotating;
   return (
     <KeyboardAvoidingView behavior="padding" style={[styles.root, topStyle]}>
       <View style={styles.header}>
@@ -450,8 +576,10 @@ export default function PilotGroupsScreen({ navigation, route }) {
           {groupAvatar(editing ? avatar : details?.profile?.avatar, true)}
           <Text style={styles.title}>{groupTitle}</Text>
           {!!details?.profile?.description && !editing && <Text style={styles.description}>{details.profile.description}</Text>}
-          {isFounder && details && !editing && button(say("Modifica foto e descrizione", "Edit photo and description"), editProfile)}
+          {isAdmin && details && !editing && button(say("Modifica foto e descrizione", "Edit photo and description"), editProfile)}
           {editing && <View style={styles.profileEdit}>
+            <TextInput {...inputProps} style={styles.input} value={editTitle} onChangeText={setEditTitle} maxLength={60}
+              placeholder={say("Nome del gruppo", "Group name")} />
             <View style={styles.actions}>
               {button(say("Scegli foto", "Choose photo"), choosePhoto)}
               {!!avatar && button(say("Rimuovi foto", "Remove photo"), () => setAvatar(null))}
@@ -478,6 +606,30 @@ export default function PilotGroupsScreen({ navigation, route }) {
           <TouchableOpacity onPress={() => openProfile(group.admin)} accessibilityRole="button">
             <Text style={styles.sender}>{say("Fondatore", "Founder")} · {group.admin}</Text>
           </TouchableOpacity>
+          {policy && isAdmin && <>
+            {button(privacy === "public" ? say("Rendi privato", "Make private") : say("Rendi pubblico", "Make public"),
+              () => changePolicy({ action: "visibility", visibility: privacy === "public" ? "private" : "public", name: groupTitle }))}
+            {button(inviteCode ? say("Reimposta link", "Reset link") : say("Genera link d’invito", "Create invitation link"), renewLink)}
+            {!!inviteCode && <>
+              <Text selectable style={styles.text}>{inviteCode}</Text>
+              {button(say("Condividi link", "Share link"), () => withSystemActivity(() => Share.share({ message: inviteCode })).catch(() => {}))}
+            </>}
+            {button(say("Segnalazioni ricevute", "Received reports"), () => run(async () => { setReports(await mlsReports(group.id)); }))}
+            {reports && (reports.length ? reports.map(item => <View key={item.id} style={styles.row}>
+              <Text style={styles.text}>{item.target ? `${item.target} · ` : ""}{item.reason}</Text></View>) :
+              <Text style={styles.dim}>{say("Nessuna segnalazione.", "No reports.")}</Text>)}
+          </>}
+          {policy && button(say("Segnala gruppo", "Report group"), () => startReport())}
+          {policy && button(isFounder ? say("Elimina gruppo", "Delete group") : say("Abbandona gruppo", "Leave group"),
+            () => confirmExit(isFounder))}
+          {reportForm && <View style={styles.picker}>
+            <Text style={styles.dim}>{say("Il motivo sarà visibile agli amministratori del gruppo.", "Group administrators will see your reason.")}</Text>
+            <TextInput {...inputProps} style={styles.input} value={reportReason} maxLength={500}
+              onChangeText={setReportReason} multiline placeholder={say("Motivo", "Reason")} />
+            {button(say("Invia segnalazione", "Send report"), () => submitReport(false), { primary: true, disabled: busy || !reportReason.trim() })}
+            {!isFounder && button(say("Segnala, esci e blocca", "Report, leave and block"), () => submitReport(true), { disabled: busy || !reportReason.trim() })}
+            {button(say("Annulla", "Cancel"), () => setReportForm(null))}
+          </View>}
         </View> : groupTab === "media" ? (
           <View style={styles.picker}>
             {history.some(item => item.attachment) ? history.filter(item => item.attachment).map(item => (
@@ -485,21 +637,39 @@ export default function PilotGroupsScreen({ navigation, route }) {
             )) : <Text style={styles.dim}>{say("Nessun allegato.", "No attachments.")}</Text>}
           </View>
         ) : <>
-        {(details?.members || []).map(account => (
-          <View style={styles.row} key={account}>
+        {(policy ? policy.members.map(item => item.account) : details?.members || []).map(account => (
+          <View key={account}>
+          <View style={styles.row}>
             <TouchableOpacity onPress={() => openProfile(account)} accessibilityRole="button" style={{ flex: 1, paddingVertical: 6 }}>
               <Text style={styles.text}>{account === user.lns ? say("Tu", "You") : account}</Text>
-              {account === group.admin && <Text style={styles.dim}>{say("Fondatore", "Founder")}</Text>}
+              {!!roleLabel(account) && <Text style={styles.dim}>{roleLabel(account)}</Text>}
             </TouchableOpacity>
-            {group.admin === user.lns && account !== user.lns && button(say("Rimuovi", "Remove"), () => remove(account))}
+            {policy && account !== user.lns ? button(say("Azioni", "Actions"), () => setModerate(value => value === account ? null : account)) :
+              isFounder && account !== user.lns && button(say("Rimuovi", "Remove"), () => remove(account))}
+          </View>
+          {moderate === account && <View style={styles.card}>
+            {canModerate(account) && <>
+              {myRank >= 3 && button(say("Nomina moderatore", "Appoint moderator"), () => changePolicy({ action: "role", target: account, role: "moderator" }))}
+              {isFounder && button(say("Nomina admin", "Appoint admin"), () => changePolicy({ action: "role", target: account, role: "admin" }))}
+              {myRank >= 3 && roleOf(account) !== "member" && button(say("Revoca ruolo", "Revoke role"), () => changePolicy({ action: "role", target: account, role: "member" }))}
+              {button(say("Silenzia 1 ora", "Mute for 1 hour"), () => changePolicy({ action: "mute", target: account, minutes: 60 }))}
+              {button(say("Riattiva invio", "Unmute"), () => changePolicy({ action: "mute", target: account, minutes: 0 }))}
+              {button(say("Espelli", "Remove"), () => changePolicy({ action: "remove", target: account }))}
+            </>}
+            {button(say("Segnala utente", "Report user"), () => { startReport(account); setGroupTab("info"); })}
+          </View>}
           </View>
         ))}
-        {group.admin === user.lns && <View style={styles.card}>
+        {isAdmin && <View style={styles.card}>
           {outgoing.map(invitation => (
             <View key={invitation.id} style={styles.row}>
               <Text style={[styles.dim, { flex: 1 }]}>{invitation.target} · {invitation.status === "declined"
                 ? say("Rifiutato", "Declined") : invitation.status === "accepted" ? say("Accettato", "Accepted") : say("In attesa", "Pending")}</Text>
-              {invitation.status === "accepted" && button(say("Completa ingresso", "Complete entry"), () => retryInvite(invitation))}
+              {invitation.status === "review" && policy && <>
+                {button(say("Approva", "Approve"), () => reviewInvite(invitation.id, true))}
+                {button(say("Rifiuta", "Decline"), () => reviewInvite(invitation.id, false))}
+              </>}
+              {invitation.status === "accepted" && isFounder && button(say("Completa ingresso", "Complete entry"), () => retryInvite(invitation))}
             </View>
           ))}
           {contactPicker()}
@@ -519,10 +689,12 @@ export default function PilotGroupsScreen({ navigation, route }) {
             : say("Sincronizzazione della chat…", "Syncing the chat…")}</Text>} keyExtractor={item => String(item.seq)} contentContainerStyle={styles.messages}
           renderItem={({item}) => <View style={[styles.message, item.sender === user.lns && styles.ownMessage]}>
             <TouchableOpacity onPress={() => openProfile(item.sender)} accessibilityRole="button">
-              <Text style={styles.sender}>{item.sender}{item.sender === group.admin ? " · " + say("Fondatore", "Founder") : ""}</Text>
+              <Text style={styles.sender}>{item.sender}{roleLabel(item.sender) ? " · " + roleLabel(item.sender) : ""}</Text>
             </TouchableOpacity>
             <Text style={styles.text}>{item.body}</Text>
             {!!item.attachment && renderAttachment(item)}
+            {policy && canModerate(item.sender) && button(say("Rimuovi messaggio", "Remove message"),
+              () => changePolicy({ action: "hide", seq: item.seq }))}
             {item.poll?.kind === "poll" && <View style={styles.poll}>
               {item.poll.options.map((option, index) => (
                 <TouchableOpacity key={option} accessibilityRole="button" accessibilityState={{ disabled: busy, selected: index === item.choice }}
@@ -550,7 +722,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
           </View>
         </ScrollView>}
         {composerMenu && <View style={styles.menu}>
-          {button(say("Allegati", "Attachments") + " · 96 KB", pickFile)}
+          {button(say("Allegati", "Attachments") + (policy ? " · 1 MiB" : " · 96 KB"), pickFile)}
           {button(say("Sondaggio", "Poll"), () => { setComposerMenu(false); setPollEditor(value => !value); })}
         </View>}
         {fileDraft && <View style={styles.menu}>
@@ -559,7 +731,10 @@ export default function PilotGroupsScreen({ navigation, route }) {
           {button(say("Invia file", "Send file"), sendFile, { primary: true, disabled: busy || !hasRecipients })}
         </View>}
         <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-          {details && !hasRecipients ? <Text style={styles.dim}>{say("Sarai in grado di scrivere quando sarà entrato almeno un altro membro.", "You can write once another member has joined.")}</Text> :
+          {details && !hasRecipients ? <Text style={styles.dim}>{policy?.muted ?
+            say("Il tuo invio è temporaneamente silenziato.", "You are temporarily muted.") : policy?.rotating ?
+            say("Rinnovo delle chiavi del gruppo in corso.", "Group keys are being rotated.") :
+            say("Sarai in grado di scrivere quando sarà entrato almeno un altro membro.", "You can write once another member has joined.")}</Text> :
             <View style={styles.composerRow}>
               {iconButton(composerMenu ? "close" : "add", say("Allegati e sondaggi", "Attachments and polls"),
                 () => { setPollEditor(false); setComposerMenu(value => !value); }, busy || !hasRecipients || !!fileDraft)}

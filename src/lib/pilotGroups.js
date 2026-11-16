@@ -12,6 +12,7 @@ const PACKAGE_BATCH = 8;
 const MAX_LOCAL_HISTORY = 200;
 export const PILOT_GROUP_AVATAR_LIMIT = 32 * 1024;
 export const PILOT_GROUP_FILE_LIMIT = 96 * 1024;
+export const PILOT_GROUP_UPLOAD_LIMIT = 1024 * 1024;
 const LOCAL_FILE_BUDGET = 384 * 1024;
 const attachmentScope = (id, epoch, op, author, attachment) =>
   JSON.stringify(["ultron-mls-attachment-v1", id, epoch, op, author, attachment]);
@@ -19,7 +20,12 @@ function validAttachment(attachment) {
   if (!attachment || typeof attachment.name !== "string" || !attachment.name.trim() || attachment.name.length > 160 ||
       /[\x00-\x1f\x7f]/.test(attachment.name) || typeof attachment.mime !== "string" || attachment.mime.length > 120 ||
       !/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(attachment.mime) || !Number.isSafeInteger(attachment.size) ||
-      attachment.size < 1 || attachment.size > PILOT_GROUP_FILE_LIMIT || typeof attachment.data !== "string" ||
+      attachment.size < 1) return false;
+  if ("id" in attachment) {
+    return attachment.size <= PILOT_GROUP_UPLOAD_LIMIT && /^[a-f0-9]{32}$/.test(attachment.id || "") &&
+      /^[a-f0-9]{64}$/.test(attachment.key || "") && /^[a-f0-9]{24}$/.test(attachment.iv || "") && !attachment.data;
+  }
+  if (attachment.size > PILOT_GROUP_FILE_LIMIT || typeof attachment.data !== "string" ||
       attachment.data.length !== 4 * Math.ceil(attachment.size / 3) ||
       !/^[A-Za-z0-9+/]+={0,2}$/.test(attachment.data)) return false;
   const padding = attachment.data.endsWith("==") ? 2 : attachment.data.endsWith("=") ? 1 : 0;
@@ -136,7 +142,7 @@ export async function listPilotGroups() {
 function expectInvitation(row) {
   if (!/^[a-f0-9]{32}$/.test(row?.id || "") || !/^[a-f0-9]{64}$/.test(row.group || "") ||
       !/^[a-z0-9._-]+@ultron\.uns$/.test(row.target || "") || !/^[a-z0-9._-]+@ultron\.uns$/.test(row.inviter || "") ||
-      !["pending", "accepted", "declined"].includes(row.status)) throw new Error("Invito al gruppo non valido.");
+      !["review", "pending", "accepted", "declined", "verification"].includes(row.status)) throw new Error("Invito al gruppo non valido.");
   return row;
 }
 
@@ -154,7 +160,9 @@ export async function pilotInvitationInbox(user) {
   const rows = await api.mlsInvitations();
   check();
   if (!Array.isArray(rows)) throw new Error("Inviti non disponibili.");
-  return rows.map(expectInvitation).filter(row => row.target === user.lns);
+  const blocked = new Set(await getBlob(blob(user, "blocked-groups")) || []);
+  check();
+  return rows.map(expectInvitation).filter(row => row.target === user.lns && !blocked.has(row.group));
 }
 
 export async function pilotInvitationTitle(user, invitation) {
@@ -175,24 +183,23 @@ export async function pilotGroupInvitations(user, group) {
   const rows = await api.mlsGroupInvitations(group.id);
   check();
   if (!Array.isArray(rows)) throw new Error("Inviti non disponibili.");
-  return rows.map(expectInvitation).filter(row => row.group === group.id && row.inviter === user.lns);
+  return rows.map(expectInvitation).filter(row => row.group === group.id && row.inviter === group.admin);
 }
 
 export async function requestPilotGroupInvitation(user, group, target) {
   const check = api.authenticatedScope(user);
-  if (group.admin !== user.lns) throw new Error("Solo l’amministratore può inviare inviti.");
   const credentials = await hostedGroupCredentials(user);
   if (!await credentials.identityFor(target)) throw new Error("Verifica il QR ULTRON del contatto.");
   check();
   const id = randomHex(16);
-  const title = await cachedPilotGroupTitle(user, group);
+  const title = group.admin === user.lns ? await cachedPilotGroupTitle(user, group) : null;
   const key = await verifiedContact(user, target);
   const signature = title ? signMessage(inviteTitleScope(user.server, id, group.id, user.lns, target, title), user.sk) : null;
   const note = title ? JSON.stringify(encryptForRecipients(JSON.stringify({ title, signature }), { [target]: key.kem })[0]) : undefined;
   check();
   const answer = expectInvitation(await api.mlsRequestInvitation(group.id, { id, target, note }));
   check();
-  if (answer.group !== group.id || answer.target !== target || answer.inviter !== user.lns) {
+  if (answer.group !== group.id || answer.target !== target || answer.inviter !== group.admin) {
     throw new Error("Il gateway non ha confermato l’invito.");
   }
   return answer;
@@ -273,7 +280,7 @@ async function flush(user, id, record, check) {
   } catch (error) {
     // The gateway checks the operation id before the current cursor. A 409
     // confirms this exact reservation did not commit on this group.
-    if (error?.response?.status === 409) {
+    if ([403, 404, 409].includes(error?.response?.status)) {
       check();
       await setBlobDurably(key, { ...record, pending: null });
     }
@@ -287,6 +294,9 @@ async function flush(user, id, record, check) {
   if (pending.type === "title") {
     updated.title = pending.text;
     if (pending.profile) updated.profile = pending.profile;
+  } else if (pending.body.managed_profile) {
+    updated.title = pending.managedTitle;
+    updated.profile = pending.profile;
   }
   else if (pending.body.kind === "message") {
     updated.history = appendHistory(record.history, { seq: ack.seq, sender: user.lns, body: pending.text, poll: pending.poll,
@@ -349,7 +359,7 @@ async function sync(user, row, ctx) {
       const decoded = await engine.receive(record.state, id, record.epoch, event, row.admin);
       let history = record.history, title = record.title, groupProfile = record.profile;
       if (decoded.payload !== null) {
-        const { body, signature, type, poll, poll_signature, profile, profile_signature, attachment, attachment_signature } = JSON.parse(decoded.payload);
+        const { body, signature, type, poll, poll_signature, profile, profile_signature, attachment, attachment_signature, title: managedTitle } = JSON.parse(decoded.payload);
         const author = await credentials.identityFor(event.author);
         if (typeof body !== "string" || !["text", "title"].includes(type) ||
             (type === "title" ? event.author !== row.admin || !body || body.length > 60 : body.length > 2000) || !/^[a-f0-9]{6618}$/.test(signature || "") ||
@@ -360,13 +370,16 @@ async function sync(user, row, ctx) {
         if (type === "title") {
           title = body;
           if (validProfile(profile) && /^[a-f0-9]{6618}$/.test(profile_signature || "") &&
-              verifyMessage(profileScope(id, record.epoch, event.op, event.author, profile), profile_signature, author)) {
-            groupProfile = profile;
-          }
+              verifyMessage(profileScope(id, record.epoch, event.op, event.author, profile), profile_signature, author)) groupProfile = profile;
+        } else if (event.managed_profile === true && validChoice(managedTitle, 60) && validProfile(profile) &&
+            verifyMessage(profileScope(id, record.epoch, event.op, event.author, { title: managedTitle, profile }), profile_signature, author)) {
+          title = managedTitle;
+          groupProfile = profile;
         } else {
           const authenticatedPoll = validPoll(poll, event.op, body) && /^[a-f0-9]{6618}$/.test(poll_signature || "") &&
             verifyMessage(pollScope(id, record.epoch, event.op, event.author, poll), poll_signature, author);
-          const authenticatedAttachment = validAttachment(attachment) && /^[a-f0-9]{6618}$/.test(attachment_signature || "") &&
+          const authenticatedAttachment = validAttachment(attachment) &&
+            (!attachment.id || event.file === attachment.id) && /^[a-f0-9]{6618}$/.test(attachment_signature || "") &&
             verifyMessage(attachmentScope(id, record.epoch, event.op, event.author, attachment), attachment_signature, author);
           history = appendHistory(history, { seq: event.seq, sender: event.author, body, poll: authenticatedPoll ? poll : undefined,
             attachment: authenticatedAttachment ? attachment : undefined });
@@ -421,8 +434,38 @@ function detailsFor(engine, id, record) {
     members: engine.members(record.state, id, record.epoch) };
 }
 
+export async function pilotGroupPolicy(row) {
+  if (typeof api.mlsPolicy !== "function") return null;
+  try { return await api.mlsPolicy(row.id); }
+  catch (error) { if (error?.response?.status === 404) return null; throw error; }
+}
+
+export async function verifyPilotGroupAccount(user) {
+  const check = api.authenticatedScope(user);
+  const signature = signMessage(JSON.stringify(["ultron-mls-account-v1", user.server, user.lns, user.pk]), user.sk);
+  const result = await api.mlsVerifyAccount(signature);
+  check();
+  if (result?.verified !== true) throw new Error("Verifica dell’account non confermata.");
+}
+
+export function forgetPilotGroup(user, id, block = false) {
+  return serial(user, async () => {
+    const check = api.authenticatedScope(user);
+    check();
+    if (block) {
+      const key = blob(user, "blocked-groups");
+      const previous = await getBlob(key) || [];
+      check();
+      await setBlobDurably(key, [...new Set([...previous, id])]);
+    }
+    await setBlobDurably(blob(user, id), null);
+  });
+}
+
 export async function finishAcceptedPilotGroupInvites(user, row) {
   if (row.admin !== user.lns) return;
+  const policy = await pilotGroupPolicy(row);
+  for (const account of policy?.leaving || []) await updatePilotGroup(user, row, "remove", account);
   const accepted = (await pilotGroupInvitations(user, row)).filter(invite => invite.status === "accepted");
   if (!accepted.length) return;
   let details = await openPilotGroup(user, row);
@@ -455,7 +498,7 @@ export function updatePilotGroup(user, row, kind, value, invitation, draftId) {
     for (let attempt = 0; ; attempt++) {
       try { return await writePilotGroup(user, row, kind, value, invitation, draftId, ctx); }
       catch (error) {
-        if (attempt || error?.response?.status !== 409 || !["message", "title", "profile", "poll", "vote", "attachment"].includes(kind)) throw error;
+        if (attempt || error?.response?.status !== 409 || !["message", "title", "profile", "managed-profile", "poll", "vote", "attachment"].includes(kind)) throw error;
       }
     }
   });
@@ -469,9 +512,9 @@ async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx)
   if (["message", "attachment"].includes(kind) && draftId && engine.members(record.state, id, record.epoch).length < 2) {
     throw new Error("Invita almeno un membro e attendi che l’ingresso sia completato.");
   }
-  const body = { op: randomHex(16), cursor: record.cursor, epoch: record.epoch, kind: ["title", "profile", "poll", "vote", "attachment"].includes(kind) ? "message" : kind };
+  const body = { op: randomHex(16), cursor: record.cursor, epoch: record.epoch, kind: ["title", "profile", "managed-profile", "poll", "vote", "attachment"].includes(kind) ? "message" : kind };
   let update;
-  let text, type, poll, profile, attachment;
+  let text, type, poll, profile, attachment, managedTitle;
   if (body.kind === "message") {
     type = ["title", "profile"].includes(kind) ? "title" : "text";
     if (kind === "poll") {
@@ -483,14 +526,21 @@ async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx)
       text = "🗳";
       poll = { kind: "vote", id: value.id, choice: value.choice };
     } else if (kind === "profile") {
-      text = record.title || row.title || "Gruppo";
+      text = value.title?.trim() || record.title || row.title || "Gruppo";
       profile = { description: value.description.trim(), avatar: value.avatar };
       if (record.profile?.visibility) profile.visibility = record.profile.visibility;
       if (!validProfile(profile)) throw new Error("Descrizione o foto del gruppo non valida.");
+    } else if (kind === "managed-profile") {
+      managedTitle = value.title.trim();
+      profile = { description: value.description.trim(), avatar: value.avatar };
+      if (!validChoice(managedTitle, 60) || !validProfile(profile)) throw new Error("Descrizione o foto del gruppo non valida.");
+      body.managed_profile = true;
+      text = "Informazioni del gruppo aggiornate.";
     } else if (kind === "attachment") {
       attachment = value;
       if (!validAttachment(attachment)) throw new Error("Allegato del gruppo non valido.");
       text = attachment.name;
+      if (attachment.id) body.file = attachment.id;
     } else {
       text = value.trim();
     }
@@ -498,11 +548,11 @@ async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx)
     if (!text || (type === "title" ? text.length > 60 || row.admin !== user.lns : text.length > 2000) || utf8Encode(text).length > 8000) throw new Error("Messaggio di gruppo non valido.");
     const signature = signMessage(messageScope(id, record.epoch, body.op, user.lns, type, text), user.sk);
     const poll_signature = poll ? signMessage(pollScope(id, record.epoch, body.op, user.lns, poll), user.sk) : undefined;
-    const profile_signature = profile ? signMessage(profileScope(id, record.epoch, body.op, user.lns, profile), user.sk) : undefined;
+    const profile_signature = profile ? signMessage(profileScope(id, record.epoch, body.op, user.lns, managedTitle ? { title: managedTitle, profile } : profile), user.sk) : undefined;
     const attachment_signature = attachment
       ? signMessage(attachmentScope(id, record.epoch, body.op, user.lns, attachment), user.sk) : undefined;
     update = await engine.send(record.state, id, record.epoch,
-      JSON.stringify({ body: text, signature, type, poll, poll_signature, profile, profile_signature, attachment, attachment_signature }));
+      JSON.stringify({ body: text, signature, type, poll, poll_signature, profile, profile_signature, attachment, attachment_signature, title: managedTitle }));
   } else if (kind === "add" || kind === "remove") {
     if (row.admin !== user.lns) throw new Error("Solo l’amministratore può modificare i membri.");
     body.target = value.trim().toLowerCase();
@@ -534,7 +584,7 @@ async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx)
     }
   } else throw new Error("Operazione gruppo non valida.");
 
-  const pending = { body: { ...body, wire: update.wire }, snapshot: update.snapshot, text, type, poll, profile, attachment, draftId };
+  const pending = { body: { ...body, wire: update.wire }, snapshot: update.snapshot, text, type, poll, profile, attachment, managedTitle, draftId };
   const staged = { ...record, pending };
   check();
   await setBlobDurably(blob(user, id), staged);

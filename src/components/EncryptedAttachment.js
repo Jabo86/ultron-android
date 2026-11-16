@@ -44,7 +44,7 @@ function fileNameFor(att) {
   return base;
 }
 
-export default function EncryptedAttachment({ att, inlineData }) {
+export default function EncryptedAttachment({ att, inlineData, pilotGroup }) {
   const { lang } = useI18n();
   const en = lang === "en";
   const isImage = (att?.mime || "").startsWith("image/");
@@ -54,8 +54,8 @@ export default function EncryptedAttachment({ att, inlineData }) {
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [saving, setSaving] = useState(false);
-  const cacheKey = useMemo(() => sha256Hex(JSON.stringify([att?.id, att?.key, att?.iv, inlineData])),
-    [att?.id, att?.key, att?.iv, inlineData]);
+  const cacheKey = useMemo(() => sha256Hex(JSON.stringify([att?.id, att?.key, att?.iv, inlineData, pilotGroup])),
+    [att?.id, att?.key, att?.iv, inlineData, pilotGroup]);
   const [threat, setThreat] = useState(scans.get(cacheKey) || null);
   const [full, setFull] = useState(false);
   const alive = useRef(true);
@@ -87,7 +87,7 @@ export default function EncryptedAttachment({ att, inlineData }) {
         }
         const bytes = inlineData
           ? base64ToBytes(inlineData)
-          : decryptFileBytes(await api.blobDownload(att.id), att.key, att.iv);
+          : decryptFileBytes(await (pilotGroup ? api.mlsDownload(pilotGroup, att.id) : api.blobDownload(att.id)), att.key, att.iv);
         if (att.size && bytes.length !== att.size) throw new Error("Allegato incompleto.");
         const scan = analyzeAttachment({ name: att.name, mime: att.mime, bytes }, lang);
         scans.set(cacheKey, scan);
