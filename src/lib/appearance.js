@@ -7,31 +7,26 @@
 import { useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const KEY = "lat.look.v1";
+const KEY = "ultron.look.blue.v1";
 
 // Sei accenti. Non sedici: sei, scelti perché si leggono tutti su fondo scuro con lo
 // stesso contrasto. Il colore cambia l'umore dell'app, non la sua leggibilità.
 export const ACCENTS = [
   { id: "smeraldo", label: "Verde Smeraldo", color: "#50C878", deep: "#1E5637" },
-  { id: "blu", label: "Blu Elettrico", color: "#3D8BFF", deep: "#123A7A" },
+  { id: "blu", label: "Blu Elettrico", color: "#72C7FF", deep: "#133762" },
   { id: "oro", label: "Giallo Oro", color: "#E8B33C", deep: "#6B4E12" },
   { id: "rubino", label: "Rosso Rubino", color: "#E0475F", deep: "#6B1622" },
   { id: "arancio", label: "Arancione Vivace", color: "#FF7A2F", deep: "#7A3410" },
   { id: "argento", label: "Bianco Argento", color: "#DCE3E8", deep: "#4A5158" },
 ];
 
-// Tre fondi scuri, con le superfici e il testo calibrati su ciascuno.
-// «Bianco totale» non è in questo elenco per un motivo dichiarato: un tema chiaro non è
-// uno sfondo diverso, è un ribaltamento di tutti i colori di superficie e di testo in
-// quaranta schermate. Metterlo qui adesso vorrebbe dire consegnare testo grigio chiaro su
-// bianco. Arriva quando i colori saranno token e non valori scritti dentro le schermate.
 export const BACKGROUNDS = [
   { id: "nero", label: "Deep Black", color: "#000000", surface: "#0A0A0A", surfaceAlt: "#121212", border: "#1C1C1C" },
-  { id: "blunotte", label: "Midnight Blue", color: "#00040F", surface: "#070C1C", surfaceAlt: "#0C1428", border: "#161F38" },
+  { id: "blunotte", label: "Midnight Blue", color: "#050E1F", surface: "#09182D", surfaceAlt: "#102440", border: "#25476B" },
   { id: "foresta", label: "Forest Green", color: "#00110A", surface: "#061A10", surfaceAlt: "#0A2417", border: "#123522" },
 ];
 
-let current = { accent: "smeraldo", bg: "nero" };
+let current = { accent: "blu", bg: "blunotte" };
 const listeners = new Set();
 
 export function get() { return current; }

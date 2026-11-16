@@ -90,7 +90,7 @@ export default function ConversationsScreen({ navigation }) {
           snapshot = { account: user.lns, server: user.server, at: 0, rows: [], invites: [] };
           groupList.current = snapshot;
         }
-        if (!snapshot.request && (force || Date.now() - snapshot.at > 5000)) {
+        if (!snapshot.request && (force || Date.now() - snapshot.at > 3000)) {
           snapshot.at = Date.now();
           snapshot.request = Promise.allSettled([listPilotGroups(), pilotInvitationInbox(user)]).then(([rows, invites]) => {
             if (rows.status === "fulfilled") snapshot.rows = rows.value;
@@ -323,7 +323,7 @@ export default function ConversationsScreen({ navigation }) {
   // se non era cambiato niente. Con `useCallback` le righe restano ferme finche non cambia
   // davvero qualcosa che le riguarda: e' la differenza fra scorrere liscio e scorrere a scatti.
   const renderItem = useCallback(({ item }) => (
-    <TouchableOpacity style={styles.row} onPress={() => openConv(item)} testID="conv-row">
+    <TouchableOpacity activeOpacity={0.7} style={[styles.row, item.unread > 0 && styles.rowActive]} onPress={() => openConv(item)} testID="conv-row">
       {item.is_group ? (
         item.avatar ? (
           <Image source={{ uri: item.avatar }} style={styles.groupAvatarImg} />
@@ -388,6 +388,10 @@ export default function ConversationsScreen({ navigation }) {
             <Text style={styles.signout}>{t("signout")}</Text>
           </TouchableOpacity>
         </View>
+      </View>
+
+      <View style={styles.signalTrack} accessibilityElementsHidden importantForAccessibility="no">
+        <View style={styles.signalLead} /><View style={styles.signalTail} />
       </View>
 
       <TrialBanner />
@@ -531,12 +535,19 @@ export default function ConversationsScreen({ navigation }) {
 
 const makeStyles = (tint) => StyleSheet.create({
   root: { flex: 1, backgroundColor: "transparent" },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: theme.border },
-  logo: { width: 38, height: 38, borderRadius: 10 },
-  hTitle: { color: theme.text, fontSize: 20, fontWeight: "800" },
-  hSub: { color: theme.textDim, fontSize: 11, maxWidth: 200 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16,
+    paddingVertical: 14, backgroundColor: theme.surface, borderBottomWidth: 1, borderBottomColor: theme.border },
+  signalTrack: { height: 5, marginHorizontal: 16, flexDirection: "row", gap: 6, alignItems: "flex-start" },
+  signalLead: { width: 78, height: 2, backgroundColor: tint },
+  signalTail: { flex: 1, height: 1, backgroundColor: theme.accentLine },
+  logo: { width: 42, height: 42, borderRadius: 12, borderWidth: 1, borderColor: theme.accentLine },
+  hTitle: { color: theme.text, fontSize: 21, fontWeight: "900", letterSpacing: 2.6 },
+  hSub: { color: theme.textDim, fontSize: 10, fontFamily: "monospace", maxWidth: 180 },
   signout: { color: theme.danger, fontSize: 14, fontWeight: "600" },
-  row: { flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: theme.surface },
+  row: { flexDirection: "row", alignItems: "center", gap: 13, marginHorizontal: 12, marginTop: 7,
+    paddingHorizontal: 13, paddingVertical: 12, borderWidth: 1, borderColor: theme.border,
+    borderRadius: 14, backgroundColor: theme.surface },
+  rowActive: { backgroundColor: theme.accentWash, borderColor: theme.accentLine, borderLeftWidth: 3, borderLeftColor: tint },
   rowBody: { flex: 1 },
   rowTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
   rowTitle: { color: theme.text, fontSize: 16, fontWeight: "700", flex: 1 },
@@ -544,20 +555,20 @@ const makeStyles = (tint) => StyleSheet.create({
   rowSub: { color: theme.textDim, fontSize: 12, flex: 1, marginTop: 3 },
   rowUnreadSub: { color: theme.accent, fontSize: 12.5, flex: 1, marginTop: 3, fontWeight: "800" },
   badge: { backgroundColor: theme.accent, minWidth: 20, height: 20, borderRadius: 10, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
-  badgeText: { color: "#03120A", fontSize: 11, fontWeight: "800" },
-  totalBadge: { backgroundColor: "#e0364f", minWidth: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center", paddingHorizontal: 7 },
-  callBadge: { position: "absolute", top: -6, right: -8, backgroundColor: "#e0364f", minWidth: 17, height: 17, borderRadius: 9, alignItems: "center", justifyContent: "center", paddingHorizontal: 4, borderWidth: 1.5, borderColor: theme.bg },
-  callBadgeTxt: { color: "#fff", fontSize: 10, fontWeight: "900" },
-  totalBadgeTxt: { color: "#fff", fontSize: 12, fontWeight: "900" },
+  badgeText: { color: theme.onAccent, fontSize: 11, fontWeight: "800" },
+  totalBadge: { backgroundColor: tint, minWidth: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center", paddingHorizontal: 7 },
+  callBadge: { position: "absolute", top: -6, right: -8, backgroundColor: tint, minWidth: 17, height: 17, borderRadius: 9, alignItems: "center", justifyContent: "center", paddingHorizontal: 4, borderWidth: 1.5, borderColor: theme.bg },
+  callBadgeTxt: { color: theme.onAccent, fontSize: 10, fontWeight: "900" },
+  totalBadgeTxt: { color: theme.onAccent, fontSize: 12, fontWeight: "900" },
   empty: { flex: 1, alignItems: "center", justifyContent: "center", padding: 40 },
   emptyTitle: { color: theme.text, fontSize: 18, fontWeight: "700", marginBottom: 8 },
   emptyText: { color: theme.textDim, fontSize: 14, textAlign: "center", lineHeight: 20 },
   fab: { position: "absolute", right: 22, bottom: 30, width: 58, height: 58, borderRadius: 29, backgroundColor: tint, alignItems: "center", justifyContent: "center", shadowColor: tint, shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
   fabGroup: { position: "absolute", right: 22, bottom: 98, width: 52, height: 52, borderRadius: 26, backgroundColor: theme.surfaceAlt, borderWidth: 1, borderColor: tint, alignItems: "center", justifyContent: "center", elevation: 6 },
-  fabText: { color: "#fff", fontSize: 32, fontWeight: "300", marginTop: -2 },
-  groupAvatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: "rgba(80,200,120,0.15)", alignItems: "center", justifyContent: "center" },
+  fabText: { color: theme.onAccent, fontSize: 32, fontWeight: "300", marginTop: -2 },
+  groupAvatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: theme.accentWash, alignItems: "center", justifyContent: "center" },
   groupAvatarImg: { width: 46, height: 46, borderRadius: 23, backgroundColor: theme.surfaceAlt },
-  gAvatarBtn: { alignSelf: "center", width: 84, height: 84, borderRadius: 42, overflow: "hidden", backgroundColor: "rgba(80,200,120,0.15)", borderWidth: 1, borderColor: theme.border, alignItems: "center", justifyContent: "center", marginBottom: 6 },
+  gAvatarBtn: { alignSelf: "center", width: 84, height: 84, borderRadius: 42, overflow: "hidden", backgroundColor: theme.accentWash, borderWidth: 1, borderColor: theme.border, alignItems: "center", justifyContent: "center", marginBottom: 6 },
   gAvatarImg: { width: "100%", height: "100%" },
   gAvatarTxt: { position: "absolute", bottom: 0, left: 0, right: 0, textAlign: "center", backgroundColor: "rgba(0,0,0,0.6)", color: "#fff", fontSize: 8, paddingVertical: 2, letterSpacing: 1 },
   modalWrap: { flex: 1, backgroundColor: "#000A", justifyContent: "flex-end" },

@@ -310,7 +310,7 @@ async function flush(user, id, record, check) {
   check();
   let ack;
   try {
-    ack = await api.mlsAppend(id, pending.body);
+    ack = await api.mlsAppend(id, pending.body, pending.silent === true);
   } catch (error) {
     // The gateway checks the operation id before the current cursor. A 409
     // confirms this exact reservation did not commit on this group.
@@ -639,7 +639,8 @@ async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx,
   } else throw new Error("Operazione gruppo non valida.");
 
   const nextMembers = body.kind === "message" ? undefined : engine.members(update.snapshot, id, record.epoch + 1);
-  const pending = { body: { ...body, wire: update.wire }, snapshot: update.snapshot, text, type, poll, profile, attachment, managedTitle, draftId, nextMembers };
+  const pending = { body: { ...body, wire: update.wire }, snapshot: update.snapshot, text, type, poll, profile, attachment, managedTitle, draftId, nextMembers,
+    silent: !["message", "attachment", "poll"].includes(kind) };
   const staged = { ...record, pending };
   check();
   await setBlobDurably(blob(user, id), staged);
@@ -647,6 +648,14 @@ async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx,
   return detailsFor(engine, id, completed);
 }
 
+
+export async function cachedPilotGroupDetails(user, row) {
+  const check = api.authenticatedScope(user);
+  const record = await getBlob(blob(user, row.id));
+  check();
+  if (record?.since !== row.since || !Array.isArray(record.members)) return null;
+  return { title: record.title, profile: record.profile, history: record.history, members: record.members };
+}
 
 export async function cachedPilotGroupSummary(user, row) {
   const record = await getBlob(blob(user, row.id));

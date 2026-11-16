@@ -75,7 +75,7 @@ const api = {
     }));
     return {seq:g.seq,epoch:g.epoch,since,events};
   },
-  mlsAppend: async (id, body) => {
+  mlsAppend: async (id, body, silent) => {
     const group=groups.get(id);
     if (!group.members.has(actor.lns)) throw missing();
     const found=group.events.find(e=>e.author===actor.lns&&e.op===body.op);
@@ -95,7 +95,7 @@ const api = {
       group.members.set(body.target,seq);
     }
     if (body.kind==="remove") group.members.delete(body.target);
-    group.events.push({...body,seq,next_epoch:next,author:actor.lns,subject:body.target});
+    group.events.push({...body,silent,seq,next_epoch:next,author:actor.lns,subject:body.target});
     group.epoch=next;
     group.seq=seq;
     if(loseOnce){loseOnce=false;throw new Error("receipt lost");}
@@ -183,6 +183,7 @@ actor=a;
 await assert.rejects(app.updatePilotGroup(a,row,"poll",{question:"Orario?",options:["Mattina","Mattina"]}), /Sondaggio non valido/);
 const pollHistory = await app.updatePilotGroup(a,row,"poll",{question:"Orario?",options:["Mattina","Pomeriggio"]});
 const pollId = pollHistory.history.at(-1).poll.id;
+assert.equal(groups.get(row.id).events.at(-1).silent, false);
 const lastWire = groups.get(row.id).events.at(-1).wire;
 assert.ok(!lastWire.includes("Pomeriggio"));
 actor=b;
@@ -191,6 +192,7 @@ assert.equal(pollView.body,"Orario?");
 assert.deepEqual(Array.from(pollView.totals),[0,0]);
 await app.updatePilotGroup(b,bobRow,"vote",{id:pollId,choice:0});
 await app.updatePilotGroup(b,bobRow,"vote",{id:pollId,choice:1});
+assert.equal(groups.get(row.id).events.at(-1).silent, true);
 actor=a;
 pollView = app.presentPilotGroupHistory((await app.openPilotGroup(a,row)).history,a.lns).at(-1);
 assert.deepEqual(Array.from(pollView.totals),[0,1]);

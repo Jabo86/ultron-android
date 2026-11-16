@@ -17,7 +17,7 @@ import { base64ToBytes, encryptFileBytes, randomHex } from "../lib/crypto";
 import { withSystemActivity } from "../lib/lockGuard";
 import { usePoll } from "../lib/usePoll";
 import { getVerified } from "../lib/verify";
-import { announcePilotGroupProfile, cachedPilotGroupTitle, createPilotGroup, decidePilotGroupInvitation, deliverPilotGroupInvitation, finishAcceptedPilotGroupInvites,
+import { announcePilotGroupProfile, cachedPilotGroupDetails, cachedPilotGroupTitle, createPilotGroup, decidePilotGroupInvitation, deliverPilotGroupInvitation, finishAcceptedPilotGroupInvites,
   forgetPilotGroup, listPilotGroups, listPublicPilotGroups, openPilotGroup, pilotGroupPolicy,
   pilotGroupInvitations, pilotInvitationInbox, pilotInvitationTitle, preparePilotGroupInvites, presentPilotGroupHistory,
   PILOT_GROUP_AVATAR_LIMIT, PILOT_GROUP_FILE_LIMIT, PILOT_GROUP_UPLOAD_LIMIT, requestPilotGroupInvitation,
@@ -40,7 +40,11 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const triedInvites = useRef(new Map());
   const routedGroup = route?.params?.group || null;
   const [group, setGroup] = useState(routedGroup);
-  const [details, setDetails] = useState(null);
+  const [details, storeDetails] = useState(null);
+  const setDetails = useCallback(next => storeDetails(previous =>
+    previous && next && previous.history === next.history && previous.members === next.members &&
+      previous.title === next.title && previous.profile === next.profile ? previous : next
+  ), []);
   const [name, setName] = useState("");
   const [initialAvatar, setInitialAvatar] = useState(null);
   const [composerMenu, setComposerMenu] = useState(false);
@@ -102,14 +106,21 @@ export default function PilotGroupsScreen({ navigation, route }) {
         return;
       }
       metadataChecked.current = { id: row.id, at: Date.now() };
-      access = await pilotGroupPolicy(row);
-      if (current()) setPolicy(access);
+      const incoming = openPilotGroup(user, row, { read: true }).then(details => ({ details }), error => ({ error }));
+      const [permissions, cached] = await Promise.all([pilotGroupPolicy(row), cachedPilotGroupDetails(user, row)]);
+      access = permissions;
+      if (current()) {
+        setPolicy(access);
+        if (access && cached && !background) setDetails(cached);
+      }
+      const result = await incoming;
+      if (result.error) throw result.error;
+      let next = result.details;
       if (row.admin === user.lns && access?.leaving?.length) {
-        for (const account of access.leaving) await updatePilotGroup(user, row, "remove", account);
+        for (const account of access.leaving) next = await updatePilotGroup(user, row, "remove", account);
         access = await pilotGroupPolicy(row);
         if (current()) setPolicy(access);
       }
-      let next = await openPilotGroup(user, row, { read: true });
       if (current()) setDetails(next);
       let invitations = await pendingFor();
       let changed = false;
@@ -582,6 +593,9 @@ export default function PilotGroupsScreen({ navigation, route }) {
           </View>
         </TouchableOpacity>
       </View>
+      <View style={styles.signalTrack} accessibilityElementsHidden importantForAccessibility="no">
+        <View style={styles.signalLead} /><View style={styles.signalTail} />
+      </View>
       {warning}
       {!!err && !details && button(say("Riprova a sincronizzare", "Retry sync"), () => run(() => refresh(group)))}
       {manage ? <ScrollView contentContainerStyle={pageStyle} keyboardShouldPersistTaps="handled">
@@ -769,10 +783,14 @@ const styles = StyleSheet.create({
   listPage: { padding: 18, gap: 12, paddingBottom: 36 },
   header: { paddingHorizontal: 8, paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 4,
     backgroundColor: theme.surface, borderBottomWidth: 1, borderColor: theme.border },
-  iconButton: { width: 44, height: 44, borderRadius: 22, justifyContent: "center", alignItems: "center" },
+  signalTrack: { height: 3, flexDirection: "row", gap: 6, paddingHorizontal: 10, backgroundColor: theme.surface },
+  signalLead: { height: 1, width: 50, backgroundColor: theme.accent },
+  signalTail: { height: 1, flex: 1, backgroundColor: theme.accentLine },
+  iconButton: { width: 44, height: 44, borderRadius: 12, borderWidth: 1, borderColor: theme.border,
+    backgroundColor: theme.surfaceAlt, justifyContent: "center", alignItems: "center" },
   groupHeading: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 },
   headingText: { flex: 1 },
-  avatar: { width: 40, height: 40, borderRadius: 20, overflow: "hidden", backgroundColor: theme.surfaceAlt, alignItems: "center", justifyContent: "center" },
+  avatar: { width: 40, height: 40, borderRadius: 12, borderWidth: 1, borderColor: theme.accentLine, overflow: "hidden", backgroundColor: theme.accentWash, alignItems: "center", justifyContent: "center" },
   avatarLarge: { width: 100, height: 100, borderRadius: 50 },
   avatarImage: { width: "100%", height: "100%" },
   profileHeader: { alignItems: "center", gap: 12, paddingTop: 10, paddingBottom: 12 },
@@ -781,8 +799,8 @@ const styles = StyleSheet.create({
   tabs: { flexDirection: "row", borderBottomWidth: 1, borderColor: theme.border },
   tab: { flex: 1, paddingVertical: 12, alignItems: "center" },
   tabActive: { borderBottomWidth: 2, borderColor: theme.primary },
-  title: { color: theme.text, fontSize: 32, fontWeight: "800" },
-  section: { color: theme.text, fontSize: 17, fontWeight: "700", flexShrink: 1 },
+  title: { color: theme.text, fontSize: 31, fontWeight: "800", letterSpacing: 0.8 },
+  section: { color: theme.text, fontSize: 17, fontWeight: "800", letterSpacing: 0.2, flexShrink: 1 },
   text: { color: theme.text, fontSize: 15 },
   dim: { color: theme.textDim, fontSize: 13, lineHeight: 18 },
   error: { color: "#ffbbbb", padding: 12 },
@@ -799,18 +817,20 @@ const styles = StyleSheet.create({
   primary: { backgroundColor: theme.primary },
   disabled: { opacity: 0.45 },
   buttonText: { color: theme.text, fontSize: 14, fontWeight: "700" },
-  primaryText: { color: "#04120a" },
+  primaryText: { color: theme.onAccent },
   messageList: { flex: 1 },
   messages: { flexGrow: 1, justifyContent: "flex-end", padding: 12, gap: 8 },
   empty: { color: theme.textDim, textAlign: "center", padding: 14 },
   sender: { color: theme.primary, fontSize: 13, fontWeight: "700" },
-  message: { alignSelf: "flex-start", maxWidth: "88%", padding: 10, gap: 4, backgroundColor: theme.surfaceAlt, borderRadius: 14 },
-  ownMessage: { alignSelf: "flex-end", borderWidth: 1, borderColor: theme.primary },
+  message: { alignSelf: "flex-start", maxWidth: "88%", padding: 12, gap: 4, backgroundColor: theme.bubbleThem,
+    borderRadius: 14, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: theme.border },
+  ownMessage: { alignSelf: "flex-end", backgroundColor: theme.accentWash, borderBottomLeftRadius: 14,
+    borderBottomRightRadius: 4, borderColor: theme.accentLine },
   poll: { gap: 6, marginTop: 6 },
   pollEditor: { padding: 12, gap: 6 },
   composer: { paddingHorizontal: 8, paddingTop: 8, backgroundColor: theme.surface, borderTopWidth: 1, borderColor: theme.border },
   menu: { flexDirection: "row", alignItems: "center", padding: 8, gap: 6, backgroundColor: theme.surface },
   fileName: { flex: 1 },
-  composerRow: { flexDirection: "row", alignItems: "flex-end", gap: 4 },
+  composerRow: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
   composeInput: { flex: 1, maxHeight: 120 },
 });

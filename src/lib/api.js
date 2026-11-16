@@ -473,8 +473,9 @@ export const mlsCreate = (payload) =>
   withAuth((a, transport) => transport.post(`${mlsRoot}/groups`, payload, a).then(r => r.data));
 export const mlsEvents = (id, cursor) =>
   withAuth((a, transport) => transport.get(`${mlsRoot}/groups/${encodeURIComponent(id)}/events`, { ...a, params: { cursor, protocol: 1 } }).then(r => r.data));
-export const mlsAppend = (id, payload) =>
-  withAuth((a, transport) => transport.post(`${mlsRoot}/groups/${encodeURIComponent(id)}/events`, payload, a).then(r => r.data));
+export const mlsAppend = (id, payload, silent = false) =>
+  withAuth((a, transport) => transport.post(`${mlsRoot}/groups/${encodeURIComponent(id)}/events`, payload,
+    silent ? { ...a, params: { silent: true } } : a).then(r => r.data));
 export const mlsPublishPackage = (wire) =>
   withAuth((a, transport) => transport.post(`${mlsRoot}/package`, { wire }, a).then(r => r.data));
 export const mlsClaimPackage = (account, op) =>

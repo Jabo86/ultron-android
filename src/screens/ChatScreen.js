@@ -319,7 +319,7 @@ export default function ChatScreen({ route, navigation }) {
   // FINESTRA DEI MESSAGGI (caricamento pigro): all'apertura si decifrano e si disegnano solo
   // gli ultimi `INITIAL_WIN`; i più vecchi arrivano SOLO se l'utente li chiede scorrendo in
   // alto. Prima si costruiva l'intera cronologia ad ogni giro, anche di 4 secondi in 4.
-  const load = useCallback(async (cid, limit, deepMode, preRaw) => {
+  const load = useCallback(async (cid, limit, deepMode, preRaw, initialStatus) => {
     if (!cid) { setMsgs([]); setLoading(false); return; }
     if (deletingChat.current) return;
     if (hostedRatchetPilot(user) && !peer) { setLoading(false); return; }
@@ -331,7 +331,7 @@ export default function ChatScreen({ route, navigation }) {
       const want = (typeof limit === "number" ? limit : winRef.current);
       // `preRaw` = pagina già sul telefono: si disegna senza rete. Se la rete ha già
       // risposto la si scarta, per non tornare indietro nel tempo.
-      const status = hostedRatchetPilot(user) && peer ? await checkPilotChat(user, peer) : null;
+      const status = hostedRatchetPilot(user) && peer ? await (initialStatus || checkPilotChat(user, peer)) : null;
       if (status && active()) {
         const previous = shownGeneration.current;
         if (previous?.cid === cid && previous.generation > status.generation) return;
@@ -493,7 +493,7 @@ export default function ChatScreen({ route, navigation }) {
         }
       } catch { /* nessun archivio */ }
       // Messaggi appena inviati e ancora in viaggio: restano visibili.
-      if (!active() || (status && shownGeneration.current?.generation !== status.generation)) return;
+      if (!active() || (preRaw && netDone.current) || (status && shownGeneration.current?.generation !== status.generation)) return;
       if (sendingRef.current.length) out.push(...sendingRef.current);
       pendingRef.current = deferred;
       // Stato del ratchet e chiavi: su disco una volta, non a ogni messaggio.
@@ -556,21 +556,19 @@ export default function ChatScreen({ route, navigation }) {
     // toccare la rete: con la linea lenta la chat non resta più vuota.
     netDone.current = false;
     let active = true;
+    const initialStatus = convId && peer && hostedRatchetPilot(user) ? checkPilotChat(user, peer) : null;
+    initialStatus?.catch(() => {});
     const loadNetwork = async () => {
       if (!active) return;
-      await load(convId, INITIAL_WIN);
+      await load(convId, INITIAL_WIN, undefined, undefined, initialStatus);
       if (active && pendingRef.current) scheduleRepair(convId);
     };
     const loadCached = async () => {
       const cached = await convCache.read(convId, user);
-      if (active && cached && !netDone.current) await load(convId, INITIAL_WIN, false, cached);
+      if (active && cached && !netDone.current) await load(convId, INITIAL_WIN, false, cached, initialStatus);
     };
-    if (hostedRatchetPilot(user)) {
-      loadCached().catch(() => {}).then(loadNetwork);
-    } else {
-      loadCached().catch(() => {});
-      loadNetwork();
-    }
+    loadCached().catch(() => {});
+    loadNetwork();
     // Cassetta anonima: consegna i gettoni al contatto e ritira i depositi in arrivo.
     // Chiave statica del contatto in cassaforte: così la catena che si rigenera parte anche
     // se domani la richiesta al server non riesce.
@@ -579,7 +577,7 @@ export default function ChatScreen({ route, navigation }) {
       mbx.publishTo(others[0], user).catch(() => {});
     }
     return () => { active = false; mounted.current = false; };
-  }, [convId, load, others, user, scheduleRepair]);
+  }, [convId, load, others, peer, user, scheduleRepair]);
 
   // Aggiornamenti: solo con l'app in primo piano e questa chat davanti agli occhi.
   // Passata leggera: i messaggi già decifrati arrivano dalla memoria, i nuovi si decifrano
@@ -1056,7 +1054,7 @@ export default function ChatScreen({ route, navigation }) {
                 <Ionicons
                   name={item.sendingLocal ? "time-outline" : item.delivered || item.read ? "checkmark-done" : "checkmark"}
                   size={15}
-                  color={item.read ? "#50C878" : "rgba(255,255,255,0.55)"}
+                  color={item.read ? theme.accent : "rgba(255,255,255,0.55)"}
                 />
               )}
             </View>
@@ -1321,18 +1319,18 @@ const makeStyles = (tint) => StyleSheet.create({
   vfyBar: { flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "#2A1216", borderBottomWidth: 1, borderBottomColor: "#5A2630", paddingHorizontal: 14, paddingVertical: 8 },
   vfyBarTxt: { flex: 1, color: "#FFD9DE", fontSize: 11 },
   root: { flex: 1, backgroundColor: "transparent" },
-  e2eeBadge: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 5, backgroundColor: "rgba(80,200,120,0.08)", borderBottomWidth: 1, borderBottomColor: "rgba(80,200,120,0.18)" },
-  e2eeBadgeText: { color: theme.accent, fontSize: 11, fontWeight: "700", letterSpacing: 0.3 },
+  e2eeBadge: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 5, backgroundColor: theme.surface, borderBottomWidth: 1, borderBottomColor: theme.accentLine },
+  e2eeBadgeText: { color: theme.accent, fontSize: 11, fontWeight: "700", letterSpacing: 0.8 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 40 },
   emptyLock: { fontSize: 40, marginBottom: 12 },
   emptyText: { color: theme.textDim, textAlign: "center", lineHeight: 20 },
   bubbleRow: { marginVertical: 4, flexDirection: "row" },
   rowMine: { justifyContent: "flex-end" },
   rowThem: { justifyContent: "flex-start" },
-  bubble: { maxWidth: "80%", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 18 },
+  bubble: { maxWidth: "80%", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14, borderWidth: 1, borderColor: theme.border },
   bubbleMe: { backgroundColor: theme.bubbleMe, borderBottomRightRadius: 5 },
   bubbleThem: { backgroundColor: theme.bubbleThem, borderBottomLeftRadius: 5 },
-  bubbleText: { color: "#fff", fontSize: 15, lineHeight: 20 },
+  bubbleText: { color: theme.text, fontSize: 15, lineHeight: 20 },
   attach: { color: "#D6E4FF", fontSize: 12, marginTop: 5 },
   groupInviteActions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 },
   groupInviteCard: { gap: 6, marginTop: 4 },
@@ -1354,9 +1352,9 @@ const makeStyles = (tint) => StyleSheet.create({
   moreText: { color: tint, fontSize: 12, fontWeight: "800", letterSpacing: 0.4 },
   err: { color: "#FFB3BD", fontSize: 13, paddingHorizontal: 16, paddingBottom: 6 },
   inputBar: { flexDirection: "row", alignItems: "flex-end", gap: 10, paddingHorizontal: 12, paddingVertical: 10, borderTopWidth: 1, borderTopColor: theme.border, backgroundColor: theme.surface },
-  input: { flex: 1, backgroundColor: theme.surfaceAlt, borderRadius: 20, color: theme.text, paddingHorizontal: 16, paddingVertical: 10, maxHeight: 120, fontSize: 15 },
+  input: { flex: 1, backgroundColor: theme.surfaceAlt, borderRadius: 14, borderWidth: 1, borderColor: theme.border, color: theme.text, paddingHorizontal: 16, paddingVertical: 10, maxHeight: 120, fontSize: 15 },
   sendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: tint, alignItems: "center", justifyContent: "center" },
-  sendText: { color: "#fff", fontSize: 22, fontWeight: "700" },
+  sendText: { color: theme.onAccent, fontSize: 22, fontWeight: "700" },
   ttlBtn: { flexDirection: "row", alignItems: "center", gap: 3, height: 44, paddingHorizontal: 8, borderRadius: 14 },
   ttlBtnOn: { backgroundColor: tint },
   ttlTxt: { color: theme.textDim, fontSize: 12, fontWeight: "800", minWidth: 16 },

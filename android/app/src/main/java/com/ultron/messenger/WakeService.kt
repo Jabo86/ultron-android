@@ -32,6 +32,7 @@ class WakeService : Service() {
     const val CALL_ID = 4713
     const val MESSAGE_ID = 4712
     const val CONTACT_ID = 4714
+    const val GROUP_ID = 4715
     const val CALL_RID = "com.ultron.messenger.CALL_RID"
     const val CALL_ANSWER = "com.ultron.messenger.CALL_ANSWER"
     @Volatile private var incomingCall: Pair<String, Long>? = null
@@ -152,6 +153,21 @@ class WakeService : Service() {
     } catch (e: Exception) { /* notifiche non concesse */ }
   }
 
+  private fun notifyGroup() {
+    try {
+      val alert = NotificationCompat.Builder(this, CH_MSG)
+        .setSmallIcon(applicationInfo.icon)
+        .setContentTitle("ULTRON")
+        .setContentText("Nuovi messaggi nei gruppi")
+        .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+        .setPriority(NotificationCompat.PRIORITY_HIGH)
+        .setAutoCancel(true)
+        .setContentIntent(openAppIntent())
+        .build()
+      getSystemService(NotificationManager::class.java).notify(GROUP_ID, alert)
+    } catch (e: Exception) { /* notifiche non concesse */ }
+  }
+
   private fun notifyCall(rid: String) {
     try {
       val nm = getSystemService(NotificationManager::class.java)
@@ -183,6 +199,9 @@ class WakeService : Service() {
     var previousCount = 0
     var previousCall = ""
     var previousContact = ""
+    val noticeCursors = getSharedPreferences("ultron-wake-cursors", Context.MODE_PRIVATE)
+    val zeroNotice = "0".repeat(24)
+    var previousGroupNotice = zeroNotice
     var backoff = 5000L
     while (running) {
       val cfg = config(this)
@@ -202,9 +221,10 @@ class WakeService : Service() {
         previousCall = ""
         incomingCall = null
         previousContact = ""
+        previousGroupNotice = noticeCursors.getString("group:$rid", zeroNotice) ?: zeroNotice
       }
       try {
-        val url = URL("$base/api/public/wake/poll?rid=$rid&wait=25&contact=$previousContact")
+        val url = URL("$base/api/public/wake/poll?rid=$rid&wait=25&contact=$previousContact&group_notice=$previousGroupNotice")
         val c = url.openConnection() as HttpURLConnection
         c.requestMethod = "GET"
         c.connectTimeout = 15000
@@ -217,6 +237,7 @@ class WakeService : Service() {
           backoff = 5000L
           val event = try { JSONObject(body) } catch (e: Exception) { JSONObject() }
           val n = event.optInt("n", 0)
+          val groupNotice = event.optString("group_notice", "").takeIf { it.matches(Regex("[a-f0-9]{24}")) }
           val contact = event.optString("contact", "").takeIf { it.matches(Regex("[a-f0-9]{24}")) }.orEmpty()
           val incoming = event.optString("call", "").takeIf { it.matches(Regex("[a-f0-9]{32}")) }.orEmpty()
           val current = config(this)
@@ -228,6 +249,11 @@ class WakeService : Service() {
             }
             previousCall = incoming
             if (n > previousCount) notifyMessages(n)
+            if (groupNotice != null && groupNotice > previousGroupNotice) {
+              previousGroupNotice = groupNotice
+              noticeCursors.edit().putString("group:$rid", groupNotice).apply()
+              notifyGroup()
+            }
             previousCount = n
             if (contact.isNotEmpty() && contact != previousContact) notifyContact()
             if (contact.isEmpty() && previousContact.isNotEmpty()) getSystemService(NotificationManager::class.java).cancel(CONTACT_ID)
