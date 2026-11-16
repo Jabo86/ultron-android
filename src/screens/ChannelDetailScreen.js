@@ -10,6 +10,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../lib/i18n";
 import * as api from "../lib/api";
+import { groupContactOptions, groupMemberEnvelopes } from "../lib/groupMembership";
 import { DEFAULT_SERVER } from "../config";
 import { theme } from "../theme";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -1426,10 +1427,9 @@ function ManageModal({ detail, user, groupKey, t, lang, onClose, onDeleted, onCh
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     api.contacts().then((d) => {
-      const have = new Set(members.map((m) => m.lns));
-      setContacts((Array.isArray(d) ? d : []).filter((c) => c.has_key && !have.has(c.lns)));
+      setContacts(groupContactOptions(d, [user?.lns, ...members.map(member => member.lns)]));
     }).catch(() => {});
-  }, [members]);
+  }, [members, user?.lns]);
 
   const toggle = (lns) => setSel((s) => ({ ...s, [lns]: !s[lns] }));
   const chosen = Object.keys(sel).filter((k) => sel[k]);
@@ -1438,9 +1438,9 @@ function ManageModal({ detail, user, groupKey, t, lang, onClose, onDeleted, onCh
     if (chosen.length === 0 || !groupKey) return;
     setBusy(true);
     try {
-      const keyMap = await api.pulseKeys(chosen);
-      const payload = [];
-      for (const lns of chosen) { if (keyMap[lns]) payload.push({ lns, role: "member", key_env: wrapGroupKeyFor(groupKey, keyMap[lns]) }); }
+      const payload = await groupMemberEnvelopes(chosen, groupKey, api.pulseStaticKeys, wrapGroupKeyFor, missing =>
+        new Error(lang === "en" ? `Encryption key unavailable for ${missing.join(", ")}.` :
+          `Chiave di cifratura non disponibile per ${missing.join(", ")}.`));
       await api.channelAddMembers(detail.chan_id, payload);
       setSel({}); setTab("list"); await load(); onChanged();
     } catch (e) { Alert.alert("Errore", api.apiErr(e)); } finally { setBusy(false); }

@@ -24,6 +24,7 @@ import { generateGroupKey, wrapGroupKeyFor, bytesToHex, anonSharedSecret } from 
 import { discRid, anonEpochs, openInvite } from "../lib/anonCall";
 import { missedCallCount } from "../lib/store";
 import { usePoll, useActivePoll } from "../lib/usePoll";
+import { groupContactOptions, groupMemberEnvelopes } from "../lib/groupMembership";
 
 export default function ConversationsScreen({ navigation }) {
   const tint = useTint();
@@ -33,7 +34,7 @@ export default function ConversationsScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const [convs, setConvs] = useState([]);
   const [booted, setBooted] = useState(false);
-  const [totalUnread, setTotalUnread] = useState(0);
+  const totalUnread = convs.reduce((total, row) => total + (row.unread || 0), 0);
   const [missedCalls, setMissedCalls] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [showNew, setShowNew] = useState(false);
@@ -49,6 +50,7 @@ export default function ConversationsScreen({ navigation }) {
   const [gSel, setGSel] = useState({});
   const [gBusy, setGBusy] = useState(false);
   const [gErr, setGErr] = useState("");
+  const [groupLoadStatus, setGroupLoadStatus] = useState(null);
   const mounted = useRef(true);
 
   const timeAgo = useCallback((iso) => {
@@ -64,24 +66,27 @@ export default function ConversationsScreen({ navigation }) {
 
   const load = useCallback(async () => {
     try {
-      const [cs, gs] = await Promise.all([api.convs().catch(() => []), api.channels().catch(() => [])]);
+      const [cs, gs] = await Promise.allSettled([api.convs(), api.channels()]);
+      if (!mounted.current) return;
+      setGroupLoadStatus(gs.status === "fulfilled" ? null : gs.reason?.response?.status === 404 ? "missing" : "error");
       // Rubrica cieca: i nomi si imparano da qui, senza chiedere niente al server.
       try {
         const book = require("../lib/book");
-        for (const c of Array.isArray(cs) ? cs : []) {
+        for (const c of Array.isArray(cs.value) ? cs.value : []) {
           if (c && Array.isArray(c.others) && c.others.length === 1 && c.title) book.learnName(c.others[0], c.title);
         }
       } catch { /* rubrica non disponibile */ }
-      const groups = (Array.isArray(gs) ? gs : []).map((g) => ({
+      const groups = (Array.isArray(gs.value) ? gs.value : []).map((g) => ({
         conv_id: g.chan_id, title: g.name, title_lns: g.name, is_group: true, avatar: g.avatar || null,
         unread: g.unread || 0, unread_by: Array.isArray(g.unread_by) ? g.unread_by : [], last_from: g.last_from || null,
         member_count: g.member_count, is_admin: g.is_admin, last_at: g.last_post_at,
       }));
-      const list = [...(Array.isArray(cs) ? cs : []), ...groups];
-      list.sort((a, b) => String(b.last_at || "").localeCompare(String(a.last_at || "")));
-      if (mounted.current) setConvs(list);
-      const total = list.reduce((n, c) => n + (c.unread || 0), 0);
-      if (mounted.current) setTotalUnread(total);
+      setConvs(previous => {
+        const direct = cs.status === "fulfilled" ? cs.value : previous.filter(row => !row.is_group);
+        const channels = gs.status === "fulfilled" ? groups : previous.filter(row => row.is_group);
+        return [...(Array.isArray(direct) ? direct : []), ...channels]
+          .sort((a, b) => String(b.last_at || "").localeCompare(String(a.last_at || "")));
+      });
       // Il conteggio interno resta disponibile; i badge launcher variano per dispositivo.
       try { const mc = await missedCallCount(); if (mounted.current) setMissedCalls(mc); } catch {}
     } catch { /* keep last */ }
@@ -199,9 +204,16 @@ export default function ConversationsScreen({ navigation }) {
 
   const openGroup = useCallback(async () => {
     setShowGroup(true); setGErr(""); setGName(""); setGDesc(""); setGAvatar(""); setGSel({}); setLoadingContacts(true);
-    try { const d = await api.contacts(); if (mounted.current) setContacts((Array.isArray(d) ? d : []).filter((c) => c.has_key)); }
-    catch { /* */ } finally { if (mounted.current) setLoadingContacts(false); }
-  }, []);
+    setContacts([]);
+    try {
+      const entries = await api.contacts();
+      if (mounted.current) setContacts(groupContactOptions(entries, [user?.lns]));
+    } catch (error) {
+      if (mounted.current) setGErr(api.apiErr(error));
+    } finally {
+      if (mounted.current) setLoadingContacts(false);
+    }
+  }, [user?.lns]);
   const toggleG = (lns) => setGSel((s) => ({ ...s, [lns]: !s[lns] }));
   const gChosen = Object.keys(gSel).filter((k) => gSel[k]);
   const pickGroupAvatar = async () => {
@@ -216,10 +228,10 @@ export default function ConversationsScreen({ navigation }) {
     setGBusy(true); setGErr("");
     try {
       const gk = generateGroupKey();
-      const keyMap = await api.pulseKeys(gChosen);
-      keyMap[user.lns] = bytesToHex(user.kem.publicKey);
-      const members = [{ lns: user.lns, role: "admin", key_env: wrapGroupKeyFor(gk, keyMap[user.lns]) }];
-      for (const lns of gChosen) { if (keyMap[lns]) members.push({ lns, role: "member", key_env: wrapGroupKeyFor(gk, keyMap[lns]) }); }
+      const selected = await groupMemberEnvelopes(gChosen, gk, api.pulseStaticKeys, wrapGroupKeyFor, missing =>
+        new Error(lang === "en" ? `Encryption key unavailable for ${missing.join(", ")}.` :
+          `Chiave di cifratura non disponibile per ${missing.join(", ")}.`));
+      const members = [{ lns: user.lns, role: "admin", key_env: wrapGroupKeyFor(gk, bytesToHex(user.kem.publicKey)) }, ...selected];
       // Il nome vero è cifrato con la chiave di gruppo: al server arriva solo un'etichetta
       // fissa, uguale per tutti i gruppi.
       const gnameLib = require("../lib/gname");
@@ -305,6 +317,11 @@ export default function ConversationsScreen({ navigation }) {
       </View>
 
       <TrialBanner />
+      {groupLoadStatus && <Text style={[styles.modalErr, { marginHorizontal: 16, marginVertical: 6 }]} testID="group-list-error">
+        {groupLoadStatus === "missing" ?
+          (lang === "en" ? "Group service unavailable on this server." : "Servizio gruppi non disponibile su questo server.") :
+          (lang === "en" ? "Could not refresh groups." : "Impossibile aggiornare i gruppi.")}
+      </Text>}
 
       <FlatList
         data={convs}
