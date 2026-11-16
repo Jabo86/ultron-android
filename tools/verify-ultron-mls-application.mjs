@@ -20,7 +20,7 @@ for (const n of ["alice", "bob", "carol"]) {
 }
 const [a,b,c] = users.values();
 const appData = new Map(), groups = new Map(), packages = new Map();
-let actor, loseOnce = false;
+let actor, loseOnce = false, loseCreate = true, claims = 0;
 const missing = () => Object.assign(new Error("missing"),{response:{status:404}});
 const conflict = () => Object.assign(new Error("stale"),{response:{status:409}});
 const api = {
@@ -31,6 +31,7 @@ const api = {
     return {id};
   },
   mlsClaimPackage: async (peer, op) => {
+    claims++;
     const item = [...packages.values()].find(p => p.owner===peer && (p.op===op || !p.op));
     if (!item) throw missing();
     item.op=op;
@@ -40,6 +41,7 @@ const api = {
     .map(({id,signature,admin,seq,epoch,members})=>({id,signature,admin,seq,epoch,since:members.get(actor.lns)})),
   mlsCreate: async ({id,signature}) => {
     if (!groups.has(id)) groups.set(id,{id,signature,admin:actor.lns,seq:0,epoch:0,members:new Map([[actor.lns,0]]),events:[]});
+    if (loseCreate) { loseCreate = false; throw new Error("create receipt lost"); }
     return {id};
   },
   mlsEvents: async (id,cursor) => {
@@ -83,9 +85,19 @@ const app=runInNewContext(source+"\n({listPilotGroups,preparePilotGroupInvites,c
 });
 actor=b;await app.preparePilotGroupInvites(b);
 actor=c;await app.preparePilotGroupInvites(c);
-actor=a;const row=await app.createPilotGroup(a);
+actor=a;
+await assert.rejects(app.createPilotGroup(a, "Collaudo"), /create receipt lost/);
+const [originalId] = groups.keys();
+const row = await app.createPilotGroup(a, "Collaudo");
+assert.equal(row.id, originalId);
+assert.equal(row.title, "Collaudo");
+assert.equal(groups.size, 1);
 await app.updatePilotGroup(a,row,"title","Collaudo");
 await app.updatePilotGroup(a,row,"add",b.lns);
+const initialClaims = claims;
+await app.updatePilotGroup(a,row,"add",b.lns);
+assert.equal(claims, initialClaims);
+assert.equal(groups.size, 1);
 await app.updatePilotGroup(a,row,"message","Solo Alice e Bob");
 actor=b;const [bobRow]=await app.listPilotGroups();
 const bobInvitation = groups.get(row.id).events.find(e => e.subject === b.lns);

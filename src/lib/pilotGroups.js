@@ -190,7 +190,7 @@ async function sync(user, row, ctx) {
   throw new Error("La cronologia del gruppo è ancora in sincronizzazione.");
 }
 
-export function createPilotGroup(user) {
+export function createPilotGroup(user, name) {
   return serial(user, async () => {
     const { engine, check } = await context(user);
     const draft = blob(user, "create");
@@ -199,19 +199,23 @@ export function createPilotGroup(user) {
       const id = randomHex(32);
       const state = await engine.create(id);
       const signature = signMessage(genesis(user.server, id, user.lns), user.sk);
-      pending = { id, signature, state };
+      pending = { id, signature, state, title: name?.trim() || undefined };
       check();
       await setBlobDurably(draft, pending);
     }
-    const { id, state, signature } = pending;
+    const { id, state, signature, title } = pending;
     check();
-    await setBlobDurably(blob(user, id), { since: 0, cursor: 0, epoch: 0, history: [], state, pending: null });
+    const groupKey = blob(user, id);
+    if (!await getBlob(groupKey)) {
+      check();
+      await setBlobDurably(groupKey, { since: 0, cursor: 0, epoch: 0, history: [], state, pending: null, title });
+    }
     check();
     const res = await api.mlsCreate({ id, signature });
     if (res?.id !== id) throw new Error("Creazione gruppo non confermata.");
     check();
     await setBlobDurably(draft, null);
-    return { id, admin: user.lns, signature, since: 0, seq: 0, epoch: 0 };
+    return { id, admin: user.lns, signature, since: 0, seq: 0, epoch: 0, title };
   });
 }
 
@@ -226,7 +230,7 @@ export function openPilotGroup(user, row) {
 export function updatePilotGroup(user, row, kind, value) {
   return serial(user, async () => {
     const ctx = await context(user);
-    const { engine, check } = ctx;
+    const { engine, check, credentials } = ctx;
     const record = await sync(user, row, ctx);
     const { id } = row;
     const body = { op: randomHex(16), cursor: record.cursor, epoch: record.epoch, kind: kind === "title" ? "message" : kind };
@@ -243,6 +247,9 @@ export function updatePilotGroup(user, row, kind, value) {
       body.target = value.trim().toLowerCase();
       let keyPackage;
       if (kind === "add") {
+        const members = engine.members(record.state, id, record.epoch);
+        if (members.includes(body.target)) return { title: record.title, history: record.history, members };
+        if (!await credentials.identityFor(body.target)) throw new Error("Per questo contatto manca l’impronta della firma nel QR ULTRON.");
         const claim = await api.mlsClaimPackage(body.target, body.op);
         if (!/^[0-9a-f]{64}$/.test(claim?.id || "")) throw new Error("Pacchetto MLS non disponibile.");
         body.package = claim.id;
