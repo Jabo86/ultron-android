@@ -456,6 +456,20 @@ export const pinMessage = (message_id, pin) =>
   withAuth((a) => client.post("/public/pulse/message/pin", { message_id, pin }, a).then((r) => r.data));
 export const reportMessage = (message_id, reason) =>
   withAuth((a) => client.post("/public/pulse/message/report", { message_id, reason: reason || "" }, a).then((r) => r.data));
+const mlsRoot = "/public/pulse/mls";
+export const mlsGroups = () =>
+  withAuth((a, transport) => transport.get(`${mlsRoot}/groups`, a).then(r => r.data));
+export const mlsCreate = (payload) =>
+  withAuth((a, transport) => transport.post(`${mlsRoot}/groups`, payload, a).then(r => r.data));
+export const mlsEvents = (id, cursor) =>
+  withAuth((a, transport) => transport.get(`${mlsRoot}/groups/${encodeURIComponent(id)}/events`, { ...a, params: { cursor } }).then(r => r.data));
+export const mlsAppend = (id, payload) =>
+  withAuth((a, transport) => transport.post(`${mlsRoot}/groups/${encodeURIComponent(id)}/events`, payload, a).then(r => r.data));
+export const mlsPublishPackage = (wire) =>
+  withAuth((a, transport) => transport.post(`${mlsRoot}/package`, { wire }, a).then(r => r.data));
+export const mlsClaimPackage = (account, op) =>
+  withAuth((a, transport) => transport.post(`${mlsRoot}/package/${encodeURIComponent(account)}`, { op }, a).then(r => r.data));
+
 export const pilotPurgeStatus = (peer, params) =>
   withAuth((a, transport) => transport.get(`/public/pulse/chat-purge/${encodeURIComponent(peer)}`, { ...a, params }).then((r) => r.data));
 export const pilotPurgeChat = (peer, generation) =>

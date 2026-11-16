@@ -1,3 +1,4 @@
+import { groupIdentityFingerprint } from "../lib/groupMemberProof";
 import { RATCHET_PILOT } from "../config";
 // Verifica contatto: numero di sicurezza a 60 cifre + QR (anti man-in-the-middle).
 //
@@ -107,9 +108,8 @@ export default function VerifyContactScreen({ route, navigation }) {
   const state = !rec ? "none" : rec.fp === peerFp ? "ok" : "changed";
   const waiting = !myFp || !peerFp;
 
-  const markVerified = async (method) => {
-    await setVerified(peer, peerFp, method);
-    setRec({ fp: peerFp, at: new Date().toISOString(), method });
+  const markVerified = async (method, identityFp) => {
+    setRec(await setVerified(peer, peerFp, method, identityFp));
   };
 
   // Controlla il codice dell'altro (letto col lettore QR o incollato).
@@ -133,7 +133,7 @@ export default function VerifyContactScreen({ route, navigation }) {
       return;
     }
     if (parsed.fp40 === String(peerFp).slice(0, 40)) {
-      await markVerified("qr");
+      await markVerified("qr", parsed.identityFp);
       Alert.alert(en ? "Contact verified" : "Contatto verificato",
         en ? "The keys match: nobody is in the middle of this conversation."
            : "Le chiavi combaciano: nessuno è in mezzo a questa conversazione.");
@@ -164,7 +164,7 @@ export default function VerifyContactScreen({ route, navigation }) {
     }).catch(() => {});
   };
   const shareMyCode = () => {
-    Share.share({ message: qrPayload(user?.lns, myFp) }).catch(() => {});
+    Share.share({ message: qrPayload(user?.lns, myFp, RATCHET_PILOT ? groupIdentityFingerprint(user?.lns, user?.pk) : null) }).catch(() => {});
   };
 
   const badge = state === "ok"
@@ -309,7 +309,7 @@ export default function VerifyContactScreen({ route, navigation }) {
                 : "L'altra persona può leggere questo QR dalla sua schermata Verifica contatto, oppure puoi mandargli il codice come testo."}
           </Text>
           <View style={{ alignItems: "center", marginTop: 14 }}>
-            {myFp ? <QrCode value={qrPayload(user?.lns, myFp)} size={230} testID="verify-my-qr" /> : (
+            {myFp ? <QrCode value={qrPayload(user?.lns, myFp, RATCHET_PILOT ? groupIdentityFingerprint(user?.lns, user?.pk) : null)} size={230} testID="verify-my-qr" /> : (
               <View style={styles.qrWait} testID="verify-my-qr-waiting"><ActivityIndicator color={tint} /></View>
             )}
           </View>

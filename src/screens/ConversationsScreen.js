@@ -30,6 +30,19 @@ export default function ConversationsScreen({ navigation }) {
   const tint = useTint();
   const styles = useMemo(() => makeStyles(tint), [tint]);
   const { user, signOut } = useAuth();
+  const [pilotGroupsAvailable, setPilotGroupsAvailable] = useState(false);
+  useEffect(() => {
+    let valid = true;
+    const check = () => {
+      if (!hostedRatchetPilot(user)) { setPilotGroupsAvailable(false); return; }
+      api.mlsGroups().then(rows => { if (valid) setPilotGroupsAvailable(Array.isArray(rows)); })
+        .catch(() => { if (valid) setPilotGroupsAvailable(false); });
+    };
+    check();
+    const unsubscribe = navigation.addListener("focus", check);
+    return () => { valid = false; unsubscribe(); };
+  }, [navigation, user]);
+
   const { t, lang } = useI18n();
   const insets = useSafeAreaInsets();
   const [convs, setConvs] = useState([]);
@@ -337,6 +350,12 @@ export default function ConversationsScreen({ navigation }) {
         contentContainerStyle={convs.length === 0 && booted ? { flex: 1 } : { paddingBottom: 100 }}
       />
 
+      {hostedRatchetPilot(user) && pilotGroupsAvailable && (
+        <TouchableOpacity style={styles.fabGroup} onPress={() => navigation.navigate("PilotGroups")}
+          accessibilityRole="button" accessibilityLabel={lang === "en" ? "Groups" : "Gruppi"} testID="pilot-groups-fab">
+          <Ionicons name="people-outline" size={22} color={tint} />
+        </TouchableOpacity>
+      )}
       {!hostedRatchetPilot(user) && <TouchableOpacity style={styles.fabGroup} onPress={openGroup} testID="new-group-fab">
         <Ionicons name="people-outline" size={24} color="#fff" />
       </TouchableOpacity>}

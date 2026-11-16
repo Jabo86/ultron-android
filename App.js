@@ -1,3 +1,4 @@
+import PilotGroupsScreen from "./src/screens/PilotGroupsScreen";
 import { hostedRatchetPilot, verifiedContact } from "./src/lib/hostedRatchetChat";
 import { setNativeExportKdf } from "./src/lib/exportKdf";
 import React, { useEffect, useRef, useState, useCallback } from "react";
@@ -454,6 +455,7 @@ function Root() {
           <Stack.Screen name="Forward" component={ForwardScreen} options={{ headerShown: false }} />
           <Stack.Screen name="WhatsNew" component={WhatsNewScreen} options={{ headerShown: false }} />
           <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ headerShown: false }} />
+          <Stack.Screen name="PilotGroups" component={PilotGroupsScreen} options={{ title: "ULTRON" }} />
           <Stack.Screen name="Chat" component={ChatScreen} options={{ title: "Chat" }} />
           <Stack.Screen name="ChannelDetail" component={ChannelDetailScreen} options={{ title: "Gruppo" }} />
           <Stack.Screen name="Call" component={CallScreen} options={{ headerShown: false, presentation: "fullScreenModal", animation: "fade" }} />

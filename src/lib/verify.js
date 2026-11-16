@@ -66,16 +66,22 @@ export function digitGroups(num) {
   return String(num || "").match(/.{1,5}/g) || [];
 }
 
-export function qrPayload(lns, fpHex) {
-  return QR_PREFIX + ":" + lns + ":" + String(fpHex || "").slice(0, 40);
+const GROUP_QR_PREFIX = "ULTRON2";
+
+export function qrPayload(lns, fpHex, identityFp) {
+  const short = String(fpHex || "").slice(0, 40);
+  return identityFp
+    ? [GROUP_QR_PREFIX, lns, short, identityFp].join(":")
+    : [QR_PREFIX, lns, short].join(":");
 }
 
 export function parseQr(raw) {
-  const parts = String(raw || "").trim().split(":");
-  if (parts.length < 3 || parts[0] !== QR_PREFIX) return null;
-  const fp40 = parts[2].toLowerCase();
-  if (!/^[0-9a-f]{40}$/.test(fp40)) return null;
-  return { lns: parts[1], fp40 };
+  const [version, lns, encryptionFp, identityFp, ...rest] = String(raw || "").trim().split(":");
+  if (!/^[0-9a-f]{40}$/i.test(encryptionFp || "") || rest.length) return null;
+  const fp40 = encryptionFp.toLowerCase();
+  if (version === QR_PREFIX && identityFp === undefined) return { lns, fp40 };
+  if (version === GROUP_QR_PREFIX && /^[0-9a-f]{64}$/.test(identityFp || "")) return { lns, fp40, identityFp };
+  return null;
 }
 
 export function myFingerprint(user) {
@@ -133,10 +139,20 @@ export async function getVerified(lns) {
     return s ? JSON.parse(s) : null;
   } catch { return null; }
 }
-export async function setVerified(lns, fp, method) {
+export async function setVerified(lns, fp, method, identityFp) {
   const record = { fp, at: new Date().toISOString(), method: method || "qr" };
-  if (RATCHET_PILOT) return mutatePilotVerification((all) => { all[lns] = record; });
+  if (RATCHET_PILOT) {
+    await mutatePilotVerification((all) => {
+      const previous = all[lns];
+      const pin = identityFp || (previous?.fp === fp ? previous.identityFp : null);
+      if (method === "qr" && /^[0-9a-f]{64}$/.test(pin || "")) record.identityFp = pin;
+      else if (previous?.fp === fp && previous.identityFp) record.identityFp = previous.identityFp;
+      all[lns] = record;
+    });
+    return record;
+  }
   try { await AsyncStorage.setItem(K(lns), JSON.stringify(record)); } catch { /* */ }
+  return record;
 }
 /// Chi è stato verificato, su questo telefono. Serve al pulsante "Dopo la dogana" per
 /// ricontrollare tutte le impronte in un colpo.

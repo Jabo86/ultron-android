@@ -5,7 +5,12 @@
   "dependencies": {
     "@expo/metro-runtime": "~57.0.3",
     "@expo/vector-icons": "^15.1.1",
+    "@hpke/chacha20poly1305": "1.8.0",
+    "@hpke/dhkem-x448": "1.8.0",
+    "@hpke/hybridkem-x-wing": "0.7.0",
+    "@hpke/ml-kem": "0.3.0",
     "@noble/ciphers": "^2.2.0",
+    "@noble/curves": "2.2.0",
     "@noble/hashes": "^2.2.0",
     "@noble/post-quantum": "^0.6.1",
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -31,6 +36,7 @@
     "expo-sharing": "^57.0.8",
     "expo-splash-screen": "^57.0.2",
     "expo-status-bar": "~57.0.0",
+    "fast-text-encoding": "1.0.6",
     "jsqr": "^1.4.0",
     "pako": "2.1.0",
     "qrcode-generator": "^2.0.4",
@@ -47,7 +53,8 @@
     "react-native-webrtc": "124.0.8",
     "react-native-webview": "13.16.1",
     "react-native-worklets": "0.10.0",
-    "thumbhash": "0.1.1"
+    "thumbhash": "0.1.1",
+    "ts-mls": "1.6.4"
   },
   "scripts": {
     "start": "expo start",

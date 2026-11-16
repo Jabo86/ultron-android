@@ -34,6 +34,8 @@ jobs:
           node tools/verify-ultron-hosted-prekeys.mjs
           node tools/verify-ultron-ratchet-history.mjs
           node tools/verify-ultron-signed-keys.mjs
+          node tools/verify-ultron-group-member-proof.mjs
+          node tools/verify-ultron-mls-engine.mjs
       - name: Configure signing
         env:
           ULTRON_KEYSTORE: ${{ secrets.ULTRON_ANDROID_KEYSTORE_B64 }}
