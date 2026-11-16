@@ -118,6 +118,7 @@ const app=runInNewContext(source+"\n({cachedPilotGroupSummary,listPilotGroups,pr
   },verifiedContact:async(_user,peer)=>({kem:cryptoLib.bytesToHex(users.get(peer).kem.publicKey)}),createMlsGroupEngine,hostedGroupCredentials,mls,defaultClientConfig,
   getBlob:async key=>structuredClone(appData.get(key)),
   setBlobDurably:async (key,data)=>appData.set(key,structuredClone(data)),
+  setBlobsDurably:async entries=>{ for (const [key,data] of entries) appData.set(key,structuredClone(data)); },
 });
 actor=b;await app.preparePilotGroupInvites(b);
 actor=c;await app.preparePilotGroupInvites(c);
@@ -145,6 +146,13 @@ bobInvitation.welcome_signature = welcomeSignature;
 const joined=await app.openPilotGroup(b,bobRow);
 assert.equal(joined.history[0].body,"Solo Alice e Bob");
 assert.equal(joined.title,undefined);
+actor=a;
+await app.finishAcceptedPilotGroupInvites(a,row);
+const repairedAt = groups.get(row.id).seq;
+await app.finishAcceptedPilotGroupInvites(a,row);
+assert.equal(groups.get(row.id).seq,repairedAt,"Already published profiles must not be sent again");
+actor=b;
+assert.equal((await app.openPilotGroup(b,bobRow)).title,"Collaudo");
 assert.equal((await app.cachedPilotGroupSummary(b,bobRow)).unread,1);
 await app.openPilotGroup(b,bobRow,{read:true});
 assert.equal((await app.cachedPilotGroupSummary(b,bobRow)).unread,0);

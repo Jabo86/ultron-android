@@ -65,6 +65,7 @@ export default function ConversationsScreen({ navigation }) {
   const [gBusy, setGBusy] = useState(false);
   const [gErr, setGErr] = useState("");
   const mounted = useRef(true);
+  const groupList = useRef(null);
   const groupSync = useRef({ running: false, next: 0 });
   const groupAdmissions = useRef({ running: false, next: 0, checkedAt: 0 });
 
@@ -79,14 +80,27 @@ export default function ConversationsScreen({ navigation }) {
     return new Date(d).toLocaleDateString(lang === "en" ? "en-GB" : "it-IT", { day: "2-digit", month: "2-digit" });
   }, [t, lang]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     try {
       const pilot = hostedRatchetPilot(user);
-      const [cs, gs, invitations] = await Promise.all([
-        api.convs(),
-        pilot ? listPilotGroups().catch(() => []) : api.channels().catch(() => []),
-        pilot ? pilotInvitationInbox(user).catch(() => []) : [],
-      ]);
+      async function readGroups() {
+        if (!pilot) return [await api.channels().catch(() => []), []];
+        let snapshot = groupList.current;
+        if (snapshot?.account !== user.lns || snapshot?.server !== user.server) {
+          snapshot = { account: user.lns, server: user.server, at: 0, rows: [], invites: [] };
+          groupList.current = snapshot;
+        }
+        if (!snapshot.request && (force || Date.now() - snapshot.at > 5000)) {
+          snapshot.at = Date.now();
+          snapshot.request = Promise.allSettled([listPilotGroups(), pilotInvitationInbox(user)]).then(([rows, invites]) => {
+            if (rows.status === "fulfilled") snapshot.rows = rows.value;
+            if (invites.status === "fulfilled") snapshot.invites = invites.value;
+          }).finally(() => { snapshot.request = null; });
+          if (force || !snapshot.rows.length) await snapshot.request;
+        }
+        return [snapshot.rows, snapshot.invites];
+      }
+      const [cs, [gs, invitations]] = await Promise.all([api.convs(), readGroups()]);
       // Rubrica cieca: i nomi si imparano da qui, senza chiedere niente al server.
       try {
         const book = require("../lib/book");
@@ -129,7 +143,7 @@ export default function ConversationsScreen({ navigation }) {
       }
       const groups = pilot ? await Promise.all(gs.map(async (group) => {
         const { title, avatar, visibility, lastAt, unread } = await cachedPilotGroupSummary(user, group).catch(() => ({}));
-        return { conv_id: "mls:" + group.id, title: title || (lang === "en" ? "Group " : "Gruppo ") + group.id.slice(0, 6),
+        return { conv_id: "mls:" + group.id, title: title || (lang === "en" ? "Group" : "Gruppo"),
           is_group: true, mlsGroup: { ...group, visibility }, avatar, unread: unread || 0, last_at: lastAt };
       })) : (Array.isArray(gs) ? gs : []).map((g) => ({
         conv_id: g.chan_id, title: g.name, title_lns: g.name, is_group: true, avatar: g.avatar || null,
@@ -155,15 +169,15 @@ export default function ConversationsScreen({ navigation }) {
 
   useEffect(() => {
     mounted.current = true;
-    load();
-    const unsub = navigation.addListener("focus", load);
+    load(true);
+    const unsub = navigation.addListener("focus", () => load(true));
     return () => { mounted.current = false; unsub(); };
   }, [load, navigation]);
 
   // Lista conversazioni: aggiornata solo quando la stai guardando.
   usePoll(load, 1500, { runOnFocus: false });
 
-  const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
+  const onRefresh = async () => { setRefreshing(true); await load(true); setRefreshing(false); };
 
   // Poller chiamate in arrivo BLIND (foreground): il server NON sa chi chiama chi.
   // Deriviamo per ogni contatto le caselle anonime (rid) dal segreto condiviso e le interroghiamo.

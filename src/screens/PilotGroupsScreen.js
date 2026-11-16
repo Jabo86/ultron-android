@@ -17,7 +17,7 @@ import { base64ToBytes, encryptFileBytes, randomHex } from "../lib/crypto";
 import { withSystemActivity } from "../lib/lockGuard";
 import { usePoll } from "../lib/usePoll";
 import { getVerified } from "../lib/verify";
-import { cachedPilotGroupTitle, createPilotGroup, decidePilotGroupInvitation, deliverPilotGroupInvitation, finishAcceptedPilotGroupInvites,
+import { announcePilotGroupProfile, cachedPilotGroupTitle, createPilotGroup, decidePilotGroupInvitation, deliverPilotGroupInvitation, finishAcceptedPilotGroupInvites,
   forgetPilotGroup, listPilotGroups, listPublicPilotGroups, openPilotGroup, pilotGroupPolicy,
   pilotGroupInvitations, pilotInvitationInbox, pilotInvitationTitle, preparePilotGroupInvites, presentPilotGroupHistory,
   PILOT_GROUP_AVATAR_LIMIT, PILOT_GROUP_FILE_LIMIT, PILOT_GROUP_UPLOAD_LIMIT, requestPilotGroupInvitation,
@@ -82,8 +82,9 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const running = useRef(false);
   const refreshVersion = useRef(0);
   const alive = useRef(true);
+  const metadataChecked = useRef({ id: null, at: 0 });
 
-  const refresh = useCallback(async (row) => {
+  const refresh = useCallback(async (row, background = false) => {
     const version = refreshVersion.current;
     const current = () => alive.current && version === refreshVersion.current;
     let access;
@@ -95,6 +96,12 @@ export default function PilotGroupsScreen({ navigation, route }) {
       });
     }
     if (row) {
+      if (background && metadataChecked.current.id === row.id && Date.now() - metadataChecked.current.at < 7000) {
+        const details = await openPilotGroup(user, row, { read: true });
+        if (current()) setDetails(details);
+        return;
+      }
+      metadataChecked.current = { id: row.id, at: Date.now() };
       access = await pilotGroupPolicy(row);
       if (current()) setPolicy(access);
       if (row.admin === user.lns && access?.leaving?.length) {
@@ -119,11 +126,9 @@ export default function PilotGroupsScreen({ navigation, route }) {
           if (current()) setErr(apiErr(error));
         }
       }
-      if (changed) {
-        invitations = await pendingFor();
-        if (next.profile) next = await updatePilotGroup(user, row, "profile", next.profile);
-        else if (next.title) next = await updatePilotGroup(user, row, "title", next.title);
-      }
+      if (changed) invitations = await pendingFor();
+      const published = await announcePilotGroupProfile(user, row);
+      if (published) next = published;
       if (current()) { setOutgoing(invitations); setDetails(next); }
     } else {
       const rows = await listPilotGroups();
@@ -133,7 +138,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
       });
       const result = await Promise.all(rows.map(async item => ({ ...item, title: await cachedPilotGroupTitle(user, item) })));
       const incoming = await Promise.all(invitations.map(async item => ({ ...item, title: await pilotInvitationTitle(user, item),
-        needsQr: item.status === "accepted" && !(await getVerified(item.inviter))?.identityFp })));
+        needsQr: item.status === "accepted" && !(await getVerified(item.inviter))?.fp })));
       if (incoming.some(item => item.status === "accepted")) preparePilotGroupInvites(user).catch(() => {});
       if (current()) { setGroups(result); setInbox(incoming); }
     }
@@ -163,7 +168,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
       const rows = await Promise.all(eligible.map(async entry => {
         const lns = contactAddress(entry.lns);
         const record = await getVerified(lns);
-        return { ...entry, lns, legacyQr: !!record?.fp, verified: /^[a-f0-9]{64}$/.test(record?.identityFp || "") };
+        return { ...entry, lns, verified: /^[a-f0-9]{64}$/.test(record?.fp || "") };
       }));
       if (active) {
         setBook(rows);
@@ -188,7 +193,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
     if (running.current) return;
     const version = refreshVersion.current;
     try {
-      await refresh(group);
+      await refresh(group, true);
       if (alive.current && version === refreshVersion.current && !triedInvites.current.size) setErr("");
     } catch (error) {
       if (alive.current && version === refreshVersion.current) setErr(apiErr(error));
@@ -459,7 +464,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
           ) : (
             <View key={row.lns} style={styles.row}>
               <View style={{ flex: 1 }}><Text style={styles.text}>{label}</Text><Text style={styles.dim}>{row.lns}</Text></View>
-              {button(row.legacyQr ? say("Aggiorna QR", "Update QR") : say("Verifica QR", "Verify QR"), () => navigation.navigate("VerifyContact", { peer: row.lns, peer_name: label }))}
+              {button(say("Verifica QR", "Verify QR"), () => navigation.navigate("VerifyContact", { peer: row.lns, peer_name: label }))}
             </View>
           );
         })}

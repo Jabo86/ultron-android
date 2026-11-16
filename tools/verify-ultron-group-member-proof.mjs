@@ -39,7 +39,7 @@ const peer = { ...alice, lns: "bob@ultron.uns", sk: peerKeys.secretKeyHex };
 const peerDevice = "1b".repeat(16);
 const localUser = { ...alice, pk: keys.publicKeyHex };
 const peerCredential = { credentialType: "basic", identity: signGroupCredential(peer, peerDevice, mls.publicKey) };
-let ended = false, verified = true, pinnedIdentity = peerKeys.publicKeyHex, activeDevices = [{ device: peerDevice }], lookups = 0;
+let ended = false, verified = true, pinnedIdentity = peerKeys.publicKeyHex, legacy = false, activeDevices = [{ device: peerDevice }], lookups = 0;
 const source = readFileSync(new URL("../src/lib/hostedGroupCredentials.js", import.meta.url), "utf8");
 const makeAdapter = runInNewContext(source.replace(/^import .+;$/gm, "").replace(/^export /gm, "") + "\nhostedGroupCredentials", {
   api: {
@@ -51,7 +51,8 @@ const makeAdapter = runInNewContext(source.replace(/^import .+;$/gm, "").replace
   deviceId: async () => "local",
   hostedPrekeyDevice: () => device,
   parsePools: response => response.devices,
-  getVerified: async () => ({ identityFp: groupIdentityFingerprint(peer.lns, pinnedIdentity) }),
+  getVerified: async () => !verified ? null : legacy ? { fp: "aa".repeat(32) } :
+    { identityFp: groupIdentityFingerprint(peer.lns, pinnedIdentity) },
   groupAuthenticationService,
   groupIdentityFingerprint,
   signGroupCredential,
@@ -72,6 +73,9 @@ assert.equal(await (await makeAdapter(localUser)).authService.validateCredential
 pinnedIdentity = keygen().publicKeyHex;
 assert.equal(await (await makeAdapter(localUser)).authService.validateCredential(peerCredential, mls.publicKey), false);
 pinnedIdentity = peerKeys.publicKeyHex;
+legacy = true;
+assert.equal(await (await makeAdapter(localUser)).authService.validateCredential(peerCredential, mls.publicKey), true);
+legacy = false;
 verified = false;
 assert.equal(await (await makeAdapter(localUser)).authService.validateCredential(peerCredential, mls.publicKey), false);
 console.log("Pilot group authentication rejects unsigned contacts, inactive devices and callbacks after logout.");
@@ -86,4 +90,4 @@ assert.match(freshQr, /^ULTRON2:/);
 assert.equal(qr.parseQr(freshQr).identityFp, identityFp);
 assert.equal(qr.parseQr(qr.qrPayload(peer.lns, fp)).identityFp, undefined);
 assert.equal(qr.parseQr(freshQr + ":ignored"), null);
-console.log("ULTRON2 QR carries both fingerprints; a legacy QR cannot satisfy the MLS identity check.");
+console.log("ULTRON2 QR carries both fingerprints; existing direct-chat fingerprints follow the direct-chat signed identity check.");

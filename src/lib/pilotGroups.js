@@ -2,7 +2,7 @@ import * as api from "./api";
 import { decryptEnvelope, encryptForRecipients, packMessage, randomHex, sha256Hex, signMessage, utf8Encode, verifyMessage } from "./crypto";
 import { registerHostedRatchet, sendPilotMessage, verifiedContact } from "./hostedRatchetChat";
 import { hostedGroupCredentials } from "./hostedGroupCredentials";
-import { getBlob, setBlobDurably } from "./lock";
+import { getBlob, setBlobDurably, setBlobsDurably } from "./lock";
 import { createMlsGroupEngine } from "./mlsGroupEngine";
 import { createMlsSubtleCrypto } from "./mlsMobileCrypto";
 
@@ -255,6 +255,10 @@ export async function decidePilotGroupInvitation(user, row, decision) {
     // Consent is durable even while this installation still needs to publish
     // a package or verify the other party. Welcome continues to require both.
     preparePilotGroupInvites(user).catch(() => {});
+    pilotInvitationTitle(user, row).then(async (title) => {
+      check();
+      if (title) await setBlobDurably(blob(user, "title:" + row.group), { admin: row.inviter, title });
+    }).catch(() => {});
   }
   return answer;
 }
@@ -324,6 +328,7 @@ async function flush(user, id, record, check) {
   if (pending.type === "title") {
     updated.title = pending.text;
     if (pending.profile) updated.profile = pending.profile;
+    updated.profileAnnouncedEpoch = ack.epoch;
   } else if (pending.body.managed_profile) {
     updated.title = pending.managedTitle;
     updated.profile = pending.profile;
@@ -332,6 +337,8 @@ async function flush(user, id, record, check) {
     updated.history = appendHistory(record.history, { seq: ack.seq, sender: user.lns, body: pending.text, poll: pending.poll,
       attachment: pending.attachment, draftId: pending.draftId });
   }
+  if (pending.nextMembers) updated.members = pending.nextMembers;
+  else if (pending.body.kind !== "message") delete updated.members;
   await setBlobDurably(key, updated);
   return updated;
 }
@@ -356,6 +363,7 @@ async function sync(user, row, ctx) {
     const page = await api.mlsEvents(id, record?.cursor ?? row.since - 1);
     if (!Array.isArray(page?.events) || !validNumber(page.seq) || page.since !== row.since ||
         (record && page.seq < record.cursor)) throw new Error("Sequenza del gateway non valida.");
+    let stored = record;
     for (const event of page.events) {
       if (!record) {
         if (event.seq !== row.since || event.kind !== "add" || event.subject !== user.lns || event.author !== row.admin ||
@@ -377,11 +385,12 @@ async function sync(user, row, ctx) {
         const found = pool.find(item => item.id === event.package);
         if (!found) throw new Error("La chiave monouso per l’invito non è su questo telefono.");
         const state = await engine.join(id, event.next_epoch, event.welcome, found, row.admin);
-        record = { since: row.since, state, epoch: event.next_epoch, cursor: event.seq, history: [], pending: null };
+        const hint = await getBlob(blob(user, "title:" + id));
+        record = { since: row.since, state, epoch: event.next_epoch, cursor: event.seq, history: [], pending: null,
+          members: engine.members(state, id, event.next_epoch), title: hint?.admin === row.admin ? hint.title : undefined };
         check();
-        await setBlobDurably(key, record);
-        check();
-        await setBlobDurably(poolKey, pool.filter(item => item.id !== found.id));
+        await setBlobsDurably([[key, record], [poolKey, pool.filter(item => item.id !== found.id)]]);
+        stored = record;
         continue;
       }
 
@@ -393,7 +402,7 @@ async function sync(user, row, ctx) {
         const author = await credentials.identityFor(event.author);
         if (typeof body !== "string" || !["text", "title"].includes(type) ||
             (type === "title" ? event.author !== row.admin || !body || body.length > 60 : body.length > 2000) || !/^[a-f0-9]{6618}$/.test(signature || "") ||
-            !engine.members(record.state, id, record.epoch).includes(event.author) || !author ||
+            !(record.members || engine.members(record.state, id, record.epoch)).includes(event.author) || !author ||
             !verifyMessage(messageScope(id, record.epoch, event.op, event.author, type, body), signature, author)) {
           throw new Error("Firma del messaggio di gruppo non valida.");
         }
@@ -415,7 +424,11 @@ async function sync(user, row, ctx) {
             attachment: authenticatedAttachment ? attachment : undefined });
         }
       }
-      record = { ...record, cursor: event.seq, epoch: decoded.epoch, state: decoded.snapshot, history, title, profile: groupProfile, lastAt: new Date().toISOString() };
+      const members = decoded.epoch === record.epoch && record.members ? record.members : engine.members(decoded.snapshot, id, decoded.epoch);
+      record = { ...record, cursor: event.seq, epoch: decoded.epoch, state: decoded.snapshot, history, title, profile: groupProfile,
+        members, lastAt: new Date().toISOString() };
+    }
+    if (record && stored !== record) {
       check();
       await setBlobDurably(key, record);
     }
@@ -461,7 +474,7 @@ export function createPilotGroup(user, name, visibility = "private", avatar = nu
 
 function detailsFor(engine, id, record) {
   return { title: record.title, profile: record.profile, history: record.history,
-    members: engine.members(record.state, id, record.epoch) };
+    members: record.members || engine.members(record.state, id, record.epoch) };
 }
 
 export async function pilotGroupPolicy(row) {
@@ -497,28 +510,39 @@ export async function finishAcceptedPilotGroupInvites(user, row) {
   const policy = await pilotGroupPolicy(row);
   for (const account of policy?.leaving || []) await updatePilotGroup(user, row, "remove", account);
   const accepted = (await pilotGroupInvitations(user, row)).filter(invite => invite.status === "accepted");
-  if (!accepted.length) return;
-  let details = await openPilotGroup(user, row);
-  let changed = false;
-  for (const invite of accepted) {
-    if (details.members.includes(invite.target)) continue;
-    details = await updatePilotGroup(user, row, "add", invite.target, invite);
-    changed = true;
+  if (accepted.length) {
+    let details = await openPilotGroup(user, row);
+    for (const invite of accepted) {
+      if (details.members.includes(invite.target)) continue;
+      details = await updatePilotGroup(user, row, "add", invite.target, invite);
+    }
   }
-  if (!changed) return;
-  if (details.profile) await updatePilotGroup(user, row, "profile", details.profile);
-  else if (details.title) await updatePilotGroup(user, row, "title", details.title);
+  await announcePilotGroupProfile(user, row);
+}
+
+export function announcePilotGroupProfile(user, row) {
+  if (row.admin !== user.lns) return;
+  return serial(user, async () => {
+    const cached = await getBlob(blob(user, row.id));
+    if (!cached?.title || cached.epoch === 0 || cached.profileAnnouncedEpoch === cached.epoch) return;
+    const ctx = await context(user);
+    const record = await sync(user, row, ctx);
+    if (!record.title || record.profileAnnouncedEpoch === record.epoch) return;
+    return writePilotGroup(user, row, record.profile ? "profile" : "title", record.profile || record.title, null, null, ctx, record);
+  });
 }
 
 export function openPilotGroup(user, row, { read = false } = {}) {
   return serial(user, async () => {
     const ctx = await context(user);
     const record = await sync(user, row, ctx);
-    if (read && record.readThrough !== record.cursor) {
+    const details = detailsFor(ctx.engine, row.id, record);
+    if ((read && record.readThrough !== record.cursor) || !record.members) {
       ctx.check();
-      await setBlobDurably(blob(user, row.id), { ...record, readThrough: record.cursor });
+      await setBlobDurably(blob(user, row.id), { ...record, members: details.members,
+        readThrough: read ? record.cursor : record.readThrough });
     }
-    return detailsFor(ctx.engine, row.id, record);
+    return details;
   });
 }
 
@@ -534,9 +558,9 @@ export function updatePilotGroup(user, row, kind, value, invitation, draftId) {
   });
 }
 
-async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx) {
+async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx, current) {
   const { engine, check, credentials } = ctx;
-  const record = await sync(user, row, ctx);
+  const record = current || await sync(user, row, ctx);
   const { id } = row;
   if (draftId && record.history.some(item => item.draftId === draftId)) return detailsFor(engine, id, record);
   if (["message", "attachment"].includes(kind) && draftId && engine.members(record.state, id, record.epoch).length < 2) {
@@ -614,7 +638,8 @@ async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx)
     }
   } else throw new Error("Operazione gruppo non valida.");
 
-  const pending = { body: { ...body, wire: update.wire }, snapshot: update.snapshot, text, type, poll, profile, attachment, managedTitle, draftId };
+  const nextMembers = body.kind === "message" ? undefined : engine.members(update.snapshot, id, record.epoch + 1);
+  const pending = { body: { ...body, wire: update.wire }, snapshot: update.snapshot, text, type, poll, profile, attachment, managedTitle, draftId, nextMembers };
   const staged = { ...record, pending };
   check();
   await setBlobDurably(blob(user, id), staged);
@@ -625,7 +650,10 @@ async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx)
 
 export async function cachedPilotGroupSummary(user, row) {
   const record = await getBlob(blob(user, row.id));
-  if (record?.since !== row.since) return {};
+  if (record?.since !== row.since) {
+    const hint = await getBlob(blob(user, "title:" + row.id));
+    return hint?.admin === row.admin ? { title: hint.title } : {};
+  }
   const unread = record.history.filter(item => item.seq > (record.readThrough ?? row.since) &&
     item.sender !== user.lns && item.poll?.kind !== "vote").length;
   return { title: record.title, avatar: record.profile?.avatar, visibility: record.profile?.visibility, lastAt: record.lastAt, cursor: record.cursor, unread };
