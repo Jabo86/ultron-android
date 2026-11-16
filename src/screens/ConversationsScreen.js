@@ -1,4 +1,4 @@
-import { cachedPilotGroupSummary, listPilotGroups, openPilotGroup, pilotInvitationInbox } from "../lib/pilotGroups";
+import { cachedPilotGroupSummary, finishAcceptedPilotGroupInvites, listPilotGroups, openPilotGroup, pilotInvitationInbox } from "../lib/pilotGroups";
 import { hostedRatchetPilot } from "../lib/hostedRatchetChat";
 import { contactAddress, matchesContact } from "../lib/contactAddress";
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -66,6 +66,7 @@ export default function ConversationsScreen({ navigation }) {
   const [gErr, setGErr] = useState("");
   const mounted = useRef(true);
   const groupSync = useRef({ running: false, next: 0 });
+  const groupAdmissions = useRef({ running: false, next: 0, checkedAt: 0 });
 
   const timeAgo = useCallback((iso) => {
     if (!iso) return "";
@@ -116,10 +117,20 @@ export default function ConversationsScreen({ navigation }) {
           if (!tracker.operation) tracker.running = false;
         }
       }
+      const admissions = groupAdmissions.current;
+      if (pilot && navigation.isFocused() && !admissions.running && Date.now() - admissions.checkedAt >= 8000) {
+        admissions.checkedAt = Date.now();
+        const owned = gs.filter(row => row.admin === user.lns);
+        if (owned.length) {
+          admissions.running = true;
+          const row = owned[admissions.next++ % owned.length];
+          finishAcceptedPilotGroupInvites(user, row).catch(() => {}).finally(() => { admissions.running = false; });
+        }
+      }
       const groups = pilot ? await Promise.all(gs.map(async (group) => {
-        const { title, avatar, lastAt, unread } = await cachedPilotGroupSummary(user, group).catch(() => ({}));
+        const { title, avatar, visibility, lastAt, unread } = await cachedPilotGroupSummary(user, group).catch(() => ({}));
         return { conv_id: "mls:" + group.id, title: title || (lang === "en" ? "Group " : "Gruppo ") + group.id.slice(0, 6),
-          is_group: true, mlsGroup: group, avatar, unread: unread || 0, last_at: lastAt };
+          is_group: true, mlsGroup: { ...group, visibility }, avatar, unread: unread || 0, last_at: lastAt };
       })) : (Array.isArray(gs) ? gs : []).map((g) => ({
         conv_id: g.chan_id, title: g.name, title_lns: g.name, is_group: true, avatar: g.avatar || null,
         unread: g.unread || 0, unread_by: Array.isArray(g.unread_by) ? g.unread_by : [], last_from: g.last_from || null,

@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system/legacy";
+import EncryptedAttachment from "../components/EncryptedAttachment";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -15,7 +18,7 @@ import { usePoll } from "../lib/usePoll";
 import { getVerified } from "../lib/verify";
 import { cachedPilotGroupTitle, createPilotGroup, decidePilotGroupInvitation, listPilotGroups, listPublicPilotGroups, openPilotGroup,
   pilotGroupInvitations, pilotInvitationInbox, pilotInvitationTitle, preparePilotGroupInvites, presentPilotGroupHistory,
-  PILOT_GROUP_AVATAR_LIMIT, requestPilotGroupInvitation, updatePilotGroup } from "../lib/pilotGroups";
+  PILOT_GROUP_AVATAR_LIMIT, PILOT_GROUP_FILE_LIMIT, requestPilotGroupInvitation, updatePilotGroup } from "../lib/pilotGroups";
 import { theme } from "../theme";
 
 export default function PilotGroupsScreen({ navigation, route }) {
@@ -36,6 +39,9 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const [group, setGroup] = useState(routedGroup);
   const [details, setDetails] = useState(null);
   const [name, setName] = useState("");
+  const [initialAvatar, setInitialAvatar] = useState(null);
+  const [composerMenu, setComposerMenu] = useState(false);
+  const [fileDraft, setFileDraft] = useState(null);
   const [message, setMessage] = useState("");
   const draft = useRef(null);
   const [groupTab, setGroupTab] = useState("members");
@@ -168,6 +174,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const open = (row) => run(async () => {
     stickToBottom.current = true;
     draft.current = null;
+    setComposerMenu(false); setFileDraft(null);
     setDetails(null); setGroup(row); setManage(false); setMessage(""); setPollEditor(false); setQuery(""); setSelected([]);
     setOutgoing([]);
     await refresh(row);
@@ -208,11 +215,11 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const create = () => run(async () => {
     const title = name.trim();
     if (!title) return;
-    const row = await createPilotGroup(user, title, visibility);
+    const row = await createPilotGroup(user, title, visibility, initialAvatar);
     stickToBottom.current = true;
     draft.current = null;
-    setGroup(row); setDetails(null); setManage(true); setGroupTab("members"); setNewGroup(false); setName(""); setQuery("");
-    const initial = await updatePilotGroup(user, row, "title", row.title || title);
+    setGroup(row); setDetails(null); setManage(true); setGroupTab("members"); setNewGroup(false); setName(""); setQuery(""); setInitialAvatar(null);
+    const initial = await updatePilotGroup(user, row, "profile", row.profile || { avatar: null, description: "" });
     setDetails(initial);
     if (selected.length) await invite(row, selected);
   });
@@ -223,6 +230,33 @@ export default function PilotGroupsScreen({ navigation, route }) {
     setDetails(await updatePilotGroup(user, group, "message", text, undefined, draft.current.id));
     draft.current = null;
     setMessage("");
+  });
+  const pickFile = () => run(async () => {
+    setComposerMenu(false);
+    const result = await withSystemActivity(() => DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true }));
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    try {
+      const info = await FileSystem.getInfoAsync(asset.uri, { size: true });
+      const size = info.size;
+      if (!info.exists || !Number.isSafeInteger(size) || size < 1 || size > PILOT_GROUP_FILE_LIMIT) {
+        throw new Error(say("Scegli un file fino a 96 KB.", "Choose a file up to 96 KB."));
+      }
+      const data = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64,
+        position: 0, length: PILOT_GROUP_FILE_LIMIT + 1 });
+      const mime = /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(asset.mimeType || "") ? asset.mimeType : "application/octet-stream";
+      const name = asset.name?.replace(/[\x00-\x1f\x7f]/g, "").trim().slice(0, 160) || say("Allegato", "Attachment");
+      setFileDraft({ id: randomHex(16), attachment: { name, mime, size, data } });
+    } finally {
+      if (FileSystem.cacheDirectory && asset.uri.startsWith(FileSystem.cacheDirectory)) {
+        await FileSystem.deleteAsync(asset.uri, { idempotent: true }).catch(() => {});
+      }
+    }
+  });
+  const sendFile = () => run(async () => {
+    if (!fileDraft) return;
+    setDetails(await updatePilotGroup(user, group, "attachment", fileDraft.attachment, undefined, fileDraft.id));
+    setFileDraft(null);
   });
   const createPoll = () => run(async () => {
     setDetails(await updatePilotGroup(user, group, "poll", { question, options: choices }));
@@ -247,20 +281,20 @@ export default function PilotGroupsScreen({ navigation, route }) {
     setAvatar(details?.profile?.avatar || null);
     setEditing(true);
   };
-  const choosePhoto = () => run(async () => {
+  const choosePhoto = (onPhoto = setAvatar) => run(async () => {
     const photo = await withSystemActivity(() => pickAvatarDataUrl({
       allowOriginal: false, maxBytes: Math.floor((PILOT_GROUP_AVATAR_LIMIT - 64) * 3 / 4), maxWidth: 384,
     }));
     if (photo.denied) throw new Error(say("Consenti l’accesso alle foto.", "Allow photo access."));
     if (photo.error) throw new Error(say("Scegli una foto più piccola.", "Choose a smaller photo."));
-    if (photo.dataUrl) setAvatar(photo.dataUrl);
+    if (photo.dataUrl) onPhoto(photo.dataUrl);
   });
   const saveProfile = () => run(async () => {
     setDetails(await updatePilotGroup(user, group, "profile", { description, avatar }));
     setEditing(false);
   });
   const showInfo = () => {
-    setGroupTab("members"); setEditing(false); setManage(true);
+    setGroupTab("members"); setEditing(false); setManage(true); setComposerMenu(false);
   };
 
   const openProfile = (peer) => navigation.navigate("Profilo", { peer });
@@ -346,7 +380,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
             {invitation.status === "pending" ? <View style={styles.actions}>
               {button(say("Accetta", "Accept"), () => decide(invitation, "accepted"), { primary: true })}
               {button(say("Rifiuta", "Decline"), () => decide(invitation, "declined"))}
-            </View> : <Text style={styles.dim}>{say("Accettato. L’ingresso si completa quando l’amministratore apre il gruppo.", "Accepted. Entry completes when the administrator opens the group.")}</Text>}
+            </View> : <Text style={styles.dim}>{say("Accettato. L’ingresso si completa quando il fondatore è online in Chat o nel gruppo.", "Accepted. Entry completes when the founder is online in Chats or in the group.")}</Text>}
           </View>
         ))}
         {groups.map(row => (
@@ -365,13 +399,18 @@ export default function PilotGroupsScreen({ navigation, route }) {
           <TextInput {...inputProps} style={styles.input} value={name} maxLength={60} onChangeText={setName}
             placeholder={say("Nome del gruppo", "Group name")} accessibilityLabel={say("Nome del gruppo", "Group name")} />
           <View style={styles.actions}>
+            {groupAvatar(initialAvatar)}
+            {button(say("Scegli foto", "Choose photo"), () => choosePhoto(setInitialAvatar))}
+            {!!initialAvatar && button(say("Rimuovi", "Remove"), () => setInitialAvatar(null))}
+          </View>
+          <View style={styles.actions}>
             {button(say("Privato", "Private"), () => setVisibility("private"), { primary: visibility === "private" })}
             {button(say("Pubblico", "Public"), () => setVisibility("public"), { primary: visibility === "public" })}
           </View>
           {visibility === "public" && <Text style={styles.dim}>{say("Nome e amministratore compaiono nell’elenco pubblico. Si entra su invito.", "The name and administrator appear in the public directory. Entry is by invitation.")}</Text>}
           {contactPicker()}
           {button(say("Crea gruppo", "Create group"), create, { primary: true, disabled: busy || !name.trim() })}
-          {button(say("Annulla", "Cancel"), () => { setNewGroup(false); setName(""); setQuery(""); setSelected([]); })}
+          {button(say("Annulla", "Cancel"), () => { setNewGroup(false); setName(""); setQuery(""); setSelected([]); setInitialAvatar(null); })}
         </View> : button(say("Nuovo gruppo", "New group"), () => setNewGroup(true), { primary: true })}
         {busy && <ActivityIndicator color={theme.primary} />}
       </ScrollView>
@@ -379,6 +418,11 @@ export default function PilotGroupsScreen({ navigation, route }) {
   }
   const groupTitle = details?.title || group.title || say("Gruppo", "Group");
   const isFounder = group.admin === user.lns;
+  const privacy = details?.profile?.visibility || group.profile?.visibility || group.visibility;
+  const privacyLabel = privacy === "public" ? say("Pubblico", "Public") : privacy === "private" ? say("Privato", "Private") : null;
+  const renderAttachment = (item) => item.attachment?.data ? (
+    <EncryptedAttachment att={{ ...item.attachment, id: `${group.id}:${item.seq}` }} inlineData={item.attachment.data} />
+  ) : <Text style={styles.dim}>{say("File non più disponibile su questo dispositivo.", "File no longer available on this device.")}</Text>;
   const hasRecipients = details?.members.length > 1;
   return (
     <KeyboardAvoidingView behavior="padding" style={[styles.root, topStyle]}>
@@ -390,7 +434,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
           <View style={styles.headingText}>
             <Text style={styles.section} numberOfLines={1}>{groupTitle}</Text>
             <Text style={styles.dim} numberOfLines={1}>{manage ? say("Informazioni gruppo", "Group information") :
-              (details ? `${details.members.length} ${say("membri", "members")}` : say("Sincronizzazione…", "Syncing…"))}</Text>
+              (details ? [privacyLabel, `${details.members.length} ${say("membri", "members")}`].filter(Boolean).join(" · ") : say("Sincronizzazione…", "Syncing…"))}</Text>
           </View>
         </TouchableOpacity>
       </View>
@@ -416,7 +460,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
           </View>}
         </View>
         <View accessibilityRole="tablist" style={styles.tabs}>
-          {[["members", say("Membri", "Members")], ["info", say("Informazioni", "Information")]].map(([key, label]) => (
+          {[["members", say("Membri", "Members")], ["media", say("Allegati", "Attachments")], ["info", say("Informazioni", "Information")]].map(([key, label]) => (
             <TouchableOpacity key={key} accessibilityRole="tab" accessibilityState={{ selected: groupTab === key }}
               onPress={() => setGroupTab(key)} style={[styles.tab, groupTab === key && styles.tabActive]}>
               <Text style={[styles.buttonText, groupTab === key && styles.sender]}>{label}</Text>
@@ -429,7 +473,13 @@ export default function PilotGroupsScreen({ navigation, route }) {
           <TouchableOpacity onPress={() => openProfile(group.admin)} accessibilityRole="button">
             <Text style={styles.sender}>{say("Fondatore", "Founder")} · {group.admin}</Text>
           </TouchableOpacity>
-        </View> : <>
+        </View> : groupTab === "media" ? (
+          <View style={styles.picker}>
+            {history.some(item => item.attachment) ? history.filter(item => item.attachment).map(item => (
+              <View key={item.seq} style={styles.card}><Text style={styles.text}>{item.attachment.name}</Text>{renderAttachment(item)}</View>
+            )) : <Text style={styles.dim}>{say("Nessun allegato.", "No attachments.")}</Text>}
+          </View>
+        ) : <>
         {(details?.members || []).map(account => (
           <View style={styles.row} key={account}>
             <TouchableOpacity onPress={() => openProfile(account)} accessibilityRole="button" style={{ flex: 1, paddingVertical: 6 }}>
@@ -464,9 +514,10 @@ export default function PilotGroupsScreen({ navigation, route }) {
             : say("Sincronizzazione della chat…", "Syncing the chat…")}</Text>} keyExtractor={item => String(item.seq)} contentContainerStyle={styles.messages}
           renderItem={({item}) => <View style={[styles.message, item.sender === user.lns && styles.ownMessage]}>
             <TouchableOpacity onPress={() => openProfile(item.sender)} accessibilityRole="button">
-              <Text style={styles.sender}>{item.sender}</Text>
+              <Text style={styles.sender}>{item.sender}{item.sender === group.admin ? " · " + say("Fondatore", "Founder") : ""}</Text>
             </TouchableOpacity>
             <Text style={styles.text}>{item.body}</Text>
+            {!!item.attachment && renderAttachment(item)}
             {item.poll?.kind === "poll" && <View style={styles.poll}>
               {item.poll.options.map((option, index) => (
                 <TouchableOpacity key={option} accessibilityRole="button" accessibilityState={{ disabled: busy, selected: index === item.choice }}
@@ -493,10 +544,20 @@ export default function PilotGroupsScreen({ navigation, route }) {
                 new Set(choices.map(choice => choice.trim())).size !== choices.length })}
           </View>
         </ScrollView>}
+        {composerMenu && <View style={styles.menu}>
+          {button(say("Allegati", "Attachments") + " · 96 KB", pickFile)}
+          {button(say("Sondaggio", "Poll"), () => { setComposerMenu(false); setPollEditor(value => !value); })}
+        </View>}
+        {fileDraft && <View style={styles.menu}>
+          <Text numberOfLines={1} style={[styles.text, styles.fileName]}>{fileDraft.attachment.name}</Text>
+          {button(say("Annulla", "Cancel"), () => setFileDraft(null))}
+          {button(say("Invia file", "Send file"), sendFile, { primary: true, disabled: busy || !hasRecipients })}
+        </View>}
         <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
           {details && !hasRecipients ? <Text style={styles.dim}>{say("Sarai in grado di scrivere quando sarà entrato almeno un altro membro.", "You can write once another member has joined.")}</Text> :
             <View style={styles.composerRow}>
-              {iconButton("bar-chart-outline", say("Sondaggio", "Poll"), () => setPollEditor(value => !value), busy || !hasRecipients)}
+              {iconButton(composerMenu ? "close" : "add", say("Allegati e sondaggi", "Attachments and polls"),
+                () => { setPollEditor(false); setComposerMenu(value => !value); }, busy || !hasRecipients || !!fileDraft)}
               <TextInput {...inputProps} style={[styles.input, styles.composeInput]} placeholder={say("Scrivi un messaggio", "Write a message")}
                 editable={!busy && hasRecipients} accessibilityLabel={say("Scrivi un messaggio", "Write a message")}
                 maxLength={2000} multiline value={message} onChangeText={setMessage} />
@@ -553,6 +614,8 @@ const styles = StyleSheet.create({
   poll: { gap: 6, marginTop: 6 },
   pollEditor: { padding: 12, gap: 6 },
   composer: { paddingHorizontal: 8, paddingTop: 8, backgroundColor: theme.surface, borderTopWidth: 1, borderColor: theme.border },
+  menu: { flexDirection: "row", alignItems: "center", padding: 8, gap: 6, backgroundColor: theme.surface },
+  fileName: { flex: 1 },
   composerRow: { flexDirection: "row", alignItems: "flex-end", gap: 4 },
   composeInput: { flex: 1, maxHeight: 120 },
 });

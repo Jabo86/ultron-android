@@ -1,5 +1,5 @@
 import { writeCachedAttachment } from "../lib/attachmentCache";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { View, Text, Image, TouchableOpacity, ActivityIndicator, Alert, StyleSheet, Modal, Pressable } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
 // SDK 57: le funzioni `saveToLibraryAsync`/`createAssetAsync` importate da
@@ -12,7 +12,7 @@ import * as IntentLauncher from "expo-intent-launcher";
 import { withSystemActivity } from "../lib/lockGuard";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as api from "../lib/api";
-import { decryptFileBytes, bytesToBase64, sha256Hex } from "../lib/crypto";
+import { decryptFileBytes, base64ToBytes, bytesToBase64, sha256Hex } from "../lib/crypto";
 import * as bigatt from "../lib/bigatt";
 import { analyzeAttachment } from "../lib/threatEngine";
 import ThreatBanner from "./ThreatBanner";
@@ -44,7 +44,7 @@ function fileNameFor(att) {
   return base;
 }
 
-export default function EncryptedAttachment({ att }) {
+export default function EncryptedAttachment({ att, inlineData }) {
   const { lang } = useI18n();
   const en = lang === "en";
   const isImage = (att?.mime || "").startsWith("image/");
@@ -54,7 +54,8 @@ export default function EncryptedAttachment({ att }) {
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [saving, setSaving] = useState(false);
-  const cacheKey = sha256Hex(JSON.stringify([att?.id, att?.key, att?.iv]));
+  const cacheKey = useMemo(() => sha256Hex(JSON.stringify([att?.id, att?.key, att?.iv, inlineData])),
+    [att?.id, att?.key, att?.iv, inlineData]);
   const [threat, setThreat] = useState(scans.get(cacheKey) || null);
   const [full, setFull] = useState(false);
   const alive = useRef(true);
@@ -84,8 +85,9 @@ export default function EncryptedAttachment({ att }) {
           setReady(true);
           return;
         }
-        const ct = await api.blobDownload(att.id);
-        const bytes = decryptFileBytes(ct, att.key, att.iv);
+        const bytes = inlineData
+          ? base64ToBytes(inlineData)
+          : decryptFileBytes(await api.blobDownload(att.id), att.key, att.iv);
         if (att.size && bytes.length !== att.size) throw new Error("Allegato incompleto.");
         const scan = analyzeAttachment({ name: att.name, mime: att.mime, bytes }, lang);
         scans.set(cacheKey, scan);

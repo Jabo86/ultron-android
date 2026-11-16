@@ -11,10 +11,38 @@ const PACKAGE_LIFETIME = 86_400_000;
 const PACKAGE_BATCH = 8;
 const MAX_LOCAL_HISTORY = 200;
 export const PILOT_GROUP_AVATAR_LIMIT = 32 * 1024;
+export const PILOT_GROUP_FILE_LIMIT = 96 * 1024;
+const LOCAL_FILE_BUDGET = 384 * 1024;
+const attachmentScope = (id, epoch, op, author, attachment) =>
+  JSON.stringify(["ultron-mls-attachment-v1", id, epoch, op, author, attachment]);
+function validAttachment(attachment) {
+  if (!attachment || typeof attachment.name !== "string" || !attachment.name.trim() || attachment.name.length > 160 ||
+      /[\x00-\x1f\x7f]/.test(attachment.name) || typeof attachment.mime !== "string" || attachment.mime.length > 120 ||
+      !/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(attachment.mime) || !Number.isSafeInteger(attachment.size) ||
+      attachment.size < 1 || attachment.size > PILOT_GROUP_FILE_LIMIT || typeof attachment.data !== "string" ||
+      attachment.data.length !== 4 * Math.ceil(attachment.size / 3) ||
+      !/^[A-Za-z0-9+/]+={0,2}$/.test(attachment.data)) return false;
+  const padding = attachment.data.endsWith("==") ? 2 : attachment.data.endsWith("=") ? 1 : 0;
+  return attachment.data.length * 3 / 4 - padding === attachment.size;
+}
+function appendHistory(history, message) {
+  const kept = [...history, message].slice(-MAX_LOCAL_HISTORY);
+  let remaining = LOCAL_FILE_BUDGET;
+  for (let index = kept.length - 1; index >= 0; index--) {
+    const entry = kept[index], data = entry.attachment?.data;
+    if (!data) continue;
+    if (data.length > remaining) {
+      const { data: discard, ...metadata } = entry.attachment;
+      kept[index] = { ...entry, attachment: metadata };
+    } else remaining -= data.length;
+  }
+  return kept;
+}
 const profileScope = (id, epoch, op, author, profile) =>
   JSON.stringify(["ultron-mls-profile-v1", id, epoch, op, author, profile]);
 function validProfile(profile) {
   return profile && typeof profile.description === "string" && profile.description.length <= 512 &&
+    (profile.visibility === undefined || ["private", "public"].includes(profile.visibility)) &&
     (profile.avatar === null || (typeof profile.avatar === "string" && profile.avatar.length <= PILOT_GROUP_AVATAR_LIMIT &&
       /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(profile.avatar)));
 }
@@ -261,7 +289,8 @@ async function flush(user, id, record, check) {
     if (pending.profile) updated.profile = pending.profile;
   }
   else if (pending.body.kind === "message") {
-    updated.history = [...record.history, { seq: ack.seq, sender: user.lns, body: pending.text, poll: pending.poll, draftId: pending.draftId }].slice(-MAX_LOCAL_HISTORY);
+    updated.history = appendHistory(record.history, { seq: ack.seq, sender: user.lns, body: pending.text, poll: pending.poll,
+      attachment: pending.attachment, draftId: pending.draftId });
   }
   await setBlobDurably(key, updated);
   return updated;
@@ -320,7 +349,7 @@ async function sync(user, row, ctx) {
       const decoded = await engine.receive(record.state, id, record.epoch, event, row.admin);
       let history = record.history, title = record.title, groupProfile = record.profile;
       if (decoded.payload !== null) {
-        const { body, signature, type, poll, poll_signature, profile, profile_signature } = JSON.parse(decoded.payload);
+        const { body, signature, type, poll, poll_signature, profile, profile_signature, attachment, attachment_signature } = JSON.parse(decoded.payload);
         const author = await credentials.identityFor(event.author);
         if (typeof body !== "string" || !["text", "title"].includes(type) ||
             (type === "title" ? event.author !== row.admin || !body || body.length > 60 : body.length > 2000) || !/^[a-f0-9]{6618}$/.test(signature || "") ||
@@ -337,7 +366,10 @@ async function sync(user, row, ctx) {
         } else {
           const authenticatedPoll = validPoll(poll, event.op, body) && /^[a-f0-9]{6618}$/.test(poll_signature || "") &&
             verifyMessage(pollScope(id, record.epoch, event.op, event.author, poll), poll_signature, author);
-          history = [...history, { seq: event.seq, sender: event.author, body, poll: authenticatedPoll ? poll : undefined }].slice(-MAX_LOCAL_HISTORY);
+          const authenticatedAttachment = validAttachment(attachment) && /^[a-f0-9]{6618}$/.test(attachment_signature || "") &&
+            verifyMessage(attachmentScope(id, record.epoch, event.op, event.author, attachment), attachment_signature, author);
+          history = appendHistory(history, { seq: event.seq, sender: event.author, body, poll: authenticatedPoll ? poll : undefined,
+            attachment: authenticatedAttachment ? attachment : undefined });
         }
       }
       record = { ...record, cursor: event.seq, epoch: decoded.epoch, state: decoded.snapshot, history, title, profile: groupProfile, lastAt: new Date().toISOString() };
@@ -350,7 +382,7 @@ async function sync(user, row, ctx) {
   throw new Error("La cronologia del gruppo è ancora in sincronizzazione.");
 }
 
-export function createPilotGroup(user, name, visibility = "private") {
+export function createPilotGroup(user, name, visibility = "private", avatar = null) {
   return serial(user, async () => {
     const { engine, check } = await context(user);
     const draft = blob(user, "create");
@@ -362,29 +394,47 @@ export function createPilotGroup(user, name, visibility = "private") {
       const title = name?.trim() || undefined;
       const listing = visibility === "public" && title ? { name: title,
         signature: signMessage(listingScope(user.server, id, user.lns, title), user.sk) } : undefined;
-      pending = { id, signature, state, title, listing };
+      const profile = { description: "", avatar, visibility };
+      if (!validProfile(profile)) throw new Error("Foto o visibilità del gruppo non valida.");
+      pending = { id, signature, state, title, listing, profile };
       check();
       await setBlobDurably(draft, pending);
     }
-    const { id, state, signature, title, listing } = pending;
+    const { id, state, signature, title, listing, profile } = pending;
     check();
     const groupKey = blob(user, id);
     if (!await getBlob(groupKey)) {
       check();
-      await setBlobDurably(groupKey, { since: 0, cursor: 0, epoch: 0, history: [], state, pending: null, title, lastAt: new Date().toISOString() });
+      await setBlobDurably(groupKey, { since: 0, cursor: 0, epoch: 0, history: [], state, pending: null, title, profile, lastAt: new Date().toISOString() });
     }
     check();
     const res = await api.mlsCreate({ id, signature, listing });
     if (res?.id !== id) throw new Error("Creazione gruppo non confermata.");
     check();
     await setBlobDurably(draft, null);
-    return { id, admin: user.lns, signature, since: 0, seq: 0, epoch: 0, title };
+    return { id, admin: user.lns, signature, since: 0, seq: 0, epoch: 0, title, profile };
   });
 }
 
 function detailsFor(engine, id, record) {
   return { title: record.title, profile: record.profile, history: record.history,
     members: engine.members(record.state, id, record.epoch) };
+}
+
+export async function finishAcceptedPilotGroupInvites(user, row) {
+  if (row.admin !== user.lns) return;
+  const accepted = (await pilotGroupInvitations(user, row)).filter(invite => invite.status === "accepted");
+  if (!accepted.length) return;
+  let details = await openPilotGroup(user, row);
+  let changed = false;
+  for (const invite of accepted) {
+    if (details.members.includes(invite.target)) continue;
+    details = await updatePilotGroup(user, row, "add", invite.target, invite);
+    changed = true;
+  }
+  if (!changed) return;
+  if (details.profile) await updatePilotGroup(user, row, "profile", details.profile);
+  else if (details.title) await updatePilotGroup(user, row, "title", details.title);
 }
 
 export function openPilotGroup(user, row, { read = false } = {}) {
@@ -405,7 +455,7 @@ export function updatePilotGroup(user, row, kind, value, invitation, draftId) {
     for (let attempt = 0; ; attempt++) {
       try { return await writePilotGroup(user, row, kind, value, invitation, draftId, ctx); }
       catch (error) {
-        if (attempt || error?.response?.status !== 409 || !["message", "title", "profile", "poll", "vote"].includes(kind)) throw error;
+        if (attempt || error?.response?.status !== 409 || !["message", "title", "profile", "poll", "vote", "attachment"].includes(kind)) throw error;
       }
     }
   });
@@ -416,12 +466,12 @@ async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx)
   const record = await sync(user, row, ctx);
   const { id } = row;
   if (draftId && record.history.some(item => item.draftId === draftId)) return detailsFor(engine, id, record);
-  if (kind === "message" && draftId && engine.members(record.state, id, record.epoch).length < 2) {
+  if (["message", "attachment"].includes(kind) && draftId && engine.members(record.state, id, record.epoch).length < 2) {
     throw new Error("Invita almeno un membro e attendi che l’ingresso sia completato.");
   }
-  const body = { op: randomHex(16), cursor: record.cursor, epoch: record.epoch, kind: ["title", "profile", "poll", "vote"].includes(kind) ? "message" : kind };
+  const body = { op: randomHex(16), cursor: record.cursor, epoch: record.epoch, kind: ["title", "profile", "poll", "vote", "attachment"].includes(kind) ? "message" : kind };
   let update;
-  let text, type, poll, profile;
+  let text, type, poll, profile, attachment;
   if (body.kind === "message") {
     type = ["title", "profile"].includes(kind) ? "title" : "text";
     if (kind === "poll") {
@@ -435,7 +485,12 @@ async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx)
     } else if (kind === "profile") {
       text = record.title || row.title || "Gruppo";
       profile = { description: value.description.trim(), avatar: value.avatar };
+      if (record.profile?.visibility) profile.visibility = record.profile.visibility;
       if (!validProfile(profile)) throw new Error("Descrizione o foto del gruppo non valida.");
+    } else if (kind === "attachment") {
+      attachment = value;
+      if (!validAttachment(attachment)) throw new Error("Allegato del gruppo non valido.");
+      text = attachment.name;
     } else {
       text = value.trim();
     }
@@ -444,8 +499,10 @@ async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx)
     const signature = signMessage(messageScope(id, record.epoch, body.op, user.lns, type, text), user.sk);
     const poll_signature = poll ? signMessage(pollScope(id, record.epoch, body.op, user.lns, poll), user.sk) : undefined;
     const profile_signature = profile ? signMessage(profileScope(id, record.epoch, body.op, user.lns, profile), user.sk) : undefined;
+    const attachment_signature = attachment
+      ? signMessage(attachmentScope(id, record.epoch, body.op, user.lns, attachment), user.sk) : undefined;
     update = await engine.send(record.state, id, record.epoch,
-      JSON.stringify({ body: text, signature, type, poll, poll_signature, profile, profile_signature }));
+      JSON.stringify({ body: text, signature, type, poll, poll_signature, profile, profile_signature, attachment, attachment_signature }));
   } else if (kind === "add" || kind === "remove") {
     if (row.admin !== user.lns) throw new Error("Solo l’amministratore può modificare i membri.");
     body.target = value.trim().toLowerCase();
@@ -477,7 +534,7 @@ async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx)
     }
   } else throw new Error("Operazione gruppo non valida.");
 
-  const pending = { body: { ...body, wire: update.wire }, snapshot: update.snapshot, text, type, poll, profile, draftId };
+  const pending = { body: { ...body, wire: update.wire }, snapshot: update.snapshot, text, type, poll, profile, attachment, draftId };
   const staged = { ...record, pending };
   check();
   await setBlobDurably(blob(user, id), staged);
@@ -491,7 +548,7 @@ export async function cachedPilotGroupSummary(user, row) {
   if (record?.since !== row.since) return {};
   const unread = record.history.filter(item => item.seq > (record.readThrough ?? row.since) &&
     item.sender !== user.lns && item.poll?.kind !== "vote").length;
-  return { title: record.title, avatar: record.profile?.avatar, lastAt: record.lastAt, cursor: record.cursor, unread };
+  return { title: record.title, avatar: record.profile?.avatar, visibility: record.profile?.visibility, lastAt: record.lastAt, cursor: record.cursor, unread };
 
 }
 

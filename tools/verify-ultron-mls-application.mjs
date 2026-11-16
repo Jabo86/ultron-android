@@ -45,6 +45,7 @@ const api = {
     invites.set(id,row);
     return {...row};
   },
+  mlsGroupInvitations: async group => [...invites.values()].filter(row=>row.group===group && row.inviter===actor.lns && row.status!=="joined"),
   mlsInvitations: async () => [...invites.values()].filter(row=>row.target===actor.lns && row.status!=="joined"),
   mlsDecideInvitation: async (id,{decision,signature}) => {
     const row = invites.get(id);
@@ -106,7 +107,7 @@ const hostedGroupCredentials=async user => ({
 });
 const source=readFileSync(new URL("../src/lib/pilotGroups.js", import.meta.url),"utf8")
   .replace(/^import .+;$/gm,"").replace(/^export /gm,"").replace(/let dependency;[\s\S]+?(?=function serial)/,"const loadMls=async()=>[mls,{defaultClientConfig}];\n");
-const app=runInNewContext(source+"\n({cachedPilotGroupSummary,listPilotGroups,preparePilotGroupInvites,createPilotGroup,openPilotGroup,updatePilotGroup,presentPilotGroupHistory,listPublicPilotGroups,pilotInvitationInbox,pilotInvitationTitle,requestPilotGroupInvitation,decidePilotGroupInvitation})",{
+const app=runInNewContext(source+"\n({cachedPilotGroupSummary,listPilotGroups,preparePilotGroupInvites,createPilotGroup,finishAcceptedPilotGroupInvites,openPilotGroup,updatePilotGroup,presentPilotGroupHistory,listPublicPilotGroups,pilotInvitationInbox,pilotInvitationTitle,requestPilotGroupInvitation,decidePilotGroupInvitation})",{
   ...cryptoLib,api,registerHostedRatchet:async()=>{},verifiedContact:async(_user,peer)=>({kem:cryptoLib.bytesToHex(users.get(peer).kem.publicKey)}),createMlsGroupEngine,hostedGroupCredentials,mls,defaultClientConfig,
   getBlob:async key=>structuredClone(appData.get(key)),
   setBlobDurably:async (key,data)=>appData.set(key,structuredClone(data)),
@@ -142,7 +143,7 @@ await app.openPilotGroup(b,bobRow,{read:true});
 assert.equal((await app.cachedPilotGroupSummary(b,bobRow)).unread,0);
 await assert.rejects(app.updatePilotGroup(b,bobRow,"profile",{description:"Contraffatta",avatar:null}), /non valido/);
 actor=a;
-const groupProfile={description:"Informazioni riservate del gruppo",avatar:"data:image/jpeg;base64,/9j/2Q=="};
+const groupProfile={description:"Informazioni riservate del gruppo",visibility:"private",avatar:"data:image/jpeg;base64,/9j/2Q=="};
 await app.updatePilotGroup(a,row,"profile",groupProfile);
 const profilePacket = groups.get(row.id).events.at(-1).wire;
 assert.ok(!profilePacket.includes(groupProfile.description) && !profilePacket.includes(groupProfile.avatar));
@@ -153,6 +154,16 @@ const latest = await app.openPilotGroup(b,bobRow);
 assert.deepEqual({...latest.profile},groupProfile);
 assert.equal(latest.history.at(-1).body,"Invio dopo conflitto");
 assert.equal((await app.cachedPilotGroupSummary(b,bobRow)).avatar,groupProfile.avatar);
+actor=a;
+const attachment = {name:"Prova.pdf",mime:"application/pdf",size:96*1024,data:Buffer.alloc(96*1024,123).toString("base64")};
+await assert.rejects(app.updatePilotGroup(a,row,"attachment",{...attachment,size:attachment.size+1}), /non valido/);
+const attachmentDraft = randomHex(16);
+await app.updatePilotGroup(a,row,"attachment",attachment,undefined,attachmentDraft);
+const wire = groups.get(row.id).events.at(-1).wire;
+assert.ok(!wire.includes(attachment.data));
+assert.ok(Buffer.from(wire,"base64").length < 384*1024);
+actor=b;
+assert.deepEqual({...((await app.openPilotGroup(b,bobRow)).history.at(-1).attachment)},attachment);
 actor=a;
 await assert.rejects(app.updatePilotGroup(a,row,"poll",{question:"Orario?",options:["Mattina","Mattina"]}), /Sondaggio non valido/);
 const pollHistory = await app.updatePilotGroup(a,row,"poll",{question:"Orario?",options:["Mattina","Pomeriggio"]});
@@ -202,9 +213,10 @@ actor=b;
 const accepted=await app.decidePilotGroupInvitation(b,anotherRequest,"accepted");
 actor=a;
 await assert.rejects(app.updatePilotGroup(a,publicGroup,"add",b.lns,{...accepted,proof:"00".repeat(3309)}),/Consenso/);
-await app.updatePilotGroup(a,publicGroup,"add",b.lns,accepted);
-await app.updatePilotGroup(a,publicGroup,"title","Piazza ULTRON");
+await app.finishAcceptedPilotGroupInvites(a,publicGroup);
 actor=b;
 const [publicMemberRow]=await app.listPilotGroups();
-assert.equal((await app.openPilotGroup(b,publicMemberRow)).title,"Piazza ULTRON");
-console.log("Three pilot clients: create, invite, signed text, scoped title, encrypted polls, signed consent, public listing, unread counts, encrypted profile, removal and durable send retry passed.");
+const publicDetails = await app.openPilotGroup(b,publicMemberRow);
+assert.equal(publicDetails.title,"Piazza ULTRON");
+assert.equal(publicDetails.profile.visibility,"public");
+console.log("Three pilot clients: create, invite, signed text, scoped title, encrypted polls, signed consent, public listing, unread counts, encrypted profile and attachment, automatic invitation completion, removal and durable send retry passed.");
