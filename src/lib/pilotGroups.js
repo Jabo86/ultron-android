@@ -1,5 +1,6 @@
 import * as api from "./api";
 import { randomHex, sha256Hex, signMessage, utf8Encode, verifyMessage } from "./crypto";
+import { registerHostedRatchet } from "./hostedRatchetChat";
 import { hostedGroupCredentials } from "./hostedGroupCredentials";
 import { getBlob, setBlobDurably } from "./lock";
 import { createMlsGroupEngine } from "./mlsGroupEngine";
@@ -11,6 +12,8 @@ const PACKAGE_BATCH = 8;
 const MAX_LOCAL_HISTORY = 200;
 const validNumber = (n) => Number.isSafeInteger(n) && n >= 0;
 const genesis = (server, id, admin) => JSON.stringify(["ultron-mls-group-v1", server, id, admin]);
+const welcomeScope = (server, group, epoch, recipient, packageId, wire) =>
+  JSON.stringify(["ultron-mls-welcome-v1", server, group, epoch, recipient, packageId, sha256Hex(wire)]);
 const messageScope = (id, epoch, op, author, type, body) => JSON.stringify(["ultron-mls-message-v1", id, epoch, op, author, type, body]);
 const blob = (user, name) => "mls:" + sha256Hex(JSON.stringify([user.server, user.lns, name]));
 
@@ -58,6 +61,8 @@ export async function listPilotGroups() {
 export function preparePilotGroupInvites(user) {
   return serial(user, async () => {
     const check = api.authenticatedScope(user);
+    await registerHostedRatchet(user);
+    check();
     const key = blob(user, "packages");
     let pool = await getBlob(key) || [];
     const now = Date.now();
@@ -143,6 +148,10 @@ async function sync(user, row, ctx) {
             !event.welcome || !validNumber(event.epoch) || event.next_epoch !== event.epoch + 1) {
           throw new Error("Invito MLS incompleto.");
         }
+        const adminKey = await credentials.identityFor(row.admin);
+        const proof = welcomeScope(user.server, id, event.next_epoch, user.lns, event.package, event.welcome);
+        if (!/^[a-f0-9]{6618}$/.test(event.welcome_signature || "") || !/^[a-f0-9]{64}$/.test(event.package || "") ||
+            !verifyMessage(proof, event.welcome_signature, adminKey)) throw new Error("Firma dell’invito di gruppo non valida.");
         const poolKey = blob(user, "packages");
         const pool = await getBlob(poolKey) || [];
         const found = pool.find(item => item.id === event.package);
@@ -240,7 +249,11 @@ export function updatePilotGroup(user, row, kind, value) {
         keyPackage = claim.wire;
       }
       update = await engine.change(record.state, id, record.epoch, kind, body.target, keyPackage);
-      if (update.welcome) body.welcome = update.welcome;
+      if (kind === "add") {
+        if (!update.welcome) throw new Error("Invito MLS non generato.");
+        body.welcome = update.welcome;
+        body.welcome_signature = signMessage(welcomeScope(user.server, id, record.epoch + 1, body.target, body.package, body.welcome), user.sk);
+      }
     } else throw new Error("Operazione gruppo non valida.");
 
     const pending = { body: { ...body, wire: update.wire }, snapshot: update.snapshot, text, type };

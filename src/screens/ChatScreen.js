@@ -243,13 +243,13 @@ export default function ChatScreen({ route, navigation }) {
   const peer = others.length === 1 ? others[0] : null;
   const onDeleteChat = () => {
     if (!convId || deletingChat.current || (pilot && !peer)) return;
-    Alert.alert(pilot ? (lang === "en" ? "Permanently delete this chat?" : "Eliminare la chat definitivamente?") : t("chat.deleteChat.title"),
+    Alert.alert(pilot ? (lang === "en" ? "Delete this chat for both?" : "Eliminare la chat per entrambi?") : t("chat.deleteChat.title"),
       pilot ? (lang === "en"
         ? "Delete the history and its attachments from the gateway for both participants. A new message starts an empty chat. Copies saved or exported outside ULTRON stay on those devices."
         : "Elimina la cronologia e gli allegati dal gateway per entrambi. Un nuovo messaggio aprirà una chat vuota. Le copie salvate o esportate fuori da ULTRON restano sui dispositivi.")
         : t("chat.deleteChat.text"), [
       { text: t("cancel"), style: "cancel" },
-      { text: t("delete"), style: "destructive", onPress: async () => {
+      { text: pilot ? (lang === "en" ? "Delete for both" : "Elimina per entrambi") : t("delete"), style: "destructive", onPress: async () => {
         if (deletingChat.current) return;
         deletingChat.current = true;
         deletionRevision.current++;
