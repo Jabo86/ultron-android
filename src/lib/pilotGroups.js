@@ -21,6 +21,39 @@ const consentScope = (server, group, invitation, inviter, target, decision) =>
 const inviteTitleScope = (server, id, group, inviter, target, title) =>
   JSON.stringify(["ultron-mls-invite-title-v1", server, id, group, inviter, target, title]);
 const messageScope = (id, epoch, op, author, type, body) => JSON.stringify(["ultron-mls-message-v1", id, epoch, op, author, type, body]);
+const pollScope = (id, epoch, op, author, poll) => JSON.stringify(["ultron-mls-poll-v1", id, epoch, op, author, poll]);
+const validPollId = (id) => typeof id === "string" && /^[0-9a-f]{32}$/.test(id);
+const validChoice = (value, limit) => typeof value === "string" && value.trim() === value && value.length > 0 && value.length <= limit;
+function validPoll(data, op, body) {
+  if (!data || !validPollId(data.id)) return false;
+  if (data.kind === "poll") {
+    return data.id === op && validChoice(body, 140) && Array.isArray(data.options) && data.options.length >= 2 &&
+      data.options.length <= 6 && data.options.every(choice => validChoice(choice, 80)) && new Set(data.options).size === data.options.length;
+  }
+  return data.kind === "vote" && Number.isInteger(data.choice) && data.choice >= 0 && data.choice < 6;
+}
+
+export function presentPilotGroupHistory(history, account) {
+  const polls = new Map();
+  const visible = [];
+  for (const item of history) {
+    if (item.poll?.kind === "vote") {
+      const poll = polls.get(item.poll.id);
+      if (poll && item.poll.choice < poll.options.length) poll.votes.set(item.sender, item.poll.choice);
+      continue;
+    }
+    if (item.poll?.kind === "poll") polls.set(item.poll.id, { options: item.poll.options, votes: new Map() });
+    visible.push(item);
+  }
+  return visible.map(item => {
+    if (item.poll?.kind !== "poll") return item;
+    const { options, votes } = polls.get(item.poll.id);
+    const totals = options.map(() => 0);
+    for (const choice of votes.values()) totals[choice]++;
+    return { ...item, totals, choice: votes.get(account) };
+  });
+}
+
 const blob = (user, name) => "mls:" + sha256Hex(JSON.stringify([user.server, user.lns, name]));
 
 let dependency;
@@ -217,7 +250,7 @@ async function flush(user, id, record, check) {
   const updated = { ...record, epoch: ack.epoch, cursor: ack.seq, state: pending.snapshot, pending: null, lastAt: new Date().toISOString() };
   if (pending.type === "title") updated.title = pending.text;
   else if (pending.body.kind === "message") {
-    updated.history = [...record.history, { seq: ack.seq, sender: user.lns, body: pending.text }].slice(-MAX_LOCAL_HISTORY);
+    updated.history = [...record.history, { seq: ack.seq, sender: user.lns, body: pending.text, poll: pending.poll }].slice(-MAX_LOCAL_HISTORY);
   }
   await setBlobDurably(key, updated);
   return updated;
@@ -270,7 +303,7 @@ async function sync(user, row, ctx) {
       const decoded = await engine.receive(record.state, id, record.epoch, event, row.admin);
       let history = record.history, title = record.title;
       if (decoded.payload !== null) {
-        const { body, signature, type } = JSON.parse(decoded.payload);
+        const { body, signature, type, poll, poll_signature } = JSON.parse(decoded.payload);
         const author = await credentials.identityFor(event.author);
         if (typeof body !== "string" || !["text", "title"].includes(type) ||
             (type === "title" ? event.author !== row.admin || !body || body.length > 60 : body.length > 2000) || !/^[a-f0-9]{6618}$/.test(signature || "") ||
@@ -279,7 +312,11 @@ async function sync(user, row, ctx) {
           throw new Error("Firma del messaggio di gruppo non valida.");
         }
         if (type === "title") title = body;
-        else history = [...history, { seq: event.seq, sender: event.author, body }].slice(-MAX_LOCAL_HISTORY);
+        else {
+          const authenticatedPoll = validPoll(poll, event.op, body) && /^[a-f0-9]{6618}$/.test(poll_signature || "") &&
+            verifyMessage(pollScope(id, record.epoch, event.op, event.author, poll), poll_signature, author);
+          history = [...history, { seq: event.seq, sender: event.author, body, poll: authenticatedPoll ? poll : undefined }].slice(-MAX_LOCAL_HISTORY);
+        }
       }
       record = { ...record, cursor: event.seq, epoch: decoded.epoch, state: decoded.snapshot, history, title, lastAt: new Date().toISOString() };
       check();
@@ -337,15 +374,27 @@ export function updatePilotGroup(user, row, kind, value, invitation) {
     const { engine, check, credentials } = ctx;
     const record = await sync(user, row, ctx);
     const { id } = row;
-    const body = { op: randomHex(16), cursor: record.cursor, epoch: record.epoch, kind: kind === "title" ? "message" : kind };
+    const body = { op: randomHex(16), cursor: record.cursor, epoch: record.epoch, kind: ["title", "poll", "vote"].includes(kind) ? "message" : kind };
     let update;
-    let text, type;
-    if (kind === "message" || kind === "title") {
+    let text, type, poll;
+    if (body.kind === "message") {
       type = kind === "title" ? "title" : "text";
-      text = value.trim();
+      if (kind === "poll") {
+        text = value.question.trim();
+        poll = { kind: "poll", id: body.op, options: value.options.map(option => option.trim()) };
+      } else if (kind === "vote") {
+        const original = record.history.find(item => item.poll?.kind === "poll" && item.poll.id === value.id);
+        if (!original || value.choice >= original.poll.options.length) throw new Error("Sondaggio non disponibile.");
+        text = "🗳";
+        poll = { kind: "vote", id: value.id, choice: value.choice };
+      } else {
+        text = value.trim();
+      }
+      if (poll && !validPoll(poll, body.op, text)) throw new Error("Sondaggio non valido.");
       if (!text || (type === "title" ? text.length > 60 || row.admin !== user.lns : text.length > 2000) || utf8Encode(text).length > 8000) throw new Error("Messaggio di gruppo non valido.");
       const signature = signMessage(messageScope(id, record.epoch, body.op, user.lns, type, text), user.sk);
-      update = await engine.send(record.state, id, record.epoch, JSON.stringify({ body: text, signature, type }));
+      const poll_signature = poll ? signMessage(pollScope(id, record.epoch, body.op, user.lns, poll), user.sk) : undefined;
+      update = await engine.send(record.state, id, record.epoch, JSON.stringify({ body: text, signature, type, poll, poll_signature }));
     } else if (kind === "add" || kind === "remove") {
       if (row.admin !== user.lns) throw new Error("Solo l’amministratore può modificare i membri.");
       body.target = value.trim().toLowerCase();
@@ -377,7 +426,7 @@ export function updatePilotGroup(user, row, kind, value, invitation) {
       }
     } else throw new Error("Operazione gruppo non valida.");
 
-    const pending = { body: { ...body, wire: update.wire }, snapshot: update.snapshot, text, type };
+    const pending = { body: { ...body, wire: update.wire }, snapshot: update.snapshot, text, type, poll };
     const staged = { ...record, pending };
     check();
     await setBlobDurably(blob(user, id), staged);

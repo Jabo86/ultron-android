@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, AppState, FlatList, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
@@ -8,7 +8,7 @@ import { apiErr, contacts } from "../lib/api";
 import { contactAddress, matchesContact } from "../lib/contactAddress";
 import { getVerified } from "../lib/verify";
 import { cachedPilotGroupTitle, createPilotGroup, decidePilotGroupInvitation, listPilotGroups, listPublicPilotGroups, openPilotGroup,
-  pilotGroupInvitations, pilotInvitationInbox, pilotInvitationTitle, preparePilotGroupInvites,
+  pilotGroupInvitations, pilotInvitationInbox, pilotInvitationTitle, preparePilotGroupInvites, presentPilotGroupHistory,
   requestPilotGroupInvitation, updatePilotGroup } from "../lib/pilotGroups";
 import { theme } from "../theme";
 
@@ -29,6 +29,10 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const [details, setDetails] = useState(null);
   const [name, setName] = useState("");
   const [message, setMessage] = useState("");
+  const [pollEditor, setPollEditor] = useState(false);
+  const [question, setQuestion] = useState("");
+  const [choices, setChoices] = useState(["", ""]);
+  const history = useMemo(() => presentPilotGroupHistory(details?.history || [], user?.lns), [details, user?.lns]);
   const [newGroup, setNewGroup] = useState(false);
   const [book, setBook] = useState([]);
   const [bookError, setBookError] = useState("");
@@ -146,7 +150,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
     ? previous.filter(value => value !== address) : [...previous, address]);
 
   const open = (row) => run(async () => {
-    setDetails(null); setGroup(row); setManage(false); setMessage(""); setQuery(""); setSelected([]);
+    setDetails(null); setGroup(row); setManage(false); setMessage(""); setPollEditor(false); setQuery(""); setSelected([]);
     setOutgoing([]);
     await refresh(row);
   });
@@ -197,6 +201,13 @@ export default function PilotGroupsScreen({ navigation, route }) {
     if (!text) return;
     setDetails(await updatePilotGroup(user, group, "message", text));
     setMessage("");
+  });
+  const createPoll = () => run(async () => {
+    setDetails(await updatePilotGroup(user, group, "poll", { question, options: choices }));
+    setPollEditor(false); setQuestion(""); setChoices(["", ""]);
+  });
+  const vote = (id, choice) => run(async () => {
+    setDetails(await updatePilotGroup(user, group, "vote", { id, choice }));
   });
   const remove = (address) => run(async () => {
     setDetails(await updatePilotGroup(user, group, "remove", address));
@@ -337,15 +348,40 @@ export default function PilotGroupsScreen({ navigation, route }) {
             {primary: true, disabled: busy || !details || !selected.length})}
         </View>}
       </ScrollView> : <>
-        <FlatList data={details?.history || []} keyExtractor={item => String(item.seq)} contentContainerStyle={styles.messages}
+        <FlatList data={history} keyExtractor={item => String(item.seq)} contentContainerStyle={styles.messages}
           renderItem={({item}) => <View style={styles.message}>
             <TouchableOpacity onPress={() => openProfile(item.sender)} accessibilityRole="button">
               <Text style={styles.sender}>{item.sender}</Text>
             </TouchableOpacity>
             <Text style={styles.text}>{item.body}</Text>
+            {item.poll?.kind === "poll" && <View style={styles.poll}>
+              {item.poll.options.map((option, index) => (
+                <TouchableOpacity key={option} accessibilityRole="button" accessibilityState={{ disabled: busy, selected: index === item.choice }}
+                  disabled={busy} onPress={() => vote(item.poll.id, index)} style={[styles.row, index === item.choice && styles.selected]}>
+                  <Text style={[styles.text, { flex: 1 }]}>{option}</Text>
+                  <Text style={styles.dim}>{item.totals[index]}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>}
           </View>}
         />
+        {pollEditor && <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 260 }} contentContainerStyle={styles.pollEditor}>
+          <TextInput {...inputProps} style={styles.input} placeholder={say("Domanda", "Question")}
+            accessibilityLabel={say("Domanda", "Question")} maxLength={140} value={question} onChangeText={setQuestion} />
+          {choices.map((choice, index) => <TextInput key={index} {...inputProps} style={styles.input}
+            placeholder={say("Opzione", "Option") + " " + (index + 1)}
+            accessibilityLabel={say("Opzione", "Option") + " " + (index + 1)} value={choice} maxLength={80}
+            onChangeText={text => setChoices(previous => previous.map((value, i) => i === index ? text : value))} />)}
+          <View style={styles.actions}>
+            {button(say("Annulla", "Cancel"), () => setPollEditor(false))}
+            {choices.length < 6 && button(say("Aggiungi opzione", "Add option"), () => setChoices(value => [...value, ""]))}
+            {button(say("Pubblica", "Post"), createPoll, { primary: true,
+              disabled: busy || !question.trim() || choices.some(choice => !choice.trim()) ||
+                new Set(choices.map(choice => choice.trim())).size !== choices.length })}
+          </View>
+        </ScrollView>}
         <View style={styles.composer}>
+          {button(say("Sondaggio", "Poll"), () => setPollEditor(value => !value), { disabled: busy || !details })}
           <TextInput {...inputProps} style={[styles.input, styles.composeInput]} placeholder={say("Scrivi un messaggio", "Write a message")}
             accessibilityLabel={say("Scrivi un messaggio", "Write a message")} maxLength={2000} multiline value={message} onChangeText={setMessage} />
           {button(say("Invia", "Send"), send, {primary: true, disabled: busy || !details || !message.trim()})}
@@ -381,6 +417,8 @@ const styles = StyleSheet.create({
   messages: { padding: 12, gap: 8 },
   sender: { color: theme.primary, fontSize: 13, fontWeight: "700" },
   message: { padding: 10, gap: 4, backgroundColor: theme.surfaceAlt, borderRadius: 14 },
+  poll: { gap: 6, marginTop: 6 },
+  pollEditor: { padding: 12, gap: 6 },
   composer: { flexDirection: "row", alignItems: "flex-end", gap: 8, padding: 12 },
   composeInput: { flex: 1, maxHeight: 120 },
 });
