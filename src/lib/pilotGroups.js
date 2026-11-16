@@ -1,6 +1,6 @@
 import * as api from "./api";
-import { randomHex, sha256Hex, signMessage, utf8Encode, verifyMessage } from "./crypto";
-import { registerHostedRatchet } from "./hostedRatchetChat";
+import { decryptEnvelope, encryptForRecipients, randomHex, sha256Hex, signMessage, utf8Encode, verifyMessage } from "./crypto";
+import { registerHostedRatchet, verifiedContact } from "./hostedRatchetChat";
 import { hostedGroupCredentials } from "./hostedGroupCredentials";
 import { getBlob, setBlobDurably } from "./lock";
 import { createMlsGroupEngine } from "./mlsGroupEngine";
@@ -12,8 +12,14 @@ const PACKAGE_BATCH = 8;
 const MAX_LOCAL_HISTORY = 200;
 const validNumber = (n) => Number.isSafeInteger(n) && n >= 0;
 const genesis = (server, id, admin) => JSON.stringify(["ultron-mls-group-v1", server, id, admin]);
-const welcomeScope = (server, group, epoch, recipient, packageId, wire) =>
-  JSON.stringify(["ultron-mls-welcome-v1", server, group, epoch, recipient, packageId, sha256Hex(wire)]);
+const welcomeScope = (server, group, epoch, recipient, packageId, wire, invitation) =>
+  JSON.stringify([invitation ? "ultron-mls-welcome-v2" : "ultron-mls-welcome-v1",
+    server, group, epoch, recipient, packageId, sha256Hex(wire), ...(invitation ? [invitation] : [])]);
+const listingScope = (server, id, admin, name) => JSON.stringify(["ultron-mls-listing-v1", server, id, admin, name]);
+const consentScope = (server, group, invitation, inviter, target, decision) =>
+  JSON.stringify(["ultron-mls-consent-v1", server, group, invitation, inviter, target, decision]);
+const inviteTitleScope = (server, id, group, inviter, target, title) =>
+  JSON.stringify(["ultron-mls-invite-title-v1", server, id, group, inviter, target, title]);
 const messageScope = (id, epoch, op, author, type, body) => JSON.stringify(["ultron-mls-message-v1", id, epoch, op, author, type, body]);
 const blob = (user, name) => "mls:" + sha256Hex(JSON.stringify([user.server, user.lns, name]));
 
@@ -56,6 +62,95 @@ export async function listPilotGroups() {
   const rows = await api.mlsGroups();
   if (!Array.isArray(rows)) throw new Error("Elenco gruppi non disponibile.");
   return rows.map(expectGroup);
+}
+
+function expectInvitation(row) {
+  if (!/^[a-f0-9]{32}$/.test(row?.id || "") || !/^[a-f0-9]{64}$/.test(row.group || "") ||
+      !/^[a-z0-9._-]+@ultron\.uns$/.test(row.target || "") || !/^[a-z0-9._-]+@ultron\.uns$/.test(row.inviter || "") ||
+      !["pending", "accepted", "declined"].includes(row.status)) throw new Error("Invito al gruppo non valido.");
+  return row;
+}
+
+export async function listPublicPilotGroups(user) {
+  const check = api.authenticatedScope(user);
+  const rows = await api.mlsPublicGroups();
+  check();
+  if (!Array.isArray(rows)) throw new Error("Elenco pubblico non disponibile.");
+  return rows.filter(row => /^[a-f0-9]{64}$/.test(row?.id || "") && /^[a-z0-9._-]+@ultron\.uns$/.test(row.admin || "") &&
+    typeof row.name === "string" && row.name.length > 0 && [...row.name].length <= 60);
+}
+
+export async function pilotInvitationInbox(user) {
+  const check = api.authenticatedScope(user);
+  const rows = await api.mlsInvitations();
+  check();
+  if (!Array.isArray(rows)) throw new Error("Inviti non disponibili.");
+  return rows.map(expectInvitation).filter(row => row.target === user.lns);
+}
+
+export async function pilotInvitationTitle(user, invitation) {
+  if (typeof invitation.note !== "string" || invitation.note.length > 32768) return null;
+  try {
+    const plain = decryptEnvelope(JSON.parse(invitation.note), user.kem.secretKey);
+    const { title, signature } = JSON.parse(plain);
+    if (typeof title !== "string" || !title || title.length > 60) return null;
+    const credentials = await hostedGroupCredentials(user);
+    const key = await credentials.identityFor(invitation.inviter);
+    const scope = inviteTitleScope(user.server, invitation.id, invitation.group, invitation.inviter, invitation.target, title);
+    return verifyMessage(scope, signature, key) ? title : null;
+  } catch { return null; }
+}
+
+export async function pilotGroupInvitations(user, group) {
+  const check = api.authenticatedScope(user);
+  const rows = await api.mlsGroupInvitations(group.id);
+  check();
+  if (!Array.isArray(rows)) throw new Error("Inviti non disponibili.");
+  return rows.map(expectInvitation).filter(row => row.group === group.id && row.inviter === user.lns);
+}
+
+export async function requestPilotGroupInvitation(user, group, target) {
+  const check = api.authenticatedScope(user);
+  if (group.admin !== user.lns) throw new Error("Solo l’amministratore può inviare inviti.");
+  const credentials = await hostedGroupCredentials(user);
+  if (!await credentials.identityFor(target)) throw new Error("Verifica il QR ULTRON del contatto.");
+  check();
+  const id = randomHex(16);
+  const title = await cachedPilotGroupTitle(user, group);
+  const key = await verifiedContact(user, target);
+  const signature = title ? signMessage(inviteTitleScope(user.server, id, group.id, user.lns, target, title), user.sk) : null;
+  const note = title ? JSON.stringify(encryptForRecipients(JSON.stringify({ title, signature }), { [target]: key.kem })[0]) : undefined;
+  check();
+  const answer = expectInvitation(await api.mlsRequestInvitation(group.id, { id, target, note }));
+  check();
+  if (answer.group !== group.id || answer.target !== target || answer.inviter !== user.lns) {
+    throw new Error("Il gateway non ha confermato l’invito.");
+  }
+  return answer;
+}
+
+export async function decidePilotGroupInvitation(user, row, decision) {
+  const check = api.authenticatedScope(user);
+  expectInvitation(row);
+  if (row.target !== user.lns || !["accepted", "declined"].includes(decision)) throw new Error("Decisione non valida.");
+  if (decision === "accepted") {
+    const credentials = await hostedGroupCredentials(user);
+    if (!await credentials.identityFor(row.inviter)) throw new Error("Verifica prima il QR ULTRON di chi ti ha invitato.");
+    await preparePilotGroupInvites(user);
+  }
+  return serial(user, async () => {
+    check();
+    const transcript = consentScope(user.server, row.group, row.id, row.inviter, row.target, decision);
+    const signature = signMessage(transcript, user.sk);
+    // Store the user's explicit decision before transmission so a lost reply
+    // doesn't remove their ability to open the resulting Welcome.
+    await setBlobDurably(blob(user, "invite:" + row.id), { group: row.group, inviter: row.inviter, decision });
+    check();
+    const answer = expectInvitation(await api.mlsDecideInvitation(row.id, { decision, signature }));
+    check();
+    if (answer.id !== row.id || answer.status !== decision) throw new Error("Decisione non confermata dal gateway.");
+    return answer;
+  });
 }
 
 export function preparePilotGroupInvites(user) {
@@ -149,9 +244,15 @@ async function sync(user, row, ctx) {
           throw new Error("Invito MLS incompleto.");
         }
         const adminKey = await credentials.identityFor(row.admin);
-        const proof = welcomeScope(user.server, id, event.next_epoch, user.lns, event.package, event.welcome);
+        const proof = welcomeScope(user.server, id, event.next_epoch, user.lns, event.package, event.welcome, event.invitation);
         if (!/^[a-f0-9]{6618}$/.test(event.welcome_signature || "") || !/^[a-f0-9]{64}$/.test(event.package || "") ||
             !verifyMessage(proof, event.welcome_signature, adminKey)) throw new Error("Firma dell’invito di gruppo non valida.");
+        if (event.invitation || event.consent) {
+          const marker = await getBlob(blob(user, "invite:" + event.invitation));
+          const consent = consentScope(user.server, id, event.invitation, row.admin, user.lns, "accepted");
+          if (!marker || marker.group !== id || marker.inviter !== row.admin || marker.decision !== "accepted" ||
+              !verifyMessage(consent, event.consent, user.pk)) throw new Error("L’invito richiede il tuo consenso.");
+        }
         const poolKey = blob(user, "packages");
         const pool = await getBlob(poolKey) || [];
         const found = pool.find(item => item.id === event.package);
@@ -190,7 +291,7 @@ async function sync(user, row, ctx) {
   throw new Error("La cronologia del gruppo è ancora in sincronizzazione.");
 }
 
-export function createPilotGroup(user, name) {
+export function createPilotGroup(user, name, visibility = "private") {
   return serial(user, async () => {
     const { engine, check } = await context(user);
     const draft = blob(user, "create");
@@ -199,11 +300,14 @@ export function createPilotGroup(user, name) {
       const id = randomHex(32);
       const state = await engine.create(id);
       const signature = signMessage(genesis(user.server, id, user.lns), user.sk);
-      pending = { id, signature, state, title: name?.trim() || undefined };
+      const title = name?.trim() || undefined;
+      const listing = visibility === "public" && title ? { name: title,
+        signature: signMessage(listingScope(user.server, id, user.lns, title), user.sk) } : undefined;
+      pending = { id, signature, state, title, listing };
       check();
       await setBlobDurably(draft, pending);
     }
-    const { id, state, signature, title } = pending;
+    const { id, state, signature, title, listing } = pending;
     check();
     const groupKey = blob(user, id);
     if (!await getBlob(groupKey)) {
@@ -211,7 +315,7 @@ export function createPilotGroup(user, name) {
       await setBlobDurably(groupKey, { since: 0, cursor: 0, epoch: 0, history: [], state, pending: null, title, lastAt: new Date().toISOString() });
     }
     check();
-    const res = await api.mlsCreate({ id, signature });
+    const res = await api.mlsCreate({ id, signature, listing });
     if (res?.id !== id) throw new Error("Creazione gruppo non confermata.");
     check();
     await setBlobDurably(draft, null);
@@ -227,7 +331,7 @@ export function openPilotGroup(user, row) {
   });
 }
 
-export function updatePilotGroup(user, row, kind, value) {
+export function updatePilotGroup(user, row, kind, value, invitation) {
   return serial(user, async () => {
     const ctx = await context(user);
     const { engine, check, credentials } = ctx;
@@ -249,7 +353,17 @@ export function updatePilotGroup(user, row, kind, value) {
       if (kind === "add") {
         const members = engine.members(record.state, id, record.epoch);
         if (members.includes(body.target)) return { title: record.title, history: record.history, members };
-        if (!await credentials.identityFor(body.target)) throw new Error("Per questo contatto manca l’impronta della firma nel QR ULTRON.");
+        const identity = await credentials.identityFor(body.target);
+        if (!identity) throw new Error("Per questo contatto manca l’impronta della firma nel QR ULTRON.");
+        if (invitation) {
+          expectInvitation(invitation);
+          const consent = consentScope(user.server, id, invitation.id, user.lns, body.target, "accepted");
+          if (invitation.group !== id || invitation.inviter !== user.lns || invitation.target !== body.target ||
+              invitation.status !== "accepted" || !verifyMessage(consent, invitation.proof, identity)) {
+            throw new Error("Consenso del destinatario non verificato.");
+          }
+          body.invitation = invitation.id;
+        }
         const claim = await api.mlsClaimPackage(body.target, body.op);
         if (!/^[0-9a-f]{64}$/.test(claim?.id || "")) throw new Error("Pacchetto MLS non disponibile.");
         body.package = claim.id;
@@ -259,7 +373,7 @@ export function updatePilotGroup(user, row, kind, value) {
       if (kind === "add") {
         if (!update.welcome) throw new Error("Invito MLS non generato.");
         body.welcome = update.welcome;
-        body.welcome_signature = signMessage(welcomeScope(user.server, id, record.epoch + 1, body.target, body.package, body.welcome), user.sk);
+        body.welcome_signature = signMessage(welcomeScope(user.server, id, record.epoch + 1, body.target, body.package, body.welcome, body.invitation), user.sk);
       }
     } else throw new Error("Operazione gruppo non valida.");
 

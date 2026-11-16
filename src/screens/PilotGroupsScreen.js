@@ -7,7 +7,9 @@ import { useFocusEffect } from "@react-navigation/native";
 import { apiErr, contacts } from "../lib/api";
 import { contactAddress, matchesContact } from "../lib/contactAddress";
 import { getVerified } from "../lib/verify";
-import { cachedPilotGroupTitle, createPilotGroup, listPilotGroups, openPilotGroup, preparePilotGroupInvites, updatePilotGroup } from "../lib/pilotGroups";
+import { cachedPilotGroupTitle, createPilotGroup, decidePilotGroupInvitation, listPilotGroups, listPublicPilotGroups, openPilotGroup,
+  pilotGroupInvitations, pilotInvitationInbox, pilotInvitationTitle, preparePilotGroupInvites,
+  requestPilotGroupInvitation, updatePilotGroup } from "../lib/pilotGroups";
 import { theme } from "../theme";
 
 export default function PilotGroupsScreen({ navigation, route }) {
@@ -16,6 +18,12 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const en = lang === "en";
   const say = (it, english) => en ? english : it;
   const [groups, setGroups] = useState([]);
+  const [publicGroups, setPublicGroups] = useState([]);
+  const [discover, setDiscover] = useState(false);
+  const [visibility, setVisibility] = useState("private");
+  const [inbox, setInbox] = useState([]);
+  const [outgoing, setOutgoing] = useState([]);
+  const triedInvites = useRef(new Set());
   const routedGroup = route?.params?.group || null;
   const [group, setGroup] = useState(routedGroup);
   const [details, setDetails] = useState(null);
@@ -38,13 +46,44 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const refresh = useCallback(async (row) => {
     const version = refreshVersion.current;
     const current = () => alive.current && version === refreshVersion.current;
+    async function pendingFor() {
+      if (row?.admin !== user.lns) return [];
+      return pilotGroupInvitations(user, row).catch(error => {
+        if (error?.response?.status === 404) return [];
+        throw error;
+      });
+    }
     if (row) {
-      const next = await openPilotGroup(user, row);
+      let next = await openPilotGroup(user, row);
       if (current()) setDetails(next);
+      let invitations = await pendingFor();
+      let changed = false;
+      for (const invitation of invitations) {
+        if (!current()) return;
+        if (invitation.status !== "accepted" || triedInvites.current.has(invitation.id)) continue;
+        triedInvites.current.add(invitation.id);
+        try {
+          next = await updatePilotGroup(user, row, "add", invitation.target, invitation);
+          changed = true;
+          if (current()) setDetails(next);
+        } catch (error) {
+          if (current()) setErr(apiErr(error));
+        }
+      }
+      if (changed) {
+        invitations = await pendingFor();
+        if (next.title) next = await updatePilotGroup(user, row, "title", next.title);
+      }
+      if (current()) { setOutgoing(invitations); setDetails(next); }
     } else {
       const rows = await listPilotGroups();
-      const result = await Promise.all(rows.map(async item => ({...item, title: await cachedPilotGroupTitle(user, item)})));
-      if (current()) setGroups(result);
+      const invitations = await pilotInvitationInbox(user).catch(error => {
+        if (error?.response?.status === 404) return [];
+        throw error;
+      });
+      const result = await Promise.all(rows.map(async item => ({ ...item, title: await cachedPilotGroupTitle(user, item) })));
+      const incoming = await Promise.all(invitations.map(async item => ({ ...item, title: await pilotInvitationTitle(user, item) })));
+      if (current()) { setGroups(result); setInbox(incoming); }
     }
   }, [user]);
 
@@ -108,41 +147,50 @@ export default function PilotGroupsScreen({ navigation, route }) {
 
   const open = (row) => run(async () => {
     setDetails(null); setGroup(row); setManage(false); setMessage(""); setQuery(""); setSelected([]);
+    setOutgoing([]);
     await refresh(row);
   });
 
-  async function invite(row, addresses, initial) {
-    let next = initial;
+  async function invite(row, addresses) {
     const failures = [];
-    let invited = 0;
     for (const address of addresses) {
       try {
-        next = await updatePilotGroup(user, row, "add", address);
-        setDetails(next);
+        await requestPilotGroupInvitation(user, row, address);
         setSelected(previous => previous.filter(item => item !== address));
-        invited++;
       } catch (error) {
         const hint = error?.response?.status === 404
-          ? say("Il contatto deve aprire Gruppi sul suo telefono.", "The contact needs to open Groups on their phone.")
+          ? say("Aggiorna il gateway per inviare inviti.", "Update the gateway to send invitations.")
           : apiErr(error);
         failures.push(`${address} · ${hint}`);
       }
     }
-    if (invited && next?.title) {
-      try { setDetails(await updatePilotGroup(user, row, "title", next.title)); }
-      catch (error) { failures.push(apiErr(error)); }
-    }
+    await refresh(row);
     if (failures.length) setErr(failures.join("\n"));
   }
+
+  const openDirectory = () => run(async () => {
+    setPublicGroups(await listPublicPilotGroups(user));
+    setDiscover(true);
+  });
+
+  const decide = (invitation, decision) => run(async () => {
+    await decidePilotGroupInvitation(user, invitation, decision);
+    await refresh(null);
+  });
+  const retryInvite = (invitation) => run(async () => {
+    triedInvites.current.delete(invitation.id);
+    await refresh(group);
+  });
+
 
   const create = () => run(async () => {
     const title = name.trim();
     if (!title) return;
-    const row = await createPilotGroup(user, title);
+    const row = await createPilotGroup(user, title, visibility);
     setGroup(row); setDetails(null); setManage(true); setNewGroup(false); setName(""); setQuery("");
     const initial = await updatePilotGroup(user, row, "title", row.title || title);
     setDetails(initial);
-    await invite(row, selected, initial);
+    if (selected.length) await invite(row, selected);
   });
   const send = () => run(async () => {
     const text = message.trim();
@@ -172,7 +220,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const warning = !!err && <Text style={styles.error} accessibilityLiveRegion="polite">{err}</Text>;
   const inputProps = { placeholderTextColor: theme.textDim, editable: !busy };
   const contactPicker = () => {
-    const present = new Set(details?.members || []);
+    const present = new Set([...(details?.members || []), ...outgoing.filter(item => item.status !== "declined").map(item => item.target)]);
     const available = book.filter(row => !present.has(row.lns) && matchesContact(row, query));
     return (
       <View style={styles.picker}>
@@ -201,11 +249,36 @@ export default function PilotGroupsScreen({ navigation, route }) {
       </View>
     );
   };
+  if (discover && !group) return (
+    <ScrollView style={styles.root} contentContainerStyle={styles.listPage}>
+      {button(say("Torna ai gruppi", "Back to groups"), () => setDiscover(false))}
+      <Text style={styles.title}>{say("Gruppi pubblici", "Public groups")}</Text>
+      <Text style={styles.dim}>{say("Per entrare serve un invito e il QR ULTRON verificato.", "Entry requires an invitation and a verified ULTRON QR.")}</Text>
+      {publicGroups.map(item => (
+        <TouchableOpacity key={item.id} style={styles.row} onPress={() => openProfile(item.admin)} accessibilityRole="button">
+          <View style={{ flex: 1 }}><Text style={styles.text}>{item.name}</Text><Text style={styles.dim}>{item.admin}</Text></View>
+          <Ionicons name="person-outline" size={20} color={theme.textDim} />
+        </TouchableOpacity>
+      ))}
+    </ScrollView>
+  );
   if (!group) {
     return (
       <ScrollView style={styles.root} contentContainerStyle={styles.listPage} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>{say("Gruppi", "Groups")}</Text>
         {warning}
+        {inbox.map(invitation => (
+          <View key={invitation.id} style={styles.card}>
+            <Text style={styles.section}>{invitation.title || say("Invito al gruppo", "Group invitation")}</Text>
+            <TouchableOpacity onPress={() => openProfile(invitation.inviter)} accessibilityRole="button">
+              <Text style={styles.sender}>{invitation.inviter}</Text>
+            </TouchableOpacity>
+            {invitation.status === "pending" ? <View style={styles.actions}>
+              {button(say("Accetta", "Accept"), () => decide(invitation, "accepted"), { primary: true })}
+              {button(say("Rifiuta", "Decline"), () => decide(invitation, "declined"))}
+            </View> : <Text style={styles.dim}>{say("Accettato. L’ingresso si completa quando l’amministratore apre il gruppo.", "Accepted. Entry completes when the administrator opens the group.")}</Text>}
+          </View>
+        ))}
         {groups.map(row => (
           <TouchableOpacity key={row.id} onPress={() => open(row)} style={styles.row} disabled={busy} accessibilityRole="button">
             <Ionicons name="people-outline" color={theme.primary} size={22} />
@@ -216,10 +289,16 @@ export default function PilotGroupsScreen({ navigation, route }) {
             <Ionicons name="chevron-forward" color={theme.textDim} size={18} />
           </TouchableOpacity>
         ))}
+        {button(say("Esplora gruppi pubblici", "Explore public groups"), openDirectory)}
         {newGroup ? <View style={styles.card}>
           <Text style={styles.section}>{say("Nuovo gruppo", "New group")}</Text>
           <TextInput {...inputProps} style={styles.input} value={name} maxLength={60} onChangeText={setName}
             placeholder={say("Nome del gruppo", "Group name")} accessibilityLabel={say("Nome del gruppo", "Group name")} />
+          <View style={styles.actions}>
+            {button(say("Privato", "Private"), () => setVisibility("private"), { primary: visibility === "private" })}
+            {button(say("Pubblico", "Public"), () => setVisibility("public"), { primary: visibility === "public" })}
+          </View>
+          {visibility === "public" && <Text style={styles.dim}>{say("Nome e amministratore compaiono nell’elenco pubblico. Si entra su invito.", "The name and administrator appear in the public directory. Entry is by invitation.")}</Text>}
           {contactPicker()}
           {button(say("Crea gruppo", "Create group"), create, { primary: true, disabled: busy || !name.trim() })}
           {button(say("Annulla", "Cancel"), () => { setNewGroup(false); setName(""); setQuery(""); setSelected([]); })}
@@ -246,8 +325,15 @@ export default function PilotGroupsScreen({ navigation, route }) {
           </View>
         ))}
         {group.admin === user.lns && <View style={styles.card}>
+          {outgoing.map(invitation => (
+            <View key={invitation.id} style={styles.row}>
+              <Text style={[styles.dim, { flex: 1 }]}>{invitation.target} · {invitation.status === "declined"
+                ? say("Rifiutato", "Declined") : invitation.status === "accepted" ? say("Accettato", "Accepted") : say("In attesa", "Pending")}</Text>
+              {invitation.status === "accepted" && button(say("Completa ingresso", "Complete entry"), () => retryInvite(invitation))}
+            </View>
+          ))}
           {contactPicker()}
-          {button(say("Aggiungi al gruppo", "Add to group"), () => run(() => invite(group, selected, details)),
+          {button(say("Invia inviti", "Send invitations"), () => run(() => invite(group, selected)),
             {primary: true, disabled: busy || !details || !selected.length})}
         </View>}
       </ScrollView> : <>
@@ -281,6 +367,7 @@ const styles = StyleSheet.create({
   row: { minHeight: 56, padding: 12, flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 14,
     backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border },
   card: { padding: 16, gap: 12, borderRadius: 18, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border },
+  actions: { flexDirection: "row", gap: 8 },
   picker: { gap: 8 },
   selected: { borderColor: theme.primary },
   input: { color: theme.text, paddingHorizontal: 12, paddingVertical: 10, minHeight: 44, borderWidth: 1,

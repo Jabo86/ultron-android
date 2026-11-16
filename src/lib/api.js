@@ -459,6 +459,16 @@ export const reportMessage = (message_id, reason) =>
 const mlsRoot = "/public/pulse/mls";
 export const mlsGroups = () =>
   withAuth((a, transport) => transport.get(`${mlsRoot}/groups`, a).then(r => r.data));
+export const mlsPublicGroups = () =>
+  withAuth((a, transport) => transport.get(`${mlsRoot}/public-groups`, a).then(r => r.data));
+export const mlsInvitations = () =>
+  withAuth((a, transport) => transport.get(`${mlsRoot}/invitations`, a).then(r => r.data));
+export const mlsGroupInvitations = (id) =>
+  withAuth((a, transport) => transport.get(`${mlsRoot}/groups/${encodeURIComponent(id)}/invitations`, a).then(r => r.data));
+export const mlsRequestInvitation = (id, payload) =>
+  withAuth((a, transport) => transport.post(`${mlsRoot}/groups/${encodeURIComponent(id)}/invitations`, payload, a).then(r => r.data));
+export const mlsDecideInvitation = (id, payload) =>
+  withAuth((a, transport) => transport.post(`${mlsRoot}/invitations/${encodeURIComponent(id)}`, payload, a).then(r => r.data));
 export const mlsCreate = (payload) =>
   withAuth((a, transport) => transport.post(`${mlsRoot}/groups`, payload, a).then(r => r.data));
 export const mlsEvents = (id, cursor) =>

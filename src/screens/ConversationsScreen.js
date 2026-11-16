@@ -1,4 +1,4 @@
-import { cachedPilotGroupSummary, listPilotGroups } from "../lib/pilotGroups";
+import { cachedPilotGroupSummary, listPilotGroups, pilotInvitationInbox } from "../lib/pilotGroups";
 import { hostedRatchetPilot } from "../lib/hostedRatchetChat";
 import { contactAddress, matchesContact } from "../lib/contactAddress";
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -80,9 +80,10 @@ export default function ConversationsScreen({ navigation }) {
   const load = useCallback(async () => {
     try {
       const pilot = hostedRatchetPilot(user);
-      const [cs, gs] = await Promise.all([
+      const [cs, gs, invitations] = await Promise.all([
         api.convs(),
         pilot ? listPilotGroups().catch(() => []) : api.channels().catch(() => []),
+        pilot ? pilotInvitationInbox(user).catch(() => []) : [],
       ]);
       // Rubrica cieca: i nomi si imparano da qui, senza chiedere niente al server.
       try {
@@ -100,8 +101,14 @@ export default function ConversationsScreen({ navigation }) {
         unread: g.unread || 0, unread_by: Array.isArray(g.unread_by) ? g.unread_by : [], last_from: g.last_from || null,
         member_count: g.member_count, is_admin: g.is_admin, last_at: g.last_post_at,
       }));
-      const list = [...(Array.isArray(cs) ? cs : []), ...groups];
-      list.sort((a, b) => String(b.last_at || "").localeCompare(String(a.last_at || "")));
+      const list = [...(Array.isArray(cs) ? cs : []), ...groups,
+        ...invitations.map(invitation => ({
+          conv_id: "mls-invite:" + invitation.id, title: lang === "en" ? "Group invitation" : "Invito al gruppo",
+          title_lns: invitation.inviter, is_group: true, mlsInvite: true,
+        })),
+      ];
+      list.sort((a, b) => Number(!!b.mlsInvite) - Number(!!a.mlsInvite)
+        || String(b.last_at || "").localeCompare(String(a.last_at || "")));
       if (mounted.current) setConvs(list);
       const total = list.reduce((n, c) => n + (c.unread || 0), 0);
       if (mounted.current) setTotalUnread(total);
@@ -211,6 +218,7 @@ export default function ConversationsScreen({ navigation }) {
   };
 
   const openConv = (c) => {
+    if (c.mlsInvite) { navigation.navigate("PilotGroups"); return; }
     if (c.mlsGroup) { navigation.navigate("PilotGroups", { group: { ...c.mlsGroup, title: c.title } }); return; }
     if (c.is_group) { navigation.navigate("ChannelDetail", { chan_id: c.conv_id, name: c.title }); return; }
     navigation.navigate("Chat", {
@@ -285,7 +293,7 @@ export default function ConversationsScreen({ navigation }) {
           {item.unread > 0 ? (
             <Text style={styles.rowUnreadSub} numberOfLines={1} testID="conv-unread-summary">{unreadSummary(item)}</Text>
           ) : (
-            <Text style={styles.rowSub} numberOfLines={1}>{item.mlsGroup ? (lang === "en" ? "MLS group" : "Gruppo MLS") : item.is_group ? `${item.member_count} ${t("groups.membersCount")}` : (item.company_name || item.title_lns)}</Text>
+            <Text style={styles.rowSub} numberOfLines={1}>{item.mlsInvite ? item.title_lns : item.mlsGroup ? (lang === "en" ? "MLS group" : "Gruppo MLS") : item.is_group ? `${item.member_count} ${t("groups.membersCount")}` : (item.company_name || item.title_lns)}</Text>
           )}
           {item.unread > 0 && (
             <View style={styles.badge}><Text style={styles.badgeText}>{item.unread}</Text></View>
