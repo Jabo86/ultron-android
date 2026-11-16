@@ -761,8 +761,8 @@ export default function SettingsScreen({ navigation }) {
       <View style={styles.shieldBox} testID="settings-privacy">
         <Text style={styles.shieldTitle}>{en ? "Privacy and transparency" : "Privacy e trasparenza"}</Text>
         {RATCHET_PILOT && <Text style={styles.shieldDesc}>{en
-          ? "Pilot: direct ratchet chats with verified QR, one phone per account. Groups are unavailable here. Hiding a message removes it from the interface, and the server retains the encrypted envelope."
-          : "Pilota: chat individuali con ratchet e QR verificato, un telefono per account. I gruppi non sono disponibili qui. Nascondere un messaggio lo toglie dalla vista e il server conserva la busta cifrata."}</Text>}
+          ? "Pilot: direct ratchet chats with verified QR, one phone per account. Updated pilot gateways support private MLS text groups with verified members. The gateway sees group membership and delivery metadata. Hiding a message removes it from the interface, and the server retains the encrypted envelope."
+          : "Pilota: chat individuali con ratchet e QR verificato, un telefono per account. I gateway pilota aggiornati supportano gruppi MLS privati di solo testo con membri verificati. Il gateway vede i membri del gruppo e i metadati di consegna. Nascondere un messaggio lo toglie dalla vista e il server conserva la busta cifrata."}</Text>}
         {PRIVACY_SUMMARY[en ? "en" : "it"].map((paragraph) => (
           <Text key={paragraph} style={styles.shieldDesc}>{paragraph}</Text>
         ))}
