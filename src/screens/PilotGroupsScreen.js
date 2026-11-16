@@ -10,13 +10,14 @@ import { getVerified } from "../lib/verify";
 import { cachedPilotGroupTitle, createPilotGroup, listPilotGroups, openPilotGroup, preparePilotGroupInvites, updatePilotGroup } from "../lib/pilotGroups";
 import { theme } from "../theme";
 
-export default function PilotGroupsScreen({ navigation }) {
+export default function PilotGroupsScreen({ navigation, route }) {
   const { user } = useAuth();
   const { lang } = useI18n();
   const en = lang === "en";
   const say = (it, english) => en ? english : it;
   const [groups, setGroups] = useState([]);
-  const [group, setGroup] = useState(null);
+  const routedGroup = route?.params?.group || null;
+  const [group, setGroup] = useState(routedGroup);
   const [details, setDetails] = useState(null);
   const [name, setName] = useState("");
   const [message, setMessage] = useState("");
@@ -85,9 +86,9 @@ export default function PilotGroupsScreen({ navigation }) {
 
   useEffect(() => {
     alive.current = true;
-    if (user) run(async () => { await refresh(null); await preparePilotGroupInvites(user); });
+    if (user) run(async () => { await refresh(routedGroup); await preparePilotGroupInvites(user); });
     return () => { alive.current = false; };
-  }, [user, refresh]);
+  }, [user, refresh, routedGroup]);
 
   useEffect(() => {
     const tick = () => {
@@ -152,11 +153,15 @@ export default function PilotGroupsScreen({ navigation }) {
   const remove = (address) => run(async () => {
     setDetails(await updatePilotGroup(user, group, "remove", address));
   });
-  const goToList = () => run(async () => {
-    setGroup(null); setDetails(null); setManage(false); setQuery(""); setSelected([]);
-    await refresh(null);
-  });
+  const goToList = () => {
+    if (routedGroup) { navigation.goBack(); return; }
+    run(async () => {
+      setGroup(null); setDetails(null); setManage(false); setQuery(""); setSelected([]);
+      await refresh(null);
+    });
+  };
 
+  const openProfile = (peer) => navigation.navigate("Profilo", { peer });
 
   const button = (label, onPress, { primary = false, disabled = busy } = {}) => (
     <TouchableOpacity onPress={onPress} disabled={disabled} accessibilityRole="button"
@@ -234,7 +239,9 @@ export default function PilotGroupsScreen({ navigation }) {
       {manage ? <ScrollView contentContainerStyle={styles.listPage} keyboardShouldPersistTaps="handled">
         {(details?.members || []).map(account => (
           <View style={styles.row} key={account}>
-            <Text style={[styles.text, {flex: 1}]}>{account}</Text>
+            <TouchableOpacity onPress={() => openProfile(account)} accessibilityRole="button" style={{ flex: 1, paddingVertical: 6 }}>
+              <Text style={styles.text}>{account}</Text>
+            </TouchableOpacity>
             {group.admin === user.lns && account !== user.lns && button(say("Rimuovi", "Remove"), () => remove(account))}
           </View>
         ))}
@@ -246,7 +253,9 @@ export default function PilotGroupsScreen({ navigation }) {
       </ScrollView> : <>
         <FlatList data={details?.history || []} keyExtractor={item => String(item.seq)} contentContainerStyle={styles.messages}
           renderItem={({item}) => <View style={styles.message}>
-            <Text style={styles.dim}>{item.sender}</Text>
+            <TouchableOpacity onPress={() => openProfile(item.sender)} accessibilityRole="button">
+              <Text style={styles.sender}>{item.sender}</Text>
+            </TouchableOpacity>
             <Text style={styles.text}>{item.body}</Text>
           </View>}
         />
@@ -283,6 +292,7 @@ const styles = StyleSheet.create({
   buttonText: { color: theme.text, fontSize: 14, fontWeight: "700" },
   primaryText: { color: "#04120a" },
   messages: { padding: 12, gap: 8 },
+  sender: { color: theme.primary, fontSize: 13, fontWeight: "700" },
   message: { padding: 10, gap: 4, backgroundColor: theme.surfaceAlt, borderRadius: 14 },
   composer: { flexDirection: "row", alignItems: "flex-end", gap: 8, padding: 12 },
   composeInput: { flex: 1, maxHeight: 120 },

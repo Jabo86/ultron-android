@@ -1,3 +1,4 @@
+import { cachedPilotGroupSummary, listPilotGroups } from "../lib/pilotGroups";
 import { hostedRatchetPilot } from "../lib/hostedRatchetChat";
 import { contactAddress, matchesContact } from "../lib/contactAddress";
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -78,9 +79,10 @@ export default function ConversationsScreen({ navigation }) {
 
   const load = useCallback(async () => {
     try {
+      const pilot = hostedRatchetPilot(user);
       const [cs, gs] = await Promise.all([
         api.convs(),
-        hostedRatchetPilot(user) ? [] : api.channels().catch(() => []),
+        pilot ? listPilotGroups().catch(() => []) : api.channels().catch(() => []),
       ]);
       // Rubrica cieca: i nomi si imparano da qui, senza chiedere niente al server.
       try {
@@ -89,7 +91,11 @@ export default function ConversationsScreen({ navigation }) {
           if (c && Array.isArray(c.others) && c.others.length === 1 && c.title) book.learnName(c.others[0], c.title);
         }
       } catch { /* rubrica non disponibile */ }
-      const groups = (Array.isArray(gs) ? gs : []).map((g) => ({
+      const groups = pilot ? await Promise.all(gs.map(async (group) => {
+        const { title, lastAt } = await cachedPilotGroupSummary(user, group).catch(() => ({}));
+        return { conv_id: "mls:" + group.id, title: title || (lang === "en" ? "Group " : "Gruppo ") + group.id.slice(0, 6),
+          is_group: true, mlsGroup: group, last_at: lastAt };
+      })) : (Array.isArray(gs) ? gs : []).map((g) => ({
         conv_id: g.chan_id, title: g.name, title_lns: g.name, is_group: true, avatar: g.avatar || null,
         unread: g.unread || 0, unread_by: Array.isArray(g.unread_by) ? g.unread_by : [], last_from: g.last_from || null,
         member_count: g.member_count, is_admin: g.is_admin, last_at: g.last_post_at,
@@ -103,7 +109,7 @@ export default function ConversationsScreen({ navigation }) {
       try { const mc = await missedCallCount(); if (mounted.current) setMissedCalls(mc); } catch {}
     } catch { /* keep last */ }
     finally { if (mounted.current) setBooted(true); }
-  }, [user]);
+  }, [user, lang]);
 
   useEffect(() => {
     mounted.current = true;
@@ -205,6 +211,7 @@ export default function ConversationsScreen({ navigation }) {
   };
 
   const openConv = (c) => {
+    if (c.mlsGroup) { navigation.navigate("PilotGroups", { group: { ...c.mlsGroup, title: c.title } }); return; }
     if (c.is_group) { navigation.navigate("ChannelDetail", { chan_id: c.conv_id, name: c.title }); return; }
     navigation.navigate("Chat", {
       conv_id: c.conv_id,
@@ -278,7 +285,7 @@ export default function ConversationsScreen({ navigation }) {
           {item.unread > 0 ? (
             <Text style={styles.rowUnreadSub} numberOfLines={1} testID="conv-unread-summary">{unreadSummary(item)}</Text>
           ) : (
-            <Text style={styles.rowSub} numberOfLines={1}>{item.is_group ? `${item.member_count} ${t("groups.membersCount")}` : (item.company_name || item.title_lns)}</Text>
+            <Text style={styles.rowSub} numberOfLines={1}>{item.mlsGroup ? (lang === "en" ? "MLS group" : "Gruppo MLS") : item.is_group ? `${item.member_count} ${t("groups.membersCount")}` : (item.company_name || item.title_lns)}</Text>
           )}
           {item.unread > 0 && (
             <View style={styles.badge}><Text style={styles.badgeText}>{item.unread}</Text></View>
@@ -286,7 +293,7 @@ export default function ConversationsScreen({ navigation }) {
         </View>
       </View>
     </TouchableOpacity>
-  ), [styles, openConv, timeAgo, unreadSummary, tint, t]);
+  ), [styles, openConv, timeAgo, unreadSummary, tint, t, lang]);
 
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>

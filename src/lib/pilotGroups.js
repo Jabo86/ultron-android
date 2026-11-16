@@ -119,7 +119,7 @@ async function flush(user, id, record, check) {
   if (ack?.seq !== record.cursor + 1 || ack.epoch !== record.epoch + (pending.body.kind === "message" ? 0 : 1)) {
     throw new Error("Conferma MLS non valida.");
   }
-  const updated = { ...record, epoch: ack.epoch, cursor: ack.seq, state: pending.snapshot, pending: null };
+  const updated = { ...record, epoch: ack.epoch, cursor: ack.seq, state: pending.snapshot, pending: null, lastAt: new Date().toISOString() };
   if (pending.type === "title") updated.title = pending.text;
   else if (pending.body.kind === "message") {
     updated.history = [...record.history, { seq: ack.seq, sender: user.lns, body: pending.text }].slice(-MAX_LOCAL_HISTORY);
@@ -180,7 +180,7 @@ async function sync(user, row, ctx) {
         if (type === "title") title = body;
         else history = [...history, { seq: event.seq, sender: event.author, body }].slice(-MAX_LOCAL_HISTORY);
       }
-      record = { ...record, cursor: event.seq, epoch: decoded.epoch, state: decoded.snapshot, history, title };
+      record = { ...record, cursor: event.seq, epoch: decoded.epoch, state: decoded.snapshot, history, title, lastAt: new Date().toISOString() };
       check();
       await setBlobDurably(key, record);
     }
@@ -208,7 +208,7 @@ export function createPilotGroup(user, name) {
     const groupKey = blob(user, id);
     if (!await getBlob(groupKey)) {
       check();
-      await setBlobDurably(groupKey, { since: 0, cursor: 0, epoch: 0, history: [], state, pending: null, title });
+      await setBlobDurably(groupKey, { since: 0, cursor: 0, epoch: 0, history: [], state, pending: null, title, lastAt: new Date().toISOString() });
     }
     check();
     const res = await api.mlsCreate({ id, signature });
@@ -273,7 +273,11 @@ export function updatePilotGroup(user, row, kind, value) {
 }
 
 
-export async function cachedPilotGroupTitle(user, row) {
+export async function cachedPilotGroupSummary(user, row) {
   const record = await getBlob(blob(user, row.id));
-  return record?.since === row.since ? record.title : null;
+  return record?.since === row.since ? { title: record.title, lastAt: record.lastAt } : {};
+}
+
+export async function cachedPilotGroupTitle(user, row) {
+  return (await cachedPilotGroupSummary(user, row)).title || null;
 }

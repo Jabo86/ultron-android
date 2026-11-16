@@ -202,6 +202,12 @@ export default function ChatScreen({ route, navigation }) {
   useLayoutEffect(() => {
     navigation.setOptions({
       title,
+      headerTitle: others.length === 1 ? () => (
+        <TouchableOpacity accessibilityRole="button" onPress={() => navigation.navigate("Profilo", { peer: others[0] })}
+          testID="chat-open-profile" hitSlop={8}>
+          <Text numberOfLines={1} style={{ color: theme.text, fontSize: 17, fontWeight: "700" }}>{title}</Text>
+        </TouchableOpacity>
+      ) : undefined,
       headerRight: () => (
         <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
           {others.length === 1 && (
