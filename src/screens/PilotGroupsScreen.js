@@ -37,11 +37,12 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const triedInvites = useRef(new Set());
   const routedGroup = route?.params?.group || null;
   const [group, setGroup] = useState(routedGroup);
+  const fileDraft = pendingFile?.groupId === group?.id ? pendingFile : null;
   const [details, setDetails] = useState(null);
   const [name, setName] = useState("");
   const [initialAvatar, setInitialAvatar] = useState(null);
   const [composerMenu, setComposerMenu] = useState(false);
-  const [fileDraft, setFileDraft] = useState(null);
+  const [pendingFile, setFileDraft] = useState(null);
   const [message, setMessage] = useState("");
   const draft = useRef(null);
   const [groupTab, setGroupTab] = useState("members");
@@ -174,7 +175,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const open = (row) => run(async () => {
     stickToBottom.current = true;
     draft.current = null;
-    setComposerMenu(false); setFileDraft(null);
+    setComposerMenu(false); setFileDraft(null); setQuestion(""); setChoices(["", ""]);
     setDetails(null); setGroup(row); setManage(false); setMessage(""); setPollEditor(false); setQuery(""); setSelected([]);
     setOutgoing([]);
     await refresh(row);
@@ -218,6 +219,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
     const row = await createPilotGroup(user, title, visibility, initialAvatar);
     stickToBottom.current = true;
     draft.current = null;
+    setMessage(""); setFileDraft(null); setComposerMenu(false); setPollEditor(false); setQuestion(""); setChoices(["", ""]);
     setGroup(row); setDetails(null); setManage(true); setGroupTab("members"); setNewGroup(false); setName(""); setQuery(""); setInitialAvatar(null);
     const initial = await updatePilotGroup(user, row, "profile", row.profile || { avatar: null, description: "" });
     setDetails(initial);
@@ -233,6 +235,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
   });
   const pickFile = () => run(async () => {
     setComposerMenu(false);
+    if (!group) return;
     const result = await withSystemActivity(() => DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true }));
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
@@ -246,7 +249,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
         position: 0, length: PILOT_GROUP_FILE_LIMIT + 1 });
       const mime = /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(asset.mimeType || "") ? asset.mimeType : "application/octet-stream";
       const name = asset.name?.replace(/[\x00-\x1f\x7f]/g, "").trim().slice(0, 160) || say("Allegato", "Attachment");
-      setFileDraft({ id: randomHex(16), attachment: { name, mime, size, data } });
+      setFileDraft({ id: randomHex(16), groupId: group.id, attachment: { name, mime, size, data } });
     } finally {
       if (FileSystem.cacheDirectory && asset.uri.startsWith(FileSystem.cacheDirectory)) {
         await FileSystem.deleteAsync(asset.uri, { idempotent: true }).catch(() => {});
@@ -271,6 +274,8 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const goToList = () => {
     if (routedGroup) { navigation.goBack(); return; }
     run(async () => {
+      draft.current = null;
+      setMessage(""); setFileDraft(null); setComposerMenu(false); setPollEditor(false); setQuestion(""); setChoices(["", ""]);
       setGroup(null); setDetails(null); setManage(false); setQuery(""); setSelected([]);
       await refresh(null);
     });
