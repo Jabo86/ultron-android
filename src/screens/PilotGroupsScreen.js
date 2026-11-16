@@ -17,7 +17,7 @@ import { base64ToBytes, encryptFileBytes, randomHex } from "../lib/crypto";
 import { withSystemActivity } from "../lib/lockGuard";
 import { usePoll } from "../lib/usePoll";
 import { getVerified } from "../lib/verify";
-import { cachedPilotGroupTitle, createPilotGroup, decidePilotGroupInvitation, finishAcceptedPilotGroupInvites,
+import { cachedPilotGroupTitle, createPilotGroup, decidePilotGroupInvitation, deliverPilotGroupInvitation, finishAcceptedPilotGroupInvites,
   forgetPilotGroup, listPilotGroups, listPublicPilotGroups, openPilotGroup, pilotGroupPolicy,
   pilotGroupInvitations, pilotInvitationInbox, pilotInvitationTitle, preparePilotGroupInvites, presentPilotGroupHistory,
   PILOT_GROUP_AVATAR_LIMIT, PILOT_GROUP_FILE_LIMIT, PILOT_GROUP_UPLOAD_LIMIT, requestPilotGroupInvitation,
@@ -37,7 +37,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const [visibility, setVisibility] = useState("private");
   const [inbox, setInbox] = useState([]);
   const [outgoing, setOutgoing] = useState([]);
-  const triedInvites = useRef(new Set());
+  const triedInvites = useRef(new Map());
   const routedGroup = route?.params?.group || null;
   const [group, setGroup] = useState(routedGroup);
   const [details, setDetails] = useState(null);
@@ -108,11 +108,12 @@ export default function PilotGroupsScreen({ navigation, route }) {
       let changed = false;
       for (const invitation of invitations) {
         if (!current()) return;
-        if (row.admin !== user.lns || invitation.status !== "accepted" || triedInvites.current.has(invitation.id)) continue;
-        triedInvites.current.add(invitation.id);
+        if (row.admin !== user.lns || invitation.status !== "accepted" || Date.now() - (triedInvites.current.get(invitation.id) || 0) < 15000) continue;
+        triedInvites.current.set(invitation.id, Date.now());
         try {
           next = await updatePilotGroup(user, row, "add", invitation.target, invitation);
           changed = true;
+          triedInvites.current.delete(invitation.id);
           if (current()) { setDetails(next); setErr(""); }
         } catch (error) {
           if (current()) setErr(apiErr(error));
@@ -131,7 +132,9 @@ export default function PilotGroupsScreen({ navigation, route }) {
         throw error;
       });
       const result = await Promise.all(rows.map(async item => ({ ...item, title: await cachedPilotGroupTitle(user, item) })));
-      const incoming = await Promise.all(invitations.map(async item => ({ ...item, title: await pilotInvitationTitle(user, item) })));
+      const incoming = await Promise.all(invitations.map(async item => ({ ...item, title: await pilotInvitationTitle(user, item),
+        needsQr: item.status === "accepted" && !(await getVerified(item.inviter))?.identityFp })));
+      if (incoming.some(item => item.status === "accepted")) preparePilotGroupInvites(user).catch(() => {});
       if (current()) { setGroups(result); setInbox(incoming); }
     }
   }, [user]);
@@ -199,6 +202,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
     stickToBottom.current = true;
     draft.current = null;
     setComposerMenu(false); setFileDraft(null); setQuestion(""); setChoices(["", ""]);
+    triedInvites.current.clear();
     setPolicy(null); setInviteCode(""); setModerate(null); setReports(null); setReportForm(null);
     setDetails(null); setGroup(row); setManage(false); setMessage(""); setPollEditor(false); setQuery(""); setSelected([]);
     setOutgoing([]);
@@ -500,6 +504,10 @@ export default function PilotGroupsScreen({ navigation, route }) {
             </View> : invitation.status === "verification" ? <View style={styles.picker}>
               <Text style={styles.dim}>{say("Verifica l’account per attivare lettura e scrittura.", "Verify your account to enable reading and writing.")}</Text>
               {button(say("Verifica account", "Verify account"), verifyAccount, { primary: true })}
+            </View> : invitation.needsQr ? <View style={styles.picker}>
+              <Text style={styles.dim}>{say("Invito accettato. Verifica il QR del fondatore per aprire il gruppo.", "Invitation accepted. Verify the founder’s QR to open the group.")}</Text>
+              {button(say("Verifica contatto", "Verify contact"), () => navigation.navigate("VerifyContact",
+                { peer: invitation.inviter, peer_name: invitation.inviter }))}
             </View> : <Text style={styles.dim}>{invitation.status === "review" ?
               say("In attesa di approvazione.", "Waiting for approval.") :
               say("Accettato. L’ingresso si completa quando il fondatore è online in Chat o nel gruppo.", "Accepted. Entry completes when the founder is online in Chats or in the group.")}</Text>}
@@ -665,6 +673,8 @@ export default function PilotGroupsScreen({ navigation, route }) {
             <View key={invitation.id} style={styles.row}>
               <Text style={[styles.dim, { flex: 1 }]}>{invitation.target} · {invitation.status === "declined"
                 ? say("Rifiutato", "Declined") : invitation.status === "accepted" ? say("Accettato", "Accepted") : say("In attesa", "Pending")}</Text>
+              {invitation.status === "pending" && !invitation.link && button(say("Invia nella chat", "Send in chat"),
+                () => run(() => deliverPilotGroupInvitation(user, group, invitation)))}
               {invitation.status === "review" && policy && <>
                 {button(say("Approva", "Approve"), () => reviewInvite(invitation.id, true))}
                 {button(say("Rifiuta", "Decline"), () => reviewInvite(invitation.id, false))}

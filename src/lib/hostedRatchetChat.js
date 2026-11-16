@@ -27,7 +27,7 @@ export async function registerHostedRatchet(user) {
   return publishHostedPrekeys(user, await deviceId());
 }
 
-export async function sendPilotMessage(payload, user, peer) {
+export async function sendPilotMessage(payload, user, peer, options) {
   if (!archivablePayload(payload)) throw new Error("La prova ratchet supporta i messaggi senza scadenza.");
   const check = api.authenticatedScope(user);
   const device = await deviceId();
@@ -39,7 +39,7 @@ export async function sendPilotMessage(payload, user, peer) {
   }
   const keys = await verifiedContact(user, peer);
   check();
-  return sendHostedRatchet(payload, user, peer, device, keys);
+  return sendHostedRatchet(payload, user, peer, device, keys, options);
 }
 
 export async function readPilotMessage(message, user, { offline = false, contactChecks } = {}) {

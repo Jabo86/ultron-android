@@ -281,14 +281,19 @@ export function padPlaintext(s) {
   const n = target - length;
   return s.slice(0, -1) + ',"z":"' + " ".repeat(n) + '"}';
 }
-export function packMessage(text, attachments, reply, ttl) {
-  return padPlaintext(JSON.stringify({ __lat: 1, t: text || "", a: attachments || [], r: reply || null, ttl: ttl || 0 }));
+export function packMessage(text, attachments, reply, ttl, groupInvite) {
+  return padPlaintext(JSON.stringify({ __lat: 1, t: text || "", a: attachments || [], r: reply || null, ttl: ttl || 0,
+    ...(groupInvite ? { groupInvite } : {}) }));
+}
+function readGroupInvite(value) {
+  if (!value || !/^[a-f0-9]{32}$/.test(value.id || "") || !/^[a-f0-9]{64}$/.test(value.group || "")) return null;
+  return { id: value.id, group: value.group };
 }
 export function unpackMessage(plaintext) {
   if (typeof plaintext !== "string") return { text: "", atts: [], reply: null, ttl: 0 };
   try {
     const o = JSON.parse(plaintext);
-    if (o && typeof o === "object" && o.__lat === 1) return { text: o.t || "", atts: Array.isArray(o.a) ? o.a : [], reply: o.r || null, ttl: o.ttl || 0 };
+    if (o && typeof o === "object" && o.__lat === 1) return { text: o.t || "", atts: Array.isArray(o.a) ? o.a : [], reply: o.r || null, ttl: o.ttl || 0, groupInvite: readGroupInvite(o.groupInvite) };
   } catch { /* legacy plain text */ }
   return { text: plaintext, atts: [], reply: null, ttl: 0 };
 }

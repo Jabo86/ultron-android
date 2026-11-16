@@ -1,12 +1,13 @@
 import * as api from "./api";
-import { decryptEnvelope, encryptForRecipients, randomHex, sha256Hex, signMessage, utf8Encode, verifyMessage } from "./crypto";
-import { registerHostedRatchet, verifiedContact } from "./hostedRatchetChat";
+import { decryptEnvelope, encryptForRecipients, packMessage, randomHex, sha256Hex, signMessage, utf8Encode, verifyMessage } from "./crypto";
+import { registerHostedRatchet, sendPilotMessage, verifiedContact } from "./hostedRatchetChat";
 import { hostedGroupCredentials } from "./hostedGroupCredentials";
 import { getBlob, setBlobDurably } from "./lock";
 import { createMlsGroupEngine } from "./mlsGroupEngine";
 import { createMlsSubtleCrypto } from "./mlsMobileCrypto";
 
 const queues = new Map();
+const invitationDeliveries = new Map();
 const PACKAGE_LIFETIME = 86_400_000;
 const PACKAGE_BATCH = 8;
 const MAX_LOCAL_HISTORY = 200;
@@ -202,42 +203,71 @@ export async function requestPilotGroupInvitation(user, group, target) {
   if (answer.group !== group.id || answer.target !== target || answer.inviter !== group.admin) {
     throw new Error("Il gateway non ha confermato l’invito.");
   }
+  await deliverPilotGroupInvitation(user, group, answer);
   return answer;
+}
+
+export async function deliverPilotGroupInvitation(user, group, invitation) {
+  const check = api.authenticatedScope(user);
+  expectInvitation(invitation);
+  if (invitation.group !== group.id || invitation.inviter !== group.admin || invitation.status !== "pending") {
+    throw new Error("Questo invito non è più in attesa.");
+  }
+  const key = blob(user, "notice:" + invitation.id);
+  const inFlight = invitationDeliveries.get(key);
+  if (inFlight) return inFlight;
+  const delivery = (async () => {
+    const saved = await getBlob(key);
+    check();
+    if (saved?.done) return;
+    const title = group.title || await cachedPilotGroupTitle(user, group);
+    const text = title ? `Invito al gruppo «${title}»` : "Invito a un gruppo ULTRON";
+    const payload = saved?.payload || packMessage(text, [], null, 0, { id: invitation.id, group: group.id });
+    if (!saved) await setBlobDurably(key, { payload });
+    check();
+    await sendPilotMessage(payload, user, invitation.target, { receiptName: key });
+  })();
+  invitationDeliveries.set(key, delivery);
+  try { return await delivery; }
+  finally { if (invitationDeliveries.get(key) === delivery) invitationDeliveries.delete(key); }
 }
 
 export async function decidePilotGroupInvitation(user, row, decision) {
   const check = api.authenticatedScope(user);
   expectInvitation(row);
   if (row.target !== user.lns || !["accepted", "declined"].includes(decision)) throw new Error("Decisione non valida.");
-  if (decision === "accepted") {
-    const credentials = await hostedGroupCredentials(user);
-    if (!await credentials.identityFor(row.inviter)) throw new Error("Verifica prima il QR ULTRON di chi ti ha invitato.");
-    await preparePilotGroupInvites(user);
-  }
-  return serial(user, async () => {
+  const answer = await serial(user, async () => {
     check();
     const transcript = consentScope(user.server, row.group, row.id, row.inviter, row.target, decision);
     const signature = signMessage(transcript, user.sk);
     // Store the user's explicit decision before transmission so a lost reply
     // doesn't remove their ability to open the resulting Welcome.
-    await setBlobDurably(blob(user, "invite:" + row.id), { group: row.group, inviter: row.inviter, decision });
+    if (decision === "accepted") {
+      await setBlobDurably(blob(user, "invite:" + row.id), { group: row.group, inviter: row.inviter, decision });
+    }
     check();
     const answer = expectInvitation(await api.mlsDecideInvitation(row.id, { decision, signature }));
     check();
     if (answer.id !== row.id || answer.status !== decision) throw new Error("Decisione non confermata dal gateway.");
     return answer;
   });
+  if (decision === "accepted") {
+    // Consent is durable even while this installation still needs to publish
+    // a package or verify the other party. Welcome continues to require both.
+    preparePilotGroupInvites(user).catch(() => {});
+  }
+  return answer;
 }
 
 export function preparePilotGroupInvites(user) {
   return serial(user, async () => {
     const check = api.authenticatedScope(user);
-    await registerHostedRatchet(user);
-    check();
     const key = blob(user, "packages");
     let pool = await getBlob(key) || [];
     const now = Date.now();
     if (pool.filter(item => item.id && !item.used && now - item.at < PACKAGE_LIFETIME / 2).length >= 4) return;
+    await registerHostedRatchet(user);
+    check();
     const { engine } = await context(user);
     // Previously consumed keys are removed when Welcome is saved; preserve an
     // old private package for a bounded time so offline invites can be opened.

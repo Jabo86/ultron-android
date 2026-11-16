@@ -234,7 +234,7 @@ function hostedSessionName(user, peer, identityKey, device, peerDevice, sessionI
   return "hosted:" + sha256Hex(JSON.stringify([user.server, user.lns, peer, identityKey, device, peerDevice, sessionId]));
 }
 
-export function sendHostedRatchet(payload, user, peer, installation, contact) {
+export function sendHostedRatchet(payload, user, peer, installation, contact, { receiptName } = {}) {
   const check = api.authenticatedScope(user);
   return withRatchetState(async () => {
     check();
@@ -262,7 +262,8 @@ export function sendHostedRatchet(payload, user, peer, installation, contact) {
       }
       await requireHostedRatchet(user, peer);
       check();
-      await setBlobDurably(pendingName, null);
+      if (pending.receiptName) await setBlobsDurably([[pendingName, null], [pending.receiptName, { done: true }]]);
+      else await setBlobDurably(pendingName, null);
       return result;
     };
 
@@ -302,7 +303,7 @@ export function sendHostedRatchet(payload, user, peer, installation, contact) {
     const envelope = { ...encrypted.env, for: peer, dev: target.device, session_id: sessionId };
     const sendId = randomHex(16);
     const pending = {
-      payloadHash,
+      payloadHash, receiptName,
       wire: { to_lns: [peer], send_id: sendId, ...(thread ? { generation, attachment_ids: (JSON.parse(payload).a || []).map(att => att.id) } : {}),
         envelope: envelope.h.init ? signHostedRatchetInit(user.lns, envelope, user.sk) : envelope },
     };

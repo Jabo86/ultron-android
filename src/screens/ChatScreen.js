@@ -21,6 +21,7 @@ import { useUnread } from "../context/UnreadContext";
 import * as api from "../lib/api";
 import { decryptAny } from "../lib/devices";
 import { hostedRatchetPilot, readPilotMessage, registerHostedRatchet } from "../lib/hostedRatchetChat";
+import { decidePilotGroupInvitation, pilotInvitationInbox, preparePilotGroupInvites, verifyPilotGroupAccount } from "../lib/pilotGroups";
 import { buildEnvelopes, sendChatMessage } from "../lib/send";
 import * as msh from "../lib/meshchat";
 import * as decdiag from "../lib/decdiag";
@@ -39,7 +40,7 @@ import { useI18n } from "../lib/i18n";
 import { loadTranslateTarget } from "../lib/store";
 import { detectLang, langFlag } from "../lib/detectLang";
 import { suppressLock, withSystemActivity } from "../lib/lockGuard";
-import { verifyState } from "../lib/verify";
+import { getVerified, verifyState } from "../lib/verify";
 import { archiveForConv } from "../lib/backup";
 import { usePoll } from "../lib/usePoll";
 import * as msgCache from "../lib/msgCache";
@@ -104,6 +105,12 @@ export default function ChatScreen({ route, navigation }) {
   );
   const title = headerTitle;
   const [msgs, setMsgs] = useState([]);
+  const [groupInvites, setGroupInvites] = useState(null);
+  const [groupInviteActions, setGroupInviteActions] = useState({});
+  const [busyInvite, setBusyInvite] = useState(null);
+  const inviteBusyRef = useRef(false);
+  const invitePreparedAt = useRef(0);
+  const [invitePrepFailed, setInvitePrepFailed] = useState(false);
   const [purging, setPurging] = useState(false);
   // Quanti messaggi si decifrano e si disegnano: 12 all'apertura, +30 ogni volta che
   // l'utente chiede i precedenti. `total` è quanti ce ne sono in tutto sul server.
@@ -376,6 +383,7 @@ export default function ChatScreen({ route, navigation }) {
         let reply = null;
         let ttlv = 0;
         let signed = null;
+        let groupInvite = null;
         if ((m.envelope || m.ratchet) && user?.kem) {
           // Riuso della decifratura già fatta (in memoria, non sul disco: nessun testo in
           // chiaro in più sul telefono). Prima si ri-decifrava tutta la conversazione ogni
@@ -388,7 +396,7 @@ export default function ChatScreen({ route, navigation }) {
           const hit = msgCache.get(cid, m.message_id);
           if (hit && hit.csig === csig && !(hit.soft && deep)) {
             if (hit.ctl) continue;
-            body = hit.body; atts = hit.atts; reply = hit.reply; ttlv = hit.ttl; signed = hit.signed;
+            body = hit.body; atts = hit.atts; reply = hit.reply; ttlv = hit.ttl; signed = hit.signed; groupInvite = hit.groupInvite;
           } else {
             // Ogni 5 decifrature si lascia respirare l'interfaccia.
             if (heavy && heavy % 5 === 0) await new Promise((r) => setTimeout(r, 0));
@@ -419,6 +427,7 @@ export default function ChatScreen({ route, navigation }) {
               if (!deep) deferred = true;
             } else {
               const u = unpackMessage(pt); body = u.text; atts = u.atts; reply = u.reply; ttlv = u.ttl || 0;
+              if (m.ratchet) groupInvite = u.groupInvite || null;
               if (u.sig && u.sig.s && u.sig.pk) signed = verifyMessage(body, u.sig.s, u.sig.pk);
               // Consegna di gettoni/chiavi per la cassetta anonima: non è un messaggio da mostrare.
               // Richiesta di ripartenza della catena: si azzera e si manda subito un
@@ -444,12 +453,12 @@ export default function ChatScreen({ route, navigation }) {
                 msgCache.put(cid, m.message_id, { csig, ctl: true });
                 continue;
               }
-              msgCache.put(cid, m.message_id, { csig, body, atts, reply, ttl: ttlv, signed });
+              msgCache.put(cid, m.message_id, { csig, body, atts, reply, ttl: ttlv, signed, groupInvite });
             }
           }
         }
         if (m.hidden === true) continue;
-        out.push({ id: m.message_id, mine: !!m.mine, body, atts, reply, signed, reactions: Array.isArray(m.reactions) ? m.reactions : [], ttl: ttlv, at: m.sent_at || m.created_at, delivered: !!m.delivered, read: !!m.read, edited: !!m.edited, pinned: !!m.pinned });
+        out.push({ id: m.message_id, mine: !!m.mine, body, atts, reply, signed, groupInvite, reactions: Array.isArray(m.reactions) ? m.reactions : [], ttl: ttlv, at: m.sent_at || m.created_at, delivered: !!m.delivered, read: !!m.read, edited: !!m.edited, pinned: !!m.pinned });
       }
       // Messaggi arrivati per cassetta anonima: vivono solo qui, cifrati sul telefono.
       try {
@@ -906,6 +915,85 @@ export default function ChatScreen({ route, navigation }) {
     setPurging(false);
   }, [convId, lockedIds, purging, load]);
 
+  const hasDirectGroupInvite = pilot && msgs.some(item => !item.mine && item.groupInvite);
+  const prepareGroupInvite = useCallback(async () => {
+    invitePreparedAt.current = Date.now();
+    try {
+      await preparePilotGroupInvites(user);
+      if (mounted.current) setInvitePrepFailed(false);
+    } catch {
+      if (mounted.current) setInvitePrepFailed(true);
+    }
+  }, [user]);
+  const reloadGroupInvites = useCallback(async () => {
+    const rows = await pilotInvitationInbox(user);
+    const entries = await Promise.all(rows.map(async row => {
+      const verified = row.status === "accepted" ? await getVerified(row.inviter) : null;
+      return [row.id, { ...row, needsQr: row.status === "accepted" && !verified?.identityFp }];
+    }));
+    if (mounted.current) setGroupInvites(Object.fromEntries(entries));
+    if (rows.some(row => row.status === "accepted") && Date.now() - invitePreparedAt.current > 15000) {
+      prepareGroupInvite();
+    }
+  }, [user, prepareGroupInvite]);
+  useEffect(() => {
+    setGroupInvites(null); setGroupInviteActions({}); setInvitePrepFailed(false);
+  }, [peer, user?.lns, user?.server]);
+  usePoll(reloadGroupInvites, 3500, { active: hasDirectGroupInvite });
+
+  const actOnGroupInvite = useCallback(async (row, decision) => {
+    if (inviteBusyRef.current) return;
+    inviteBusyRef.current = true;
+    setBusyInvite(row.id);
+    setErr("");
+    try {
+      if (decision === "verify") await verifyPilotGroupAccount(user);
+      else {
+        await decidePilotGroupInvitation(user, row, decision);
+        if (mounted.current) setGroupInviteActions(previous => ({ ...previous, [row.id]: decision }));
+      }
+      await reloadGroupInvites();
+    } catch (error) {
+      if (mounted.current) setErr(api.apiErr(error));
+    } finally {
+      inviteBusyRef.current = false;
+      if (mounted.current) setBusyInvite(null);
+    }
+  }, [user, reloadGroupInvites]);
+
+  const renderGroupInvite = useCallback(item => {
+    if (item.mine || !item.groupInvite || !pilot) return null;
+    const state = groupInvites?.[item.groupInvite.id];
+    const row = state?.group === item.groupInvite.group ? state : null;
+    const decision = groupInviteActions[item.groupInvite.id];
+    const say = (it, en) => lang === "en" ? en : it;
+    const action = (label, handler) => <TouchableOpacity accessibilityRole="button" disabled={!!busyInvite}
+      style={styles.groupInviteButton} onPress={handler}><Text style={styles.groupInviteText}>{label}</Text></TouchableOpacity>;
+    if (row?.status === "pending" && !decision) return <View style={styles.groupInviteActions}>
+      {action(say("Accetta", "Accept"), () => actOnGroupInvite(row, "accepted"))}
+      {action(say("Rifiuta", "Decline"), () => actOnGroupInvite(row, "declined"))}
+    </View>;
+    if (row?.status === "verification") return <View style={styles.groupInviteCard}>
+      <Text style={styles.groupInviteText}>{say("Verifica l’account per entrare.", "Verify your account to join.")}</Text>
+      {action(say("Verifica account", "Verify account"), () => actOnGroupInvite(row, "verify"))}
+    </View>;
+    if (row?.status === "accepted" && row.needsQr) return <View style={styles.groupInviteCard}>
+      <Text style={styles.groupInviteText}>{say("Invito accettato. Verifica il QR del fondatore per aprire il gruppo.", "Invitation accepted. Verify the founder’s QR to open the group.")}</Text>
+      {action(say("Verifica contatto", "Verify contact"), () => navigation.navigate("VerifyContact", {
+        peer: row.inviter, peer_name: row.inviter,
+      }))}
+    </View>;
+    if (row?.status === "accepted" && invitePrepFailed) return <View style={styles.groupInviteCard}>
+      <Text style={styles.groupInviteText}>{say("Invito accettato. Preparazione delle chiavi in attesa.", "Invitation accepted. Waiting to prepare keys.")}</Text>
+      {action(say("Riprova", "Retry"), prepareGroupInvite)}
+    </View>;
+    const label = row?.status === "accepted" || decision === "accepted" ?
+      say("Invito accettato.", "Invitation accepted.") : decision === "declined" ?
+      say("Invito rifiutato.", "Invitation declined.") : !groupInvites ?
+      say("Caricamento invito…", "Loading invitation…") : say("Invito concluso o non disponibile.", "Invitation closed or unavailable.");
+    return <Text style={styles.groupInviteText}>{label}</Text>;
+  }, [pilot, groupInvites, groupInviteActions, lang, styles, busyInvite, actOnGroupInvite, navigation, invitePrepFailed, prepareGroupInvite]);
+
   const renderItem = useCallback(({ item, index }) => (
     <>
       {(index === 0 || dayKeyOf(item.at) !== dayKeyOf((msgs[index - 1] || {}).at)) && (
@@ -933,6 +1021,7 @@ export default function ChatScreen({ route, navigation }) {
           </View>
         )}
         {!!item.body && <SafeText text={item.body} style={styles.bubbleText} lang={lang} />}
+        {renderGroupInvite(item)}
         {!!item.body && <ThreatBanner result={analyzeMessage(item.body, lang)} lang={lang} />}
         {translations[item.id] && (
           <View style={styles.trBox} testID="msg-translated">
@@ -976,7 +1065,7 @@ export default function ChatScreen({ route, navigation }) {
       </View>
     </TouchableOpacity>
     </>
-  ), [styles, onMessageActions, accent, lang, translations, toggleTr, msgs, t]);
+  ), [styles, onMessageActions, accent, lang, translations, toggleTr, msgs, t, renderGroupInvite]);
 
   return (
     <KeyboardAvoidingView behavior="padding" keyboardVerticalOffset={headerHeight} style={styles.root}>
@@ -1245,6 +1334,10 @@ const makeStyles = (tint) => StyleSheet.create({
   bubbleThem: { backgroundColor: theme.bubbleThem, borderBottomLeftRadius: 5 },
   bubbleText: { color: "#fff", fontSize: 15, lineHeight: 20 },
   attach: { color: "#D6E4FF", fontSize: 12, marginTop: 5 },
+  groupInviteActions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 },
+  groupInviteCard: { gap: 6, marginTop: 4 },
+  groupInviteButton: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: theme.surface },
+  groupInviteText: { color: theme.accent, fontSize: 13, fontWeight: "600" },
   quote: { borderLeftWidth: 3, borderLeftColor: "rgba(255,255,255,0.5)", paddingLeft: 8, marginBottom: 6, opacity: 0.9 },
   quoteName: { color: "#DCE7FF", fontSize: 12, fontWeight: "800" },
   quoteText: { color: "rgba(255,255,255,0.75)", fontSize: 13 },

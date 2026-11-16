@@ -20,6 +20,8 @@ for (const n of ["alice", "bob", "carol"]) {
 }
 const [a,b,c] = users.values();
 const appData = new Map(), groups = new Map(), packages = new Map(), invites = new Map();
+const notices = [];
+let registrationError = false, failedRegistrations = 0;
 let actor, loseOnce = false, conflictOnce = false, loseCreate = true, claims = 0;
 const missing = () => Object.assign(new Error("missing"),{response:{status:404}});
 const conflict = () => Object.assign(new Error("stale"),{response:{status:409}});
@@ -107,8 +109,13 @@ const hostedGroupCredentials=async user => ({
 });
 const source=readFileSync(new URL("../src/lib/pilotGroups.js", import.meta.url),"utf8")
   .replace(/^import .+;$/gm,"").replace(/^export /gm,"").replace(/let dependency;[\s\S]+?(?=function serial)/,"const loadMls=async()=>[mls,{defaultClientConfig}];\n");
-const app=runInNewContext(source+"\n({cachedPilotGroupSummary,listPilotGroups,preparePilotGroupInvites,createPilotGroup,finishAcceptedPilotGroupInvites,openPilotGroup,updatePilotGroup,presentPilotGroupHistory,listPublicPilotGroups,pilotInvitationInbox,pilotInvitationTitle,requestPilotGroupInvitation,decidePilotGroupInvitation})",{
-  ...cryptoLib,api,registerHostedRatchet:async()=>{},verifiedContact:async(_user,peer)=>({kem:cryptoLib.bytesToHex(users.get(peer).kem.publicKey)}),createMlsGroupEngine,hostedGroupCredentials,mls,defaultClientConfig,
+const app=runInNewContext(source+"\n({cachedPilotGroupSummary,listPilotGroups,preparePilotGroupInvites,deliverPilotGroupInvitation,createPilotGroup,finishAcceptedPilotGroupInvites,openPilotGroup,updatePilotGroup,presentPilotGroupHistory,listPublicPilotGroups,pilotInvitationInbox,pilotInvitationTitle,requestPilotGroupInvitation,decidePilotGroupInvitation})",{
+  ...cryptoLib,api,registerHostedRatchet:async()=>{ if (registrationError) { failedRegistrations++; throw new Error("registration unavailable"); } },
+  sendPilotMessage:async(payload,user,peer,{receiptName})=>{
+    assert.equal(actor,user);
+    notices.push({payload,peer});
+    appData.set(receiptName,{done:true});
+  },verifiedContact:async(_user,peer)=>({kem:cryptoLib.bytesToHex(users.get(peer).kem.publicKey)}),createMlsGroupEngine,hostedGroupCredentials,mls,defaultClientConfig,
   getBlob:async key=>structuredClone(appData.get(key)),
   setBlobDurably:async (key,data)=>appData.set(key,structuredClone(data)),
 });
@@ -200,6 +207,13 @@ assert.equal((await app.openPilotGroup(c,carolRow)).history.at(-1).body,"Solo Al
 actor=a;
 const publicGroup=await app.createPilotGroup(a,"Piazza ULTRON","public");
 const request=await app.requestPilotGroupInvitation(a,publicGroup,b.lns);
+const notice=notices.at(-1);
+assert.equal(notice.peer,b.lns);
+assert.equal(cryptoLib.unpackMessage(notice.payload).text,"Invito al gruppo «Piazza ULTRON»");
+assert.deepEqual(cryptoLib.unpackMessage(notice.payload).groupInvite,{id:request.id,group:publicGroup.id});
+const noticeCount = notices.length;
+await app.deliverPilotGroupInvitation(a,publicGroup,request);
+assert.equal(notices.length,noticeCount);
 actor=b;
 assert.deepEqual(Array.from(await app.listPublicPilotGroups(b),item=>item.name),["Piazza ULTRON"]);
 assert.equal((await app.listPilotGroups()).length,0);
@@ -210,7 +224,16 @@ assert.equal((await app.decidePilotGroupInvitation(b,received,"declined")).statu
 actor=a;
 const anotherRequest=await app.requestPilotGroupInvitation(a,publicGroup,b.lns);
 actor=b;
+const poolKey = "mls:" + cryptoLib.sha256Hex(JSON.stringify([b.server,b.lns,"packages"]));
+const previousPool = appData.get(poolKey);
+appData.delete(poolKey);
+registrationError = true;
 const accepted=await app.decidePilotGroupInvitation(b,anotherRequest,"accepted");
+assert.equal(accepted.status,"accepted");
+await assert.rejects(app.preparePilotGroupInvites(b), /registration unavailable/);
+assert.ok(failedRegistrations > 0);
+registrationError = false;
+appData.set(poolKey,previousPool);
 actor=a;
 await assert.rejects(app.updatePilotGroup(a,publicGroup,"add",b.lns,{...accepted,proof:"00".repeat(3309)}),/Consenso/);
 await app.finishAcceptedPilotGroupInvites(a,publicGroup);
@@ -219,6 +242,7 @@ const [publicMemberRow]=await app.listPilotGroups();
 const publicDetails = await app.openPilotGroup(b,publicMemberRow);
 assert.equal(publicDetails.title,"Piazza ULTRON");
 assert.equal(publicDetails.profile.visibility,"public");
+console.log("Direct chat notice, delivery receipt and acceptance with delayed key publishing passed.");
 console.log("Three pilot clients: create, invite, signed text, scoped title, encrypted polls, signed consent, public listing, unread counts, encrypted profile and attachment, automatic invitation completion, removal and durable send retry passed.");
 
 // Execute the first render of both group routes to catch errors Babel alone
