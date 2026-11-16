@@ -23,8 +23,10 @@ async function run(uri, width, compress) {
 
 /// Riduce una foto sotto `maxBytes` (di norma 500 KB) restando nitida.
 /// Restituisce { base64, width, height } oppure null se non è stato possibile.
-export async function shrinkPhoto(uri, maxBytes = 500 * 1024) {
-  const steps = [[1600, 0.72], [1280, 0.65], [1024, 0.6], [800, 0.55]];
+export async function shrinkPhoto(uri, maxBytes = 500 * 1024, maxWidth) {
+  const steps = maxWidth
+    ? [[maxWidth, 0.72], [Math.round(maxWidth * 0.8), 0.65], [Math.round(maxWidth * 0.65), 0.55], [Math.round(maxWidth * 0.5), 0.48]]
+    : [[1600, 0.72], [1280, 0.65], [1024, 0.6], [800, 0.55]];
   let last = null;
   for (const [w, q] of steps) {
     const out = await run(uri, w, q);

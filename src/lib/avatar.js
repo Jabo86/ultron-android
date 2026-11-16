@@ -7,7 +7,7 @@ import * as ImagePicker from "expo-image-picker";
 import { shrinkPhoto } from "./imageOpt";
 import { suppressLock } from "./lockGuard";
 
-export async function pickAvatarDataUrl({ allowOriginal = true } = {}) {
+export async function pickAvatarDataUrl({ allowOriginal = true, maxBytes = 128 * 1024, maxWidth } = {}) {
   suppressLock();
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) return { denied: true };
@@ -20,8 +20,8 @@ export async function pickAvatarDataUrl({ allowOriginal = true } = {}) {
   // 128 KB bastano e avanzano per un avatar: prima, con l'API deprecata che lanciava, si
   // finiva SEMPRE nel ripiego e l'avatar del gruppo pesava 2,6 MB (e viaggiava in ogni
   // elenco dei gruppi).
-  const out = await shrinkPhoto(uri, 128 * 1024);
-  if (out?.base64) return { dataUrl: `data:image/jpeg;base64,${out.base64}` };
+  const out = await shrinkPhoto(uri, maxBytes, maxWidth);
+  if (out?.base64 && (allowOriginal || out.base64.length * 3 / 4 <= maxBytes)) return { dataUrl: `data:image/jpeg;base64,${out.base64}` };
   // Fallback: usa lo scatto originale (il server ora accetta fino a 16 MB).
   const a = r.assets[0];
   if (allowOriginal && a.base64) return { dataUrl: `data:image/jpeg;base64,${a.base64}` };

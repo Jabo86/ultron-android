@@ -1,19 +1,27 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, AppState, FlatList, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, FlatList, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../lib/i18n";
 import { useFocusEffect } from "@react-navigation/native";
 import { apiErr, contacts } from "../lib/api";
 import { contactAddress, matchesContact } from "../lib/contactAddress";
+import { pickAvatarDataUrl } from "../lib/avatar";
+import { randomHex } from "../lib/crypto";
+import { withSystemActivity } from "../lib/lockGuard";
+import { usePoll } from "../lib/usePoll";
 import { getVerified } from "../lib/verify";
 import { cachedPilotGroupTitle, createPilotGroup, decidePilotGroupInvitation, listPilotGroups, listPublicPilotGroups, openPilotGroup,
   pilotGroupInvitations, pilotInvitationInbox, pilotInvitationTitle, preparePilotGroupInvites, presentPilotGroupHistory,
-  requestPilotGroupInvitation, updatePilotGroup } from "../lib/pilotGroups";
+  PILOT_GROUP_AVATAR_LIMIT, requestPilotGroupInvitation, updatePilotGroup } from "../lib/pilotGroups";
 import { theme } from "../theme";
 
 export default function PilotGroupsScreen({ navigation, route }) {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
+  useLayoutEffect(() => { navigation.setOptions({ headerShown: false }); }, [navigation]);
   const { lang } = useI18n();
   const en = lang === "en";
   const say = (it, english) => en ? english : it;
@@ -29,9 +37,16 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const [details, setDetails] = useState(null);
   const [name, setName] = useState("");
   const [message, setMessage] = useState("");
+  const draft = useRef(null);
+  const [groupTab, setGroupTab] = useState("members");
+  const [editing, setEditing] = useState(false);
+  const [description, setDescription] = useState("");
+  const [avatar, setAvatar] = useState(null);
   const [pollEditor, setPollEditor] = useState(false);
   const [question, setQuestion] = useState("");
   const [choices, setChoices] = useState(["", ""]);
+  const listRef = useRef(null);
+  const stickToBottom = useRef(true);
   const history = useMemo(() => presentPilotGroupHistory(details?.history || [], user?.lns), [details, user?.lns]);
   const [newGroup, setNewGroup] = useState(false);
   const [book, setBook] = useState([]);
@@ -43,7 +58,6 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
-  const polling = useRef(false);
   const refreshVersion = useRef(0);
   const alive = useRef(true);
 
@@ -58,7 +72,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
       });
     }
     if (row) {
-      let next = await openPilotGroup(user, row);
+      let next = await openPilotGroup(user, row, { read: true });
       if (current()) setDetails(next);
       let invitations = await pendingFor();
       let changed = false;
@@ -69,14 +83,15 @@ export default function PilotGroupsScreen({ navigation, route }) {
         try {
           next = await updatePilotGroup(user, row, "add", invitation.target, invitation);
           changed = true;
-          if (current()) setDetails(next);
+          if (current()) { setDetails(next); setErr(""); }
         } catch (error) {
           if (current()) setErr(apiErr(error));
         }
       }
       if (changed) {
         invitations = await pendingFor();
-        if (next.title) next = await updatePilotGroup(user, row, "title", next.title);
+        if (next.profile) next = await updatePilotGroup(user, row, "profile", next.profile);
+        else if (next.title) next = await updatePilotGroup(user, row, "title", next.title);
       }
       if (current()) { setOutgoing(invitations); setDetails(next); }
     } else {
@@ -129,27 +144,30 @@ export default function PilotGroupsScreen({ navigation, route }) {
 
   useEffect(() => {
     alive.current = true;
-    if (user) run(async () => { await refresh(routedGroup); await preparePilotGroupInvites(user); });
+    if (user) {
+      run(() => refresh(routedGroup));
+      if (!routedGroup) preparePilotGroupInvites(user).catch(() => {});
+    }
     return () => { alive.current = false; };
   }, [user, refresh, routedGroup]);
 
-  useEffect(() => {
-    const tick = () => {
-      if (running.current || polling.current || !navigation.isFocused() || AppState.currentState !== "active") return;
-      const version = refreshVersion.current;
-      polling.current = true;
-      refresh(group).catch(error => {
-        if (alive.current && version === refreshVersion.current) setErr(apiErr(error));
-      }).finally(() => { polling.current = false; });
-    };
-    const timer = setInterval(tick, 3500);
-    return () => clearInterval(timer);
-  }, [group, refresh, navigation]);
+  usePoll(async () => {
+    if (running.current) return;
+    const version = refreshVersion.current;
+    try {
+      await refresh(group);
+      if (alive.current && version === refreshVersion.current && !triedInvites.current.size) setErr("");
+    } catch (error) {
+      if (alive.current && version === refreshVersion.current) setErr(apiErr(error));
+    }
+  }, 2000, { runOnFocus: false, active: !!user });
 
   const selectContact = (address) => setSelected(previous => previous.includes(address)
     ? previous.filter(value => value !== address) : [...previous, address]);
 
   const open = (row) => run(async () => {
+    stickToBottom.current = true;
+    draft.current = null;
     setDetails(null); setGroup(row); setManage(false); setMessage(""); setPollEditor(false); setQuery(""); setSelected([]);
     setOutgoing([]);
     await refresh(row);
@@ -191,7 +209,9 @@ export default function PilotGroupsScreen({ navigation, route }) {
     const title = name.trim();
     if (!title) return;
     const row = await createPilotGroup(user, title, visibility);
-    setGroup(row); setDetails(null); setManage(true); setNewGroup(false); setName(""); setQuery("");
+    stickToBottom.current = true;
+    draft.current = null;
+    setGroup(row); setDetails(null); setManage(true); setGroupTab("members"); setNewGroup(false); setName(""); setQuery("");
     const initial = await updatePilotGroup(user, row, "title", row.title || title);
     setDetails(initial);
     if (selected.length) await invite(row, selected);
@@ -199,7 +219,9 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const send = () => run(async () => {
     const text = message.trim();
     if (!text) return;
-    setDetails(await updatePilotGroup(user, group, "message", text));
+    if (draft.current?.text !== text) draft.current = { text, id: randomHex(16) };
+    setDetails(await updatePilotGroup(user, group, "message", text, undefined, draft.current.id));
+    draft.current = null;
     setMessage("");
   });
   const createPoll = () => run(async () => {
@@ -220,6 +242,27 @@ export default function PilotGroupsScreen({ navigation, route }) {
     });
   };
 
+  const editProfile = () => {
+    setDescription(details?.profile?.description || "");
+    setAvatar(details?.profile?.avatar || null);
+    setEditing(true);
+  };
+  const choosePhoto = () => run(async () => {
+    const photo = await withSystemActivity(() => pickAvatarDataUrl({
+      allowOriginal: false, maxBytes: Math.floor((PILOT_GROUP_AVATAR_LIMIT - 64) * 3 / 4), maxWidth: 384,
+    }));
+    if (photo.denied) throw new Error(say("Consenti l’accesso alle foto.", "Allow photo access."));
+    if (photo.error) throw new Error(say("Scegli una foto più piccola.", "Choose a smaller photo."));
+    if (photo.dataUrl) setAvatar(photo.dataUrl);
+  });
+  const saveProfile = () => run(async () => {
+    setDetails(await updatePilotGroup(user, group, "profile", { description, avatar }));
+    setEditing(false);
+  });
+  const showInfo = () => {
+    setGroupTab("members"); setEditing(false); setManage(true);
+  };
+
   const openProfile = (peer) => navigation.navigate("Profilo", { peer });
 
   const button = (label, onPress, { primary = false, disabled = busy } = {}) => (
@@ -228,6 +271,21 @@ export default function PilotGroupsScreen({ navigation, route }) {
       <Text style={[styles.buttonText, primary && styles.primaryText]}>{label}</Text>
     </TouchableOpacity>
   );
+  const iconButton = (icon, label, onPress, disabled = false) => (
+    <TouchableOpacity accessibilityRole="button" accessibilityLabel={label} onPress={onPress} disabled={disabled}
+      style={[styles.iconButton, disabled && styles.disabled]}>
+      <Ionicons name={icon} size={23} color={theme.text} />
+    </TouchableOpacity>
+  );
+  const groupAvatar = (uri, large = false) => (
+    <View style={[styles.avatar, large && styles.avatarLarge]}>
+      {uri ? <Image source={{ uri }} style={styles.avatarImage} /> :
+        <Ionicons name="people" size={large ? 43 : 22} color={theme.primary} />}
+    </View>
+  );
+  const pageStyle = [styles.listPage, { paddingBottom: insets.bottom + 20 }];
+  const topStyle = { paddingTop: insets.top };
+  const backLabel = say("Indietro", "Back");
   const warning = !!err && <Text style={styles.error} accessibilityLiveRegion="polite">{err}</Text>;
   const inputProps = { placeholderTextColor: theme.textDim, editable: !busy };
   const contactPicker = () => {
@@ -261,8 +319,8 @@ export default function PilotGroupsScreen({ navigation, route }) {
     );
   };
   if (discover && !group) return (
-    <ScrollView style={styles.root} contentContainerStyle={styles.listPage}>
-      {button(say("Torna ai gruppi", "Back to groups"), () => setDiscover(false))}
+    <ScrollView style={[styles.root, topStyle]} contentContainerStyle={pageStyle}>
+      {iconButton("arrow-back", backLabel, () => setDiscover(false))}
       <Text style={styles.title}>{say("Gruppi pubblici", "Public groups")}</Text>
       <Text style={styles.dim}>{say("Per entrare serve un invito e il QR ULTRON verificato.", "Entry requires an invitation and a verified ULTRON QR.")}</Text>
       {publicGroups.map(item => (
@@ -275,7 +333,8 @@ export default function PilotGroupsScreen({ navigation, route }) {
   );
   if (!group) {
     return (
-      <ScrollView style={styles.root} contentContainerStyle={styles.listPage} keyboardShouldPersistTaps="handled">
+      <ScrollView style={[styles.root, topStyle]} contentContainerStyle={pageStyle} keyboardShouldPersistTaps="handled">
+        {iconButton("arrow-back", backLabel, () => navigation.goBack())}
         <Text style={styles.title}>{say("Gruppi", "Groups")}</Text>
         {warning}
         {inbox.map(invitation => (
@@ -318,19 +377,64 @@ export default function PilotGroupsScreen({ navigation, route }) {
       </ScrollView>
     );
   }
+  const groupTitle = details?.title || group.title || say("Gruppo", "Group");
+  const isFounder = group.admin === user.lns;
+  const hasRecipients = details?.members.length > 1;
   return (
-    <View style={styles.root}>
+    <KeyboardAvoidingView behavior="padding" style={[styles.root, topStyle]}>
       <View style={styles.header}>
-        {button(say("Gruppi", "Groups"), goToList)}
-        <Text style={styles.section} numberOfLines={1}>{details?.title || group.title || say("Gruppo", "Group")}</Text>
-        {button(say("Membri", "Members"), () => setManage(value => !value))}
+        {iconButton("arrow-back", backLabel, manage ? () => { setManage(false); setEditing(false); } : goToList)}
+        <TouchableOpacity style={styles.groupHeading} onPress={showInfo} disabled={manage}
+          accessibilityRole="button" accessibilityLabel={say("Informazioni gruppo", "Group information")}>
+          {groupAvatar(details?.profile?.avatar || (!details ? group.avatar : null))}
+          <View style={styles.headingText}>
+            <Text style={styles.section} numberOfLines={1}>{groupTitle}</Text>
+            <Text style={styles.dim} numberOfLines={1}>{manage ? say("Informazioni gruppo", "Group information") :
+              (details ? `${details.members.length} ${say("membri", "members")}` : say("Sincronizzazione…", "Syncing…"))}</Text>
+          </View>
+        </TouchableOpacity>
       </View>
       {warning}
-      {manage ? <ScrollView contentContainerStyle={styles.listPage} keyboardShouldPersistTaps="handled">
+      {!!err && !details && button(say("Riprova a sincronizzare", "Retry sync"), () => run(() => refresh(group)))}
+      {manage ? <ScrollView contentContainerStyle={pageStyle} keyboardShouldPersistTaps="handled">
+        <View style={styles.profileHeader}>
+          {groupAvatar(editing ? avatar : details?.profile?.avatar, true)}
+          <Text style={styles.title}>{groupTitle}</Text>
+          {!!details?.profile?.description && !editing && <Text style={styles.description}>{details.profile.description}</Text>}
+          {isFounder && details && !editing && button(say("Modifica foto e descrizione", "Edit photo and description"), editProfile)}
+          {editing && <View style={styles.profileEdit}>
+            <View style={styles.actions}>
+              {button(say("Scegli foto", "Choose photo"), choosePhoto)}
+              {!!avatar && button(say("Rimuovi foto", "Remove photo"), () => setAvatar(null))}
+            </View>
+            <TextInput {...inputProps} style={styles.input} multiline maxLength={512} value={description} onChangeText={setDescription}
+              placeholder={say("Descrizione del gruppo", "Group description")} accessibilityLabel={say("Descrizione del gruppo", "Group description")} />
+            <View style={styles.actions}>
+              {button(say("Salva", "Save"), saveProfile, { primary: true })}
+              {button(say("Annulla", "Cancel"), () => setEditing(false))}
+            </View>
+          </View>}
+        </View>
+        <View accessibilityRole="tablist" style={styles.tabs}>
+          {[["members", say("Membri", "Members")], ["info", say("Informazioni", "Information")]].map(([key, label]) => (
+            <TouchableOpacity key={key} accessibilityRole="tab" accessibilityState={{ selected: groupTab === key }}
+              onPress={() => setGroupTab(key)} style={[styles.tab, groupTab === key && styles.tabActive]}>
+              <Text style={[styles.buttonText, groupTab === key && styles.sender]}>{label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        {groupTab === "info" ? <View style={styles.card}>
+          <Text style={styles.section}>{say("Crittografia end-to-end", "End-to-end encryption")}</Text>
+          <Text style={styles.dim}>{say("Solo i membri possono leggere i messaggi, la foto e la descrizione. Chi entra vede i messaggi inviati dopo il suo ingresso.", "Only members can read messages, the photo and the description. New members see messages sent after they join.")}</Text>
+          <TouchableOpacity onPress={() => openProfile(group.admin)} accessibilityRole="button">
+            <Text style={styles.sender}>{say("Fondatore", "Founder")} · {group.admin}</Text>
+          </TouchableOpacity>
+        </View> : <>
         {(details?.members || []).map(account => (
           <View style={styles.row} key={account}>
             <TouchableOpacity onPress={() => openProfile(account)} accessibilityRole="button" style={{ flex: 1, paddingVertical: 6 }}>
-              <Text style={styles.text}>{account}</Text>
+              <Text style={styles.text}>{account === user.lns ? say("Tu", "You") : account}</Text>
+              {account === group.admin && <Text style={styles.dim}>{say("Fondatore", "Founder")}</Text>}
             </TouchableOpacity>
             {group.admin === user.lns && account !== user.lns && button(say("Rimuovi", "Remove"), () => remove(account))}
           </View>
@@ -347,9 +451,18 @@ export default function PilotGroupsScreen({ navigation, route }) {
           {button(say("Invia inviti", "Send invitations"), () => run(() => invite(group, selected)),
             {primary: true, disabled: busy || !details || !selected.length})}
         </View>}
+        </>}
       </ScrollView> : <>
-        <FlatList data={history} keyExtractor={item => String(item.seq)} contentContainerStyle={styles.messages}
-          renderItem={({item}) => <View style={styles.message}>
+        <FlatList ref={listRef} style={styles.messageList} data={history} keyboardShouldPersistTaps="handled"
+          onScroll={({ nativeEvent }) => {
+            const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+            stickToBottom.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 100;
+          }} scrollEventThrottle={32}
+          onContentSizeChange={() => { if (stickToBottom.current) listRef.current?.scrollToEnd({ animated: false }); }}
+          ListEmptyComponent={<Text style={styles.empty}>{details
+            ? say("I nuovi messaggi compariranno qui.", "New messages will appear here.")
+            : say("Sincronizzazione della chat…", "Syncing the chat…")}</Text>} keyExtractor={item => String(item.seq)} contentContainerStyle={styles.messages}
+          renderItem={({item}) => <View style={[styles.message, item.sender === user.lns && styles.ownMessage]}>
             <TouchableOpacity onPress={() => openProfile(item.sender)} accessibilityRole="button">
               <Text style={styles.sender}>{item.sender}</Text>
             </TouchableOpacity>
@@ -380,21 +493,38 @@ export default function PilotGroupsScreen({ navigation, route }) {
                 new Set(choices.map(choice => choice.trim())).size !== choices.length })}
           </View>
         </ScrollView>}
-        <View style={styles.composer}>
-          {button(say("Sondaggio", "Poll"), () => setPollEditor(value => !value), { disabled: busy || !details })}
-          <TextInput {...inputProps} style={[styles.input, styles.composeInput]} placeholder={say("Scrivi un messaggio", "Write a message")}
-            accessibilityLabel={say("Scrivi un messaggio", "Write a message")} maxLength={2000} multiline value={message} onChangeText={setMessage} />
-          {button(say("Invia", "Send"), send, {primary: true, disabled: busy || !details || !message.trim()})}
+        <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+          {details && !hasRecipients ? <Text style={styles.dim}>{say("Sarai in grado di scrivere quando sarà entrato almeno un altro membro.", "You can write once another member has joined.")}</Text> :
+            <View style={styles.composerRow}>
+              {iconButton("bar-chart-outline", say("Sondaggio", "Poll"), () => setPollEditor(value => !value), busy || !hasRecipients)}
+              <TextInput {...inputProps} style={[styles.input, styles.composeInput]} placeholder={say("Scrivi un messaggio", "Write a message")}
+                editable={!busy && hasRecipients} accessibilityLabel={say("Scrivi un messaggio", "Write a message")}
+                maxLength={2000} multiline value={message} onChangeText={setMessage} />
+              {iconButton("send", say("Invia", "Send"), send, busy || !hasRecipients || !message.trim())}
+            </View>}
         </View>
       </>}
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.bg },
   listPage: { padding: 18, gap: 12, paddingBottom: 36 },
-  header: { padding: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  header: { paddingHorizontal: 8, paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: theme.surface, borderBottomWidth: 1, borderColor: theme.border },
+  iconButton: { width: 44, height: 44, borderRadius: 22, justifyContent: "center", alignItems: "center" },
+  groupHeading: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 },
+  headingText: { flex: 1 },
+  avatar: { width: 40, height: 40, borderRadius: 20, overflow: "hidden", backgroundColor: theme.surfaceAlt, alignItems: "center", justifyContent: "center" },
+  avatarLarge: { width: 100, height: 100, borderRadius: 50 },
+  avatarImage: { width: "100%", height: "100%" },
+  profileHeader: { alignItems: "center", gap: 12, paddingTop: 10, paddingBottom: 12 },
+  description: { color: theme.text, fontSize: 15, textAlign: "center" },
+  profileEdit: { alignSelf: "stretch", gap: 10 },
+  tabs: { flexDirection: "row", borderBottomWidth: 1, borderColor: theme.border },
+  tab: { flex: 1, paddingVertical: 12, alignItems: "center" },
+  tabActive: { borderBottomWidth: 2, borderColor: theme.primary },
   title: { color: theme.text, fontSize: 32, fontWeight: "800" },
   section: { color: theme.text, fontSize: 17, fontWeight: "700", flexShrink: 1 },
   text: { color: theme.text, fontSize: 15 },
@@ -414,11 +544,15 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.45 },
   buttonText: { color: theme.text, fontSize: 14, fontWeight: "700" },
   primaryText: { color: "#04120a" },
-  messages: { padding: 12, gap: 8 },
+  messageList: { flex: 1 },
+  messages: { flexGrow: 1, justifyContent: "flex-end", padding: 12, gap: 8 },
+  empty: { color: theme.textDim, textAlign: "center", padding: 14 },
   sender: { color: theme.primary, fontSize: 13, fontWeight: "700" },
-  message: { padding: 10, gap: 4, backgroundColor: theme.surfaceAlt, borderRadius: 14 },
+  message: { alignSelf: "flex-start", maxWidth: "88%", padding: 10, gap: 4, backgroundColor: theme.surfaceAlt, borderRadius: 14 },
+  ownMessage: { alignSelf: "flex-end", borderWidth: 1, borderColor: theme.primary },
   poll: { gap: 6, marginTop: 6 },
   pollEditor: { padding: 12, gap: 6 },
-  composer: { flexDirection: "row", alignItems: "flex-end", gap: 8, padding: 12 },
+  composer: { paddingHorizontal: 8, paddingTop: 8, backgroundColor: theme.surface, borderTopWidth: 1, borderColor: theme.border },
+  composerRow: { flexDirection: "row", alignItems: "flex-end", gap: 4 },
   composeInput: { flex: 1, maxHeight: 120 },
 });

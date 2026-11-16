@@ -1,4 +1,4 @@
-import { cachedPilotGroupSummary, listPilotGroups, pilotInvitationInbox } from "../lib/pilotGroups";
+import { cachedPilotGroupSummary, listPilotGroups, openPilotGroup, pilotInvitationInbox } from "../lib/pilotGroups";
 import { hostedRatchetPilot } from "../lib/hostedRatchetChat";
 import { contactAddress, matchesContact } from "../lib/contactAddress";
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -65,6 +65,7 @@ export default function ConversationsScreen({ navigation }) {
   const [gBusy, setGBusy] = useState(false);
   const [gErr, setGErr] = useState("");
   const mounted = useRef(true);
+  const groupSync = useRef({ running: false, next: 0 });
 
   const timeAgo = useCallback((iso) => {
     if (!iso) return "";
@@ -92,10 +93,33 @@ export default function ConversationsScreen({ navigation }) {
           if (c && Array.isArray(c.others) && c.others.length === 1 && c.title) book.learnName(c.others[0], c.title);
         }
       } catch { /* rubrica non disponibile */ }
+      if (pilot && gs.length && navigation.isFocused() && !groupSync.current.running) {
+        const tracker = groupSync.current;
+        tracker.running = true;
+        try {
+          const position = tracker.next % gs.length;
+          const ordered = [...gs.slice(position), ...gs.slice(0, position)];
+          for (const row of ordered) {
+            tracker.next++;
+            if (!navigation.isFocused()) break;
+            const cache = await cachedPilotGroupSummary(user, row).catch(() => ({}));
+            if (cache.cursor >= row.seq) continue;
+            // Synchronise one changed group per pass without slowing down direct chats.
+            tracker.operation = openPilotGroup(user, row).catch(() => {}).finally(() => {
+              tracker.running = false;
+              tracker.operation = null;
+            });
+            break;
+          }
+        } finally {
+          // An in-flight operation owns the flag until it finishes.
+          if (!tracker.operation) tracker.running = false;
+        }
+      }
       const groups = pilot ? await Promise.all(gs.map(async (group) => {
-        const { title, lastAt } = await cachedPilotGroupSummary(user, group).catch(() => ({}));
+        const { title, avatar, lastAt, unread } = await cachedPilotGroupSummary(user, group).catch(() => ({}));
         return { conv_id: "mls:" + group.id, title: title || (lang === "en" ? "Group " : "Gruppo ") + group.id.slice(0, 6),
-          is_group: true, mlsGroup: group, last_at: lastAt };
+          is_group: true, mlsGroup: group, avatar, unread: unread || 0, last_at: lastAt };
       })) : (Array.isArray(gs) ? gs : []).map((g) => ({
         conv_id: g.chan_id, title: g.name, title_lns: g.name, is_group: true, avatar: g.avatar || null,
         unread: g.unread || 0, unread_by: Array.isArray(g.unread_by) ? g.unread_by : [], last_from: g.last_from || null,
@@ -116,7 +140,7 @@ export default function ConversationsScreen({ navigation }) {
       try { const mc = await missedCallCount(); if (mounted.current) setMissedCalls(mc); } catch {}
     } catch { /* keep last */ }
     finally { if (mounted.current) setBooted(true); }
-  }, [user, lang]);
+  }, [user, lang, navigation]);
 
   useEffect(() => {
     mounted.current = true;
@@ -219,7 +243,7 @@ export default function ConversationsScreen({ navigation }) {
 
   const openConv = (c) => {
     if (c.mlsInvite) { navigation.navigate("PilotGroups"); return; }
-    if (c.mlsGroup) { navigation.navigate("PilotGroups", { group: { ...c.mlsGroup, title: c.title } }); return; }
+    if (c.mlsGroup) { navigation.navigate("PilotGroups", { group: { ...c.mlsGroup, title: c.title, avatar: c.avatar } }); return; }
     if (c.is_group) { navigation.navigate("ChannelDetail", { chan_id: c.conv_id, name: c.title }); return; }
     navigation.navigate("Chat", {
       conv_id: c.conv_id,

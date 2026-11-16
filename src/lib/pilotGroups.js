@@ -10,6 +10,14 @@ const queues = new Map();
 const PACKAGE_LIFETIME = 86_400_000;
 const PACKAGE_BATCH = 8;
 const MAX_LOCAL_HISTORY = 200;
+export const PILOT_GROUP_AVATAR_LIMIT = 32 * 1024;
+const profileScope = (id, epoch, op, author, profile) =>
+  JSON.stringify(["ultron-mls-profile-v1", id, epoch, op, author, profile]);
+function validProfile(profile) {
+  return profile && typeof profile.description === "string" && profile.description.length <= 512 &&
+    (profile.avatar === null || (typeof profile.avatar === "string" && profile.avatar.length <= PILOT_GROUP_AVATAR_LIMIT &&
+      /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(profile.avatar)));
+}
 const validNumber = (n) => Number.isSafeInteger(n) && n >= 0;
 const genesis = (server, id, admin) => JSON.stringify(["ultron-mls-group-v1", server, id, admin]);
 const welcomeScope = (server, group, epoch, recipient, packageId, wire, invitation) =>
@@ -248,9 +256,12 @@ async function flush(user, id, record, check) {
     throw new Error("Conferma MLS non valida.");
   }
   const updated = { ...record, epoch: ack.epoch, cursor: ack.seq, state: pending.snapshot, pending: null, lastAt: new Date().toISOString() };
-  if (pending.type === "title") updated.title = pending.text;
+  if (pending.type === "title") {
+    updated.title = pending.text;
+    if (pending.profile) updated.profile = pending.profile;
+  }
   else if (pending.body.kind === "message") {
-    updated.history = [...record.history, { seq: ack.seq, sender: user.lns, body: pending.text, poll: pending.poll }].slice(-MAX_LOCAL_HISTORY);
+    updated.history = [...record.history, { seq: ack.seq, sender: user.lns, body: pending.text, poll: pending.poll, draftId: pending.draftId }].slice(-MAX_LOCAL_HISTORY);
   }
   await setBlobDurably(key, updated);
   return updated;
@@ -264,7 +275,13 @@ async function sync(user, row, ctx) {
   let record = await getBlob(key);
   if (record && record.since < row.since) record = null;
   if (!record && row.since === 0) throw new Error("Le chiavi di questo gruppo sono su un’altra installazione.");
-  if (record) record = await flush(user, id, record, check);
+  if (record?.pending) {
+    try { record = await flush(user, id, record, check); }
+    catch (error) {
+      if (error?.response?.status !== 409) throw error;
+      record = { ...record, pending: null };
+    }
+  }
   for (let batch = 0; batch < 32; batch++) {
     check();
     const page = await api.mlsEvents(id, record?.cursor ?? row.since - 1);
@@ -301,9 +318,9 @@ async function sync(user, row, ctx) {
 
       if (event.seq !== record.cursor + 1) throw new Error("Mancano eventi nella chat di gruppo.");
       const decoded = await engine.receive(record.state, id, record.epoch, event, row.admin);
-      let history = record.history, title = record.title;
+      let history = record.history, title = record.title, groupProfile = record.profile;
       if (decoded.payload !== null) {
-        const { body, signature, type, poll, poll_signature } = JSON.parse(decoded.payload);
+        const { body, signature, type, poll, poll_signature, profile, profile_signature } = JSON.parse(decoded.payload);
         const author = await credentials.identityFor(event.author);
         if (typeof body !== "string" || !["text", "title"].includes(type) ||
             (type === "title" ? event.author !== row.admin || !body || body.length > 60 : body.length > 2000) || !/^[a-f0-9]{6618}$/.test(signature || "") ||
@@ -311,14 +328,19 @@ async function sync(user, row, ctx) {
             !verifyMessage(messageScope(id, record.epoch, event.op, event.author, type, body), signature, author)) {
           throw new Error("Firma del messaggio di gruppo non valida.");
         }
-        if (type === "title") title = body;
-        else {
+        if (type === "title") {
+          title = body;
+          if (validProfile(profile) && /^[a-f0-9]{6618}$/.test(profile_signature || "") &&
+              verifyMessage(profileScope(id, record.epoch, event.op, event.author, profile), profile_signature, author)) {
+            groupProfile = profile;
+          }
+        } else {
           const authenticatedPoll = validPoll(poll, event.op, body) && /^[a-f0-9]{6618}$/.test(poll_signature || "") &&
             verifyMessage(pollScope(id, record.epoch, event.op, event.author, poll), poll_signature, author);
           history = [...history, { seq: event.seq, sender: event.author, body, poll: authenticatedPoll ? poll : undefined }].slice(-MAX_LOCAL_HISTORY);
         }
       }
-      record = { ...record, cursor: event.seq, epoch: decoded.epoch, state: decoded.snapshot, history, title, lastAt: new Date().toISOString() };
+      record = { ...record, cursor: event.seq, epoch: decoded.epoch, state: decoded.snapshot, history, title, profile: groupProfile, lastAt: new Date().toISOString() };
       check();
       await setBlobDurably(key, record);
     }
@@ -360,85 +382,117 @@ export function createPilotGroup(user, name, visibility = "private") {
   });
 }
 
-export function openPilotGroup(user, row) {
+function detailsFor(engine, id, record) {
+  return { title: record.title, profile: record.profile, history: record.history,
+    members: engine.members(record.state, id, record.epoch) };
+}
+
+export function openPilotGroup(user, row, { read = false } = {}) {
   return serial(user, async () => {
     const ctx = await context(user);
     const record = await sync(user, row, ctx);
-    return { title: record.title, history: record.history, members: ctx.engine.members(record.state, row.id, record.epoch) };
+    if (read && record.readThrough !== record.cursor) {
+      ctx.check();
+      await setBlobDurably(blob(user, row.id), { ...record, readThrough: record.cursor });
+    }
+    return detailsFor(ctx.engine, row.id, record);
   });
 }
 
-export function updatePilotGroup(user, row, kind, value, invitation) {
+export function updatePilotGroup(user, row, kind, value, invitation, draftId) {
   return serial(user, async () => {
     const ctx = await context(user);
-    const { engine, check, credentials } = ctx;
-    const record = await sync(user, row, ctx);
-    const { id } = row;
-    const body = { op: randomHex(16), cursor: record.cursor, epoch: record.epoch, kind: ["title", "poll", "vote"].includes(kind) ? "message" : kind };
-    let update;
-    let text, type, poll;
-    if (body.kind === "message") {
-      type = kind === "title" ? "title" : "text";
-      if (kind === "poll") {
-        text = value.question.trim();
-        poll = { kind: "poll", id: body.op, options: value.options.map(option => option.trim()) };
-      } else if (kind === "vote") {
-        const original = record.history.find(item => item.poll?.kind === "poll" && item.poll.id === value.id);
-        if (!original || value.choice >= original.poll.options.length) throw new Error("Sondaggio non disponibile.");
-        text = "🗳";
-        poll = { kind: "vote", id: value.id, choice: value.choice };
-      } else {
-        text = value.trim();
+    for (let attempt = 0; ; attempt++) {
+      try { return await writePilotGroup(user, row, kind, value, invitation, draftId, ctx); }
+      catch (error) {
+        if (attempt || error?.response?.status !== 409 || !["message", "title", "profile", "poll", "vote"].includes(kind)) throw error;
       }
-      if (poll && !validPoll(poll, body.op, text)) throw new Error("Sondaggio non valido.");
-      if (!text || (type === "title" ? text.length > 60 || row.admin !== user.lns : text.length > 2000) || utf8Encode(text).length > 8000) throw new Error("Messaggio di gruppo non valido.");
-      const signature = signMessage(messageScope(id, record.epoch, body.op, user.lns, type, text), user.sk);
-      const poll_signature = poll ? signMessage(pollScope(id, record.epoch, body.op, user.lns, poll), user.sk) : undefined;
-      update = await engine.send(record.state, id, record.epoch, JSON.stringify({ body: text, signature, type, poll, poll_signature }));
-    } else if (kind === "add" || kind === "remove") {
-      if (row.admin !== user.lns) throw new Error("Solo l’amministratore può modificare i membri.");
-      body.target = value.trim().toLowerCase();
-      let keyPackage;
-      if (kind === "add") {
-        const members = engine.members(record.state, id, record.epoch);
-        if (members.includes(body.target)) return { title: record.title, history: record.history, members };
-        const identity = await credentials.identityFor(body.target);
-        if (!identity) throw new Error("Per questo contatto manca l’impronta della firma nel QR ULTRON.");
-        if (invitation) {
-          expectInvitation(invitation);
-          const consent = consentScope(user.server, id, invitation.id, user.lns, body.target, "accepted");
-          if (invitation.group !== id || invitation.inviter !== user.lns || invitation.target !== body.target ||
-              invitation.status !== "accepted" || !verifyMessage(consent, invitation.proof, identity)) {
-            throw new Error("Consenso del destinatario non verificato.");
-          }
-          body.invitation = invitation.id;
-        }
-        const claim = await api.mlsClaimPackage(body.target, body.op);
-        if (!/^[0-9a-f]{64}$/.test(claim?.id || "")) throw new Error("Pacchetto MLS non disponibile.");
-        body.package = claim.id;
-        keyPackage = claim.wire;
-      }
-      update = await engine.change(record.state, id, record.epoch, kind, body.target, keyPackage);
-      if (kind === "add") {
-        if (!update.welcome) throw new Error("Invito MLS non generato.");
-        body.welcome = update.welcome;
-        body.welcome_signature = signMessage(welcomeScope(user.server, id, record.epoch + 1, body.target, body.package, body.welcome, body.invitation), user.sk);
-      }
-    } else throw new Error("Operazione gruppo non valida.");
-
-    const pending = { body: { ...body, wire: update.wire }, snapshot: update.snapshot, text, type, poll };
-    const staged = { ...record, pending };
-    check();
-    await setBlobDurably(blob(user, id), staged);
-    const completed = await flush(user, id, staged, check);
-    return { title: completed.title, history: completed.history, members: engine.members(completed.state, id, completed.epoch) };
+    }
   });
+}
+
+async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx) {
+  const { engine, check, credentials } = ctx;
+  const record = await sync(user, row, ctx);
+  const { id } = row;
+  if (draftId && record.history.some(item => item.draftId === draftId)) return detailsFor(engine, id, record);
+  if (kind === "message" && draftId && engine.members(record.state, id, record.epoch).length < 2) {
+    throw new Error("Invita almeno un membro e attendi che l’ingresso sia completato.");
+  }
+  const body = { op: randomHex(16), cursor: record.cursor, epoch: record.epoch, kind: ["title", "profile", "poll", "vote"].includes(kind) ? "message" : kind };
+  let update;
+  let text, type, poll, profile;
+  if (body.kind === "message") {
+    type = ["title", "profile"].includes(kind) ? "title" : "text";
+    if (kind === "poll") {
+      text = value.question.trim();
+      poll = { kind: "poll", id: body.op, options: value.options.map(option => option.trim()) };
+    } else if (kind === "vote") {
+      const original = record.history.find(item => item.poll?.kind === "poll" && item.poll.id === value.id);
+      if (!original || value.choice >= original.poll.options.length) throw new Error("Sondaggio non disponibile.");
+      text = "🗳";
+      poll = { kind: "vote", id: value.id, choice: value.choice };
+    } else if (kind === "profile") {
+      text = record.title || row.title || "Gruppo";
+      profile = { description: value.description.trim(), avatar: value.avatar };
+      if (!validProfile(profile)) throw new Error("Descrizione o foto del gruppo non valida.");
+    } else {
+      text = value.trim();
+    }
+    if (poll && !validPoll(poll, body.op, text)) throw new Error("Sondaggio non valido.");
+    if (!text || (type === "title" ? text.length > 60 || row.admin !== user.lns : text.length > 2000) || utf8Encode(text).length > 8000) throw new Error("Messaggio di gruppo non valido.");
+    const signature = signMessage(messageScope(id, record.epoch, body.op, user.lns, type, text), user.sk);
+    const poll_signature = poll ? signMessage(pollScope(id, record.epoch, body.op, user.lns, poll), user.sk) : undefined;
+    const profile_signature = profile ? signMessage(profileScope(id, record.epoch, body.op, user.lns, profile), user.sk) : undefined;
+    update = await engine.send(record.state, id, record.epoch,
+      JSON.stringify({ body: text, signature, type, poll, poll_signature, profile, profile_signature }));
+  } else if (kind === "add" || kind === "remove") {
+    if (row.admin !== user.lns) throw new Error("Solo l’amministratore può modificare i membri.");
+    body.target = value.trim().toLowerCase();
+    let keyPackage;
+    if (kind === "add") {
+      const members = engine.members(record.state, id, record.epoch);
+      if (members.includes(body.target)) return detailsFor(engine, id, record);
+      const identity = await credentials.identityFor(body.target);
+      if (!identity) throw new Error("Per questo contatto manca l’impronta della firma nel QR ULTRON.");
+      if (invitation) {
+        expectInvitation(invitation);
+        const consent = consentScope(user.server, id, invitation.id, user.lns, body.target, "accepted");
+        if (invitation.group !== id || invitation.inviter !== user.lns || invitation.target !== body.target ||
+            invitation.status !== "accepted" || !verifyMessage(consent, invitation.proof, identity)) {
+          throw new Error("Consenso del destinatario non verificato.");
+        }
+        body.invitation = invitation.id;
+      }
+      const claim = await api.mlsClaimPackage(body.target, body.op);
+      if (!/^[0-9a-f]{64}$/.test(claim?.id || "")) throw new Error("Pacchetto MLS non disponibile.");
+      body.package = claim.id;
+      keyPackage = claim.wire;
+    }
+    update = await engine.change(record.state, id, record.epoch, kind, body.target, keyPackage);
+    if (kind === "add") {
+      if (!update.welcome) throw new Error("Invito MLS non generato.");
+      body.welcome = update.welcome;
+      body.welcome_signature = signMessage(welcomeScope(user.server, id, record.epoch + 1, body.target, body.package, body.welcome, body.invitation), user.sk);
+    }
+  } else throw new Error("Operazione gruppo non valida.");
+
+  const pending = { body: { ...body, wire: update.wire }, snapshot: update.snapshot, text, type, poll, profile, draftId };
+  const staged = { ...record, pending };
+  check();
+  await setBlobDurably(blob(user, id), staged);
+  const completed = await flush(user, id, staged, check);
+  return detailsFor(engine, id, completed);
 }
 
 
 export async function cachedPilotGroupSummary(user, row) {
   const record = await getBlob(blob(user, row.id));
-  return record?.since === row.since ? { title: record.title, lastAt: record.lastAt } : {};
+  if (record?.since !== row.since) return {};
+  const unread = record.history.filter(item => item.seq > (record.readThrough ?? row.since) &&
+    item.sender !== user.lns && item.poll?.kind !== "vote").length;
+  return { title: record.title, avatar: record.profile?.avatar, lastAt: record.lastAt, cursor: record.cursor, unread };
+
 }
 
 export async function cachedPilotGroupTitle(user, row) {
