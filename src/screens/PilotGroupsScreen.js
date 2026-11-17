@@ -3,6 +3,8 @@ import { ActivityIndicator, Alert, FlatList, Image, ScrollView, Share, StyleShee
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import EncryptedAttachment from "../components/EncryptedAttachment";
+import SafeText from "../components/SafeText";
+import ThreatBanner from "../components/ThreatBanner";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -15,6 +17,7 @@ import { contactAddress, matchesContact } from "../lib/contactAddress";
 import { pickAvatarDataUrl } from "../lib/avatar";
 import { base64ToBytes, encryptFileBytes, randomHex } from "../lib/crypto";
 import { withSystemActivity } from "../lib/lockGuard";
+import { analyzeMessage } from "../lib/threatEngine";
 import { usePoll } from "../lib/usePoll";
 import { getVerified } from "../lib/verify";
 import { announcePilotGroupProfile, cachedPilotGroupDetails, cachedPilotGroupTitle, createPilotGroup, decidePilotGroupInvitation, deliverPilotGroupInvitation, finishAcceptedPilotGroupInvites,
@@ -720,7 +723,8 @@ export default function PilotGroupsScreen({ navigation, route }) {
             <TouchableOpacity onPress={() => openProfile(item.sender)} accessibilityRole="button">
               <Text style={styles.sender}>{item.sender}{roleLabel(item.sender) ? " · " + roleLabel(item.sender) : ""}</Text>
             </TouchableOpacity>
-            <Text style={styles.text}>{item.body}</Text>
+            {!!item.body && <SafeText text={item.body} style={styles.text} lang={lang} />}
+            {!!item.body && <ThreatBanner result={analyzeMessage(item.body, lang)} lang={lang} context="Gruppo MLS" />}
             {!!item.attachment && renderAttachment(item)}
             {policy && canModerate(item.sender) && button(say("Rimuovi messaggio", "Remove message"),
               () => changePolicy({ action: "hide", seq: item.seq }))}

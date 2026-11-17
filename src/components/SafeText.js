@@ -21,7 +21,7 @@ export default function SafeText({ text = "", style, lang = "it" }) {
   }
   if (last < text.length) parts.push({ t: text.slice(last) });
 
-  const openSafe = (url) => {
+  const openInBrowser = (url) => {
     const full = /^https?:\/\//i.test(url) ? url : "https://" + url;
     Linking.openURL(full).catch(() => {});
   };
@@ -39,11 +39,21 @@ export default function SafeText({ text = "", style, lang = "it" }) {
         (lang === "en" ? "The Shield flagged this link as suspicious.\n\n" : "Lo Scudo ha segnalato questo link come sospetto.\n\n") + reasons,
         [
           { text: lang === "en" ? "Don't open" : "Non aprire", style: "cancel" },
-          { text: lang === "en" ? "Open anyway" : "Apri comunque", style: "destructive", onPress: () => openSafe(url) },
+          { text: lang === "en" ? "Open anyway" : "Apri comunque", style: "destructive", onPress: () => openChecked(url, true) },
         ]
       );
     }
   };
+
+  function openChecked(url, acceptedWarning = false) {
+    // The threat list can change while the message or warning dialog is open.
+    const result = scanUrl(url, lang);
+    if (result.level === "safe" || (result.level === "warn" && acceptedWarning)) {
+      openInBrowser(result.url);
+    } else {
+      onBlocked(result.url, result);
+    }
+  }
 
   return (
     <Text style={style}>
@@ -51,14 +61,14 @@ export default function SafeText({ text = "", style, lang = "it" }) {
         if (!p.url) return <Text key={i}>{p.t}</Text>;
         const res = scanUrl(p.url, lang);
         if (res.level === "safe") {
-          return <Text key={i} style={styles.linkSafe} onPress={() => openSafe(p.url)} testID="safe-link">{p.t}</Text>;
+          return <Text key={i} style={styles.linkSafe} onPress={() => openChecked(p.url)} testID="safe-link">{p.t}</Text>;
         }
         const danger = res.level === "danger";
         return (
           <Text
             key={i}
             style={[styles.linkBlocked, danger ? styles.linkDanger : styles.linkWarn]}
-            onPress={() => onBlocked(p.url, res)}
+            onPress={() => openChecked(p.url)}
             testID={danger ? "blocked-link-danger" : "blocked-link-warn"}
           >
             {danger ? "🔒 " : "⚠️ "}{p.t}

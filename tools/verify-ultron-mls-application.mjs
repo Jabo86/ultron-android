@@ -8,6 +8,7 @@ import * as cryptoLib from "../src/lib/crypto.js";
 import { createMlsSubtleCrypto } from "../src/lib/mlsMobileCrypto.js";
 import { groupAuthenticationService, signGroupCredential } from "../src/lib/groupMemberProof.js";
 import { createMlsGroupEngine } from "../src/lib/mlsGroupEngine.js";
+import { analyzeMessage, scanUrl, setThreatDomains, URL_RE } from "../src/lib/threatEngine.js";
 const { randomHex, keygen } = cryptoLib;
 Object.defineProperty(globalThis, "crypto", {
   value: { getRandomValues: webcrypto.getRandomValues.bind(webcrypto), subtle: createMlsSubtleCrypto() },
@@ -276,8 +277,54 @@ const renderGroup = runInNewContext(screen + "\nPilotGroupsScreen", {
   Ionicons: view("Ionicons"), Text: view("Text"), TextInput: view("TextInput"), View: view("View"),
   ScrollView: view("ScrollView"), TouchableOpacity: view("TouchableOpacity"), ActivityIndicator: view("ActivityIndicator"),
   KeyboardAvoidingView: view("KeyboardAvoidingView"), FlatList: view("FlatList"),
+  SafeText: view("SafeText"), ThreatBanner: view("ThreatBanner"), analyzeMessage,
 });
 for (const params of [{}, { group: row }, { inviteCode: "a".repeat(64) + "." + "b".repeat(64) }]) {
   assert.ok(renderGroup({ navigation: {}, route: { params } }));
 }
 console.log("Group list, conversation and invitation routes mount without runtime initialization errors.");
+
+function findView(element, match) {
+  if (!Array.isArray(element)) return null;
+  if (match(element)) return element;
+  for (const child of element) {
+    const found = findView(child, match);
+    if (found) return found;
+  }
+  return null;
+}
+const groupChat = renderGroup({ navigation: {}, route: { params: { group: row } } });
+const [, groupList] = findView(groupChat, node => node[0] === "FlatList");
+const link = "https://example.org/health";
+const message = "Conferma le tue credenziali: http://192.0.2.1/login";
+const messageRow = groupList.renderItem({ item: { seq: 1, sender: b.lns, body: message } });
+assert.equal(findView(messageRow, node => node[0] === "SafeText")?.[1]?.text, message);
+const banner = findView(messageRow, node => node[0] === "ThreatBanner")?.[1];
+assert.equal(banner?.context, "Gruppo MLS");
+assert.equal(banner?.result.level, "danger");
+
+const safeTextSource = readFileSync(new URL("../src/components/SafeText.js", import.meta.url), "utf8")
+  .replace(/^import\s+[^\n]+;\s*$/gm, "").replace(/^export default /m, "");
+const safeTextScript = babel.transformSync(safeTextSource, { babelrc: false, configFile: false, plugins: [jsx] }).code;
+const opened = [];
+let alertButtons;
+const renderSafeText = runInNewContext(safeTextScript + "\nSafeText", {
+  React: { createElement: (...args) => args }, Text: "Text", StyleSheet: { create: value => value },
+  URL_RE, scanUrl, Linking: { openURL: async url => { opened.push(url); } },
+  Alert: { alert: (_title, _body, buttons) => { alertButtons = buttons; } },
+});
+const pressLink = (node, id) => findView(node, element => element[1]?.testID === id)[1].onPress();
+pressLink(renderSafeText({ text: link }), "safe-link");
+assert.deepEqual(opened, [link]);
+pressLink(renderSafeText({ text: message }), "blocked-link-danger");
+assert.equal(alertButtons.length, 1);
+assert.deepEqual(opened, [link]);
+const shortLink = "https://bit.ly/example";
+pressLink(renderSafeText({ text: shortLink }), "blocked-link-warn");
+assert.equal(alertButtons.length, 2);
+setThreatDomains(["bit.ly"]);
+alertButtons[1].onPress();
+assert.equal(alertButtons.length, 1);
+assert.deepEqual(opened, [link]);
+setThreatDomains([]);
+console.log("Group text uses the local Shield, and dangerous links stay blocked even after the list changes.");
