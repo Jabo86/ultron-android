@@ -5,15 +5,15 @@ import { recordThreat } from "../lib/threatLog";
 
 // Banner rosso (pericolo) / ambra (attenzione) mostrato quando il motore
 // anti-minacce rileva un rischio in un messaggio o allegato.
-export default function ThreatBanner({ result, lang = "it", style, context = "Pulse" }) {
+export default function ThreatBanner({ result, lang = "it", style, context = "Pulse", logLocally = true }) {
   const active = result && result.level !== "safe" && result.reasons?.length;
   useEffect(() => {
     if (active) {
-      recordThreat({ level: result.level, reasons: result.reasons, context });
+      if (logLocally) recordThreat({ level: result.level, reasons: result.reasons, context });
       // Vibrazione di allerta quando lo Scudo rileva una minaccia grave.
       if (result.level === "danger") { try { Vibration.vibrate([0, 220, 90, 220]); } catch { /* ignore */ } }
     }
-  }, [active, result?.level, (result?.reasons || []).join("|"), context]);
+  }, [active, result?.level, (result?.reasons || []).join("|"), context, logLocally]);
   if (!active) return null;
   const danger = result.level === "danger";
   const c = danger ? "#FF4D5E" : "#50C878";

@@ -724,7 +724,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
               <Text style={styles.sender}>{item.sender}{roleLabel(item.sender) ? " · " + roleLabel(item.sender) : ""}</Text>
             </TouchableOpacity>
             {!!item.body && <SafeText text={item.body} style={styles.text} lang={lang} />}
-            {!!item.body && <ThreatBanner result={analyzeMessage(item.body, lang)} lang={lang} context="Gruppo MLS" />}
+            {!!item.body && <ThreatBanner result={analyzeMessage(item.body, lang)} lang={lang} logLocally={false} />}
             {!!item.attachment && renderAttachment(item)}
             {policy && canModerate(item.sender) && button(say("Rimuovi messaggio", "Remove message"),
               () => changePolicy({ action: "hide", seq: item.seq }))}

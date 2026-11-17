@@ -300,7 +300,7 @@ const message = "Conferma le tue credenziali: http://192.0.2.1/login";
 const messageRow = groupList.renderItem({ item: { seq: 1, sender: b.lns, body: message } });
 assert.equal(findView(messageRow, node => node[0] === "SafeText")?.[1]?.text, message);
 const banner = findView(messageRow, node => node[0] === "ThreatBanner")?.[1];
-assert.equal(banner?.context, "Gruppo MLS");
+assert.equal(banner?.logLocally, false);
 assert.equal(banner?.result.level, "danger");
 
 const safeTextSource = readFileSync(new URL("../src/components/SafeText.js", import.meta.url), "utf8")
