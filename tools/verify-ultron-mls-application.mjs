@@ -253,6 +253,18 @@ const [publicMemberRow]=await app.listPilotGroups();
 const publicDetails = await app.openPilotGroup(b,publicMemberRow);
 assert.equal(publicDetails.title,"Piazza ULTRON");
 assert.equal(publicDetails.profile.visibility,"public");
+actor = a;
+let replyRoot = await app.updatePilotGroup(a, publicGroup, "message", "Domanda di prova");
+const replySeq = replyRoot.history.at(-1).seq;
+actor = b;
+await assert.rejects(app.updatePilotGroup(b, publicMemberRow, "reply", { text: "Errore", seq: 999999 }), /originale/);
+const replyDetails = await app.updatePilotGroup(b, publicMemberRow, "reply", { text: "Risposta di prova", seq: replySeq });
+assert.equal(replyDetails.history.at(-1).replyTo, replySeq);
+actor = a;
+const peerReply = (await app.openPilotGroup(a, publicGroup)).history.at(-1);
+assert.equal(peerReply.replyTo, replySeq);
+assert.equal(peerReply.body, "Risposta di prova");
+
 console.log("Direct chat notice, delivery receipt and acceptance with delayed key publishing passed.");
 console.log("Three pilot clients: create, invite, signed text, scoped title, encrypted polls, signed consent, public listing, unread counts, encrypted profile and attachment, automatic invitation completion, removal and durable send retry passed.");
 
@@ -278,6 +290,8 @@ const renderGroup = runInNewContext(screen + "\nPilotGroupsScreen", {
   ScrollView: view("ScrollView"), TouchableOpacity: view("TouchableOpacity"), ActivityIndicator: view("ActivityIndicator"),
   KeyboardAvoidingView: view("KeyboardAvoidingView"), FlatList: view("FlatList"),
   SafeText: view("SafeText"), ThreatBanner: view("ThreatBanner"), analyzeMessage,
+  RecordingPresets: { HIGH_QUALITY: {} }, useAudioRecorder: () => ({}), useAudioRecorderState: () => ({}),
+  useMessagePreferences: () => ({ hidden: [], pinned: [] }),
 });
 for (const params of [{}, { group: row }, { inviteCode: "a".repeat(64) + "." + "b".repeat(64) }]) {
   assert.ok(renderGroup({ navigation: {}, route: { params } }));

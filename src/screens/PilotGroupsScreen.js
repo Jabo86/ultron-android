@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, Image, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Image, Keyboard, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio";
+import ChatMessageMenu from "../components/ChatMessageMenu";
+import { copyMessageText, shareMessageText, useMessagePreferences } from "../lib/chatMessageActions";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import EncryptedAttachment from "../components/EncryptedAttachment";
@@ -11,7 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../lib/i18n";
 import { useFocusEffect } from "@react-navigation/native";
-import { apiErr, contacts, mlsAction, mlsDeleteGroup, mlsRedeem, mlsReport, mlsReports, mlsReview,
+import { apiErr, blockContact, contacts, mlsAction, mlsDeleteGroup, mlsRedeem, mlsReport, mlsReports, mlsReview,
   mlsUpload } from "../lib/api";
 import { contactAddress, matchesContact } from "../lib/contactAddress";
 import { pickAvatarDataUrl } from "../lib/avatar";
@@ -63,6 +67,12 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const [moderate, setModerate] = useState(null);
   const [editTitle, setEditTitle] = useState("");
   const [message, setMessage] = useState("");
+  const [actionItem, setActionItem] = useState(null);
+  const [replyTarget, setReplyTarget] = useState(null);
+  const replyTo = replyTarget?.groupId === group?.id ? replyTarget : null;
+  const messagePreferences = useMessagePreferences(user, group?.id ? "group:" + group.id : null);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recording = useAudioRecorderState(recorder).isRecording;
   const draft = useRef(null);
   const [groupTab, setGroupTab] = useState("members");
   const [editing, setEditing] = useState(false);
@@ -74,9 +84,12 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const listRef = useRef(null);
   const stickToBottom = useRef(true);
   const history = useMemo(() => {
-    const hidden = new Set(policy?.hidden || []);
-    return presentPilotGroupHistory((details?.history || []).filter(item => !hidden.has(item.seq)), user?.lns);
-  }, [details, policy?.hidden, user?.lns]);
+    const hidden = new Set((policy?.hidden || []).map(String));
+    const localHidden = new Set(messagePreferences.hidden);
+    return presentPilotGroupHistory((details?.history || []).filter(item => !hidden.has(String(item.seq))), user?.lns)
+      .filter(item => !localHidden.has(String(item.seq)));
+  }, [details, policy?.hidden, messagePreferences.hidden, user?.lns]);
+  const historyBySequence = useMemo(() => new Map(history.map(item => [item.seq, item])), [history]);
   const [newGroup, setNewGroup] = useState(false);
   const [book, setBook] = useState([]);
   const [bookError, setBookError] = useState("");
@@ -276,17 +289,17 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const send = () => run(async () => {
     const text = message.trim();
     if (!text) return;
-    if (draft.current?.text !== text) draft.current = { text, id: randomHex(16) };
-    setDetails(await updatePilotGroup(user, group, "message", text, undefined, draft.current.id));
+    if (draft.current?.text !== text || draft.current?.replySeq !== replyTo?.seq) {
+      draft.current = { text, replySeq: replyTo?.seq, id: randomHex(16) };
+    }
+    setDetails(await updatePilotGroup(user, group, replyTo ? "reply" : "message",
+      replyTo ? { text, seq: replyTo.seq } : text, undefined, draft.current.id));
     draft.current = null;
     setMessage("");
+    setReplyTarget(null);
   });
-  const pickFile = () => run(async () => {
-    setComposerMenu(false);
-    if (!group) return;
-    const result = await withSystemActivity(() => DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true }));
-    if (result.canceled || !result.assets?.[0]) return;
-    const asset = result.assets[0];
+  const prepareFile = async (asset, removeCopy) => {
+    if (!group || !asset?.uri) return;
     try {
       const info = await FileSystem.getInfoAsync(asset.uri, { size: true });
       const size = info.size;
@@ -301,10 +314,48 @@ export default function PilotGroupsScreen({ navigation, route }) {
       const name = asset.name?.replace(/[\x00-\x1f\x7f]/g, "").trim().slice(0, 160) || say("Allegato", "Attachment");
       setFileDraft({ id: randomHex(16), groupId: group.id, attachment: { name, mime, size, data } });
     } finally {
-      if (FileSystem.cacheDirectory && asset.uri.startsWith(FileSystem.cacheDirectory)) {
+      if (removeCopy && FileSystem.cacheDirectory && asset.uri.startsWith(FileSystem.cacheDirectory)) {
         await FileSystem.deleteAsync(asset.uri, { idempotent: true }).catch(() => {});
       }
     }
+  };
+  const pickFile = () => run(async () => {
+    setComposerMenu(false);
+    const result = await withSystemActivity(() => DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true }));
+    if (!result.canceled) await prepareFile(result.assets?.[0], true);
+  });
+  const pickMedia = (source) => run(async () => {
+    setComposerMenu(false);
+    const camera = source !== "gallery";
+    if (camera && !(await withSystemActivity(() => ImagePicker.requestCameraPermissionsAsync())).granted) {
+      throw new Error(say("Permesso fotocamera negato.", "Camera permission denied."));
+    }
+    const result = await withSystemActivity(() => camera
+      ? ImagePicker.launchCameraAsync({ mediaTypes: source === "video" ? ["videos"] : ["images"], quality: 0.5, videoMaxDuration: 15 })
+      : ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images", "videos"], quality: 0.5 }));
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    const video = asset.type === "video";
+    await prepareFile({ ...asset, name: asset.fileName || (video ? "video.mp4" : "foto.jpg"),
+      mimeType: asset.mimeType || (video ? "video/mp4" : "image/jpeg") }, true);
+  });
+  const startVoice = () => run(async () => {
+    setComposerMenu(false);
+    if (!(await withSystemActivity(() => AudioModule.requestRecordingPermissionsAsync())).granted) {
+      throw new Error(say("Permesso microfono negato.", "Microphone permission denied."));
+    }
+    await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
+    await recorder.prepareToRecordAsync();
+    recorder.record();
+  });
+  const stopVoice = keep => run(async () => {
+    try {
+      await recorder.stop();
+      if (keep) await prepareFile({ uri: recorder.uri, name: "vocale.m4a", mimeType: "audio/mp4" }, true);
+      else if (FileSystem.cacheDirectory && recorder.uri?.startsWith(FileSystem.cacheDirectory)) {
+        await FileSystem.deleteAsync(recorder.uri, { idempotent: true });
+      }
+    } finally { await setAudioModeAsync({ allowsRecording: false }); }
   });
   const sendFile = () => run(async () => {
     if (!fileDraft) return;
@@ -430,6 +481,39 @@ export default function PilotGroupsScreen({ navigation, route }) {
     setGroupTab("members"); setEditing(false); setManage(true); setComposerMenu(false);
   };
 
+  const localAction = (field, item, enabled) => {
+    setActionItem(null);
+    run(() => messagePreferences.set(field, item.seq, enabled));
+  };
+  const groupTextAction = (item, handle) => {
+    setActionItem(null);
+    run(() => handle(item.body));
+  };
+  const hideGroupMessage = item => {
+    setActionItem(null);
+    Alert.alert(say("Elimina per tutti?", "Delete for everyone?"),
+      say("Il messaggio verrà rimosso dalla vista del gruppo.", "The message will be removed from the group view."),
+      [{ text: say("Annulla", "Cancel"), style: "cancel" },
+        { text: say("Elimina", "Delete"), style: "destructive", onPress: () => changePolicy({ action: "hide", seq: item.seq }) }]);
+  };
+  const reportGroupMessage = item => {
+    setActionItem(null);
+    Alert.alert(say("Segnalare il messaggio?", "Report message?"),
+      say("Ai moderatori saranno inviati solo il mittente e il riferimento del messaggio.",
+        "Only the sender and message reference will be sent to moderators."),
+      [{ text: say("Annulla", "Cancel"), style: "cancel" }, { text: say("Segnala", "Report"), onPress: () => run(async () => {
+        await mlsReport(group.id, { target: item.sender, reason: "Messaggio MLS #" + item.seq });
+        Alert.alert("ULTRON", say("Segnalazione inviata.", "Report sent."));
+      }) }]);
+  };
+  const blockGroupPeer = item => {
+    setActionItem(null);
+    Alert.alert(say("Bloccare il contatto?", "Block contact?"),
+      say("Blocca il contatto in privato. I messaggi nel gruppo restano visibili.",
+        "Blocks private contact. Shared group messages remain visible."),
+      [{ text: say("Annulla", "Cancel"), style: "cancel" }, { text: say("Blocca", "Block"), style: "destructive",
+        onPress: () => run(() => blockContact(item.sender, true)) }]);
+  };
   const openProfile = (peer) => navigation.navigate("Profilo", { peer });
 
   const button = (label, onPress, { primary = false, disabled = busy } = {}) => (
@@ -719,15 +803,20 @@ export default function PilotGroupsScreen({ navigation, route }) {
           ListEmptyComponent={<Text style={styles.empty}>{details
             ? say("I nuovi messaggi compariranno qui.", "New messages will appear here.")
             : say("Sincronizzazione della chat…", "Syncing the chat…")}</Text>} keyExtractor={item => String(item.seq)} contentContainerStyle={styles.messages}
-          renderItem={({item}) => <View style={[styles.message, item.sender === user.lns && styles.ownMessage]}>
+          renderItem={({item}) => <TouchableOpacity activeOpacity={0.85} accessibilityRole="button"
+            onLongPress={() => setActionItem(item)} testID="mls-message"
+            style={[styles.message, item.sender === user.lns && styles.ownMessage]}>
             <TouchableOpacity onPress={() => openProfile(item.sender)} accessibilityRole="button">
               <Text style={styles.sender}>{item.sender}{roleLabel(item.sender) ? " · " + roleLabel(item.sender) : ""}</Text>
             </TouchableOpacity>
+            {messagePreferences.pinned.includes(String(item.seq)) && <Text style={styles.pinned}>📌 {say("Fissato", "Pinned")}</Text>}
+            {item.replyTo && <View style={styles.quote}>
+              <Text style={styles.sender} numberOfLines={1}>{historyBySequence.get(item.replyTo)?.sender || say("Risposta", "Reply")}</Text>
+              <Text style={styles.dim} numberOfLines={2}>{historyBySequence.get(item.replyTo)?.body || say("Messaggio originale non disponibile.", "Original message unavailable.")}</Text>
+            </View>}
             {!!item.body && <SafeText text={item.body} style={styles.text} lang={lang} />}
             {!!item.body && <ThreatBanner result={analyzeMessage(item.body, lang)} lang={lang} logLocally={false} />}
             {!!item.attachment && renderAttachment(item)}
-            {policy && canModerate(item.sender) && button(say("Rimuovi messaggio", "Remove message"),
-              () => changePolicy({ action: "hide", seq: item.seq }))}
             {item.poll?.kind === "poll" && <View style={styles.poll}>
               {item.poll.options.map((option, index) => (
                 <TouchableOpacity key={option} accessibilityRole="button" accessibilityState={{ disabled: busy, selected: index === item.choice }}
@@ -737,7 +826,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
                 </TouchableOpacity>
               ))}
             </View>}
-          </View>}
+          </TouchableOpacity>}
         />
         {pollEditor && <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 260 }} contentContainerStyle={styles.pollEditor}>
           <TextInput {...inputProps} style={styles.input} placeholder={say("Domanda", "Question")}
@@ -754,9 +843,16 @@ export default function PilotGroupsScreen({ navigation, route }) {
                 new Set(choices.map(choice => choice.trim())).size !== choices.length })}
           </View>
         </ScrollView>}
-        {composerMenu && <View style={styles.menu}>
-          {button(say("Allegati", "Attachments") + (policy ? " · 1 MiB" : " · 96 KB"), pickFile)}
+        {composerMenu && <View style={[styles.menu, styles.attachments]} testID="mls-attach-menu">
+          {button(say("Fotocamera", "Camera"), () => pickMedia("photo"))}
+          {button(say("Video", "Video"), () => pickMedia("video"))}
+          {button(say("Galleria", "Gallery"), () => pickMedia("gallery"))}
+          {button(say("File", "File"), pickFile)}
           {button(say("Sondaggio", "Poll"), () => { setComposerMenu(false); setPollEditor(value => !value); })}
+        </View>}
+        {replyTo && <View style={styles.menu}>
+          <Text style={[styles.dim, { flex: 1 }]} numberOfLines={2}>{say("Risposta a ", "Reply to ") + replyTo.sender + " · " + replyTo.body}</Text>
+          {iconButton("close", say("Annulla risposta", "Cancel reply"), () => setReplyTarget(null))}
         </View>}
         {fileDraft && <View style={styles.menu}>
           <Text numberOfLines={1} style={[styles.text, styles.fileName]}>{fileDraft.attachment.name}</Text>
@@ -769,14 +865,49 @@ export default function PilotGroupsScreen({ navigation, route }) {
             say("Rinnovo delle chiavi del gruppo in corso.", "Group keys are being rotated.") :
             say("Sarai in grado di scrivere quando sarà entrato almeno un altro membro.", "You can write once another member has joined.")}</Text> :
             <View style={styles.composerRow}>
-              {iconButton(composerMenu ? "close" : "add", say("Allegati e sondaggi", "Attachments and polls"),
-                () => { setPollEditor(false); setComposerMenu(value => !value); }, busy || !hasRecipients || !!fileDraft)}
-              <TextInput {...inputProps} style={[styles.input, styles.composeInput]} placeholder={say("Scrivi un messaggio", "Write a message")}
-                editable={!busy && hasRecipients} accessibilityLabel={say("Scrivi un messaggio", "Write a message")}
-                maxLength={2000} multiline value={message} onChangeText={setMessage} />
-              {iconButton("send", say("Invia", "Send"), send, busy || !hasRecipients || !message.trim())}
+              {recording ? <>
+                {iconButton("trash-outline", say("Annulla vocale", "Discard voice message"), () => stopVoice(false), busy)}
+                <Text style={[styles.dim, { flex: 1 }]}>{say("Registrazione…", "Recording…")}</Text>
+                {iconButton("checkmark", say("Prepara vocale", "Prepare voice message"), () => stopVoice(true), busy)}
+              </> : <>
+                <TouchableOpacity style={styles.attachButton} accessibilityRole="button" testID="mls-attach"
+                  accessibilityLabel={say("Allegati e sondaggi", "Attachments and polls")}
+                  disabled={busy || !hasRecipients || !!fileDraft}
+                  onPress={() => { Keyboard.dismiss(); setPollEditor(false); setComposerMenu(value => !value); }}>
+                  <Ionicons name={composerMenu ? "close-circle-outline" : "add-circle-outline"} size={26} color={theme.primary} />
+                </TouchableOpacity>
+                <TextInput {...inputProps} style={[styles.input, styles.composeInput]} placeholder={say("Scrivi un messaggio", "Write a message")}
+                  editable={!busy && hasRecipients} accessibilityLabel={say("Scrivi un messaggio", "Write a message")}
+                  maxLength={2000} multiline value={message} onChangeText={setMessage} onFocus={() => setComposerMenu(false)}
+                  onSubmitEditing={send} submitBehavior="submit" returnKeyType="send" />
+                <TouchableOpacity accessibilityRole="button" style={styles.sendButton}
+                  accessibilityLabel={message.trim() ? say("Invia", "Send") : say("Microfono", "Microphone")}
+                  testID={message.trim() ? "mls-send" : "mls-mic"} disabled={busy || !hasRecipients || !!fileDraft}
+                  onPress={message.trim() ? send : startVoice}>
+                  <Ionicons name={message.trim() ? "arrow-up" : "mic-outline"} size={20} color={theme.onAccent} />
+                </TouchableOpacity>
+              </>}
             </View>}
         </View>
+        {actionItem && <ChatMessageMenu onClose={() => setActionItem(null)} actions={[
+          { key: "mls-action-reply", label: say("Rispondi", "Reply"), icon: "arrow-undo-outline",
+            action: () => { setReplyTarget({ ...actionItem, groupId: group.id }); setActionItem(null); } },
+          actionItem.body && { key: "mls-action-copy", label: say("Copia", "Copy"), icon: "copy-outline",
+            action: () => groupTextAction(actionItem, copyMessageText) },
+          actionItem.body && { key: "mls-action-share", label: say("Condividi", "Share"), icon: "share-social-outline",
+            action: () => groupTextAction(actionItem, shareMessageText) },
+          { key: "mls-action-pin", label: messagePreferences.pinned.includes(String(actionItem.seq)) ? say("Rimuovi da fissati", "Unpin") : say("Fissa messaggio", "Pin message"),
+            icon: "bookmark-outline", action: () => localAction("pinned", actionItem, !messagePreferences.pinned.includes(String(actionItem.seq))) },
+          actionItem.sender !== user.lns && policy && { key: "mls-action-report", label: say("Segnala", "Report"),
+            icon: "flag-outline", action: () => reportGroupMessage(actionItem) },
+          actionItem.sender !== user.lns && { key: "mls-action-block", label: say("Blocca contatto", "Block contact"),
+            icon: "ban-outline", danger: true, action: () => blockGroupPeer(actionItem) },
+          { key: "mls-action-delete-me", label: say("Elimina per me", "Delete for me"), icon: "trash-outline",
+            danger: true, action: () => { if (replyTo?.seq === actionItem.seq) setReplyTarget(null); localAction("hidden", actionItem, true); } },
+          policy && (actionItem.sender === user.lns || canModerate(actionItem.sender)) &&
+            { key: "mls-action-delete-all", label: say("Elimina per tutti", "Delete for everyone"), icon: "trash-outline",
+              danger: true, action: () => hideGroupMessage(actionItem) },
+        ]} />}
       </>}
     </KeyboardAvoidingView>
   );
@@ -823,18 +954,23 @@ const styles = StyleSheet.create({
   buttonText: { color: theme.text, fontSize: 14, fontWeight: "700" },
   primaryText: { color: theme.onAccent },
   messageList: { flex: 1 },
-  messages: { flexGrow: 1, justifyContent: "flex-end", padding: 12, gap: 8 },
+  messages: { flexGrow: 1, justifyContent: "flex-end", paddingHorizontal: 14, paddingVertical: 10, gap: 8 },
   empty: { color: theme.textDim, textAlign: "center", padding: 14 },
   sender: { color: theme.primary, fontSize: 13, fontWeight: "700" },
-  message: { alignSelf: "flex-start", maxWidth: "88%", padding: 12, gap: 4, backgroundColor: theme.bubbleThem,
+  message: { alignSelf: "flex-start", maxWidth: "80%", paddingHorizontal: 14, paddingVertical: 10, gap: 4, backgroundColor: theme.bubbleThem,
     borderRadius: 14, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: theme.border },
   ownMessage: { alignSelf: "flex-end", backgroundColor: theme.accentWash, borderBottomLeftRadius: 14,
     borderBottomRightRadius: 4, borderColor: theme.accentLine },
   poll: { gap: 6, marginTop: 6 },
   pollEditor: { padding: 12, gap: 6 },
-  composer: { paddingHorizontal: 8, paddingTop: 8, backgroundColor: theme.surface, borderTopWidth: 1, borderColor: theme.border },
+  composer: { paddingHorizontal: 12, paddingTop: 10, backgroundColor: theme.surface, borderTopWidth: 1, borderColor: theme.border },
   menu: { flexDirection: "row", alignItems: "center", padding: 8, gap: 6, backgroundColor: theme.surface },
   fileName: { flex: 1 },
-  composerRow: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
+  composerRow: { flexDirection: "row", alignItems: "flex-end", gap: 10 },
+  attachButton: { width: 40, height: 44, alignItems: "center", justifyContent: "center" },
+  sendButton: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: theme.primary },
+  attachments: { flexWrap: "wrap" },
+  quote: { borderLeftWidth: 3, borderLeftColor: theme.accentLine, paddingLeft: 8, marginBottom: 4 },
+  pinned: { color: theme.accent, fontSize: 11, fontWeight: "700" },
   composeInput: { flex: 1, maxHeight: 120 },
 });

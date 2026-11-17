@@ -27,18 +27,21 @@ class DeviceInfoModule(private val ctx: ReactApplicationContext) : ReactContextB
   }
 
   @ReactMethod
-  fun copyRecoveryWords(words: String, promise: Promise) {
+  fun copyRecoveryWords(words: String, promise: Promise) = copySensitiveText(words, promise)
+
+  @ReactMethod
+  fun copySensitiveText(text: String, promise: Promise) {
     try {
       val clipboard = ctx.getSystemService(ClipboardManager::class.java)
         ?: throw IllegalStateException("Clipboard unavailable")
-      val clip = ClipData.newPlainText("ULTRON", words)
+      val clip = ClipData.newPlainText("ULTRON", text)
       clip.description.extras = PersistableBundle().apply {
         putBoolean("android.content.extra.IS_SENSITIVE", true)
       }
       clipboard.setPrimaryClip(clip)
       promise.resolve(null)
     } catch (error: Exception) {
-      promise.reject("RECOVERY_COPY_FAILED", "Could not copy the recovery words", error)
+      promise.reject("COPY_FAILED", "Could not copy sensitive text", error)
     }
   }
 

@@ -64,6 +64,7 @@ const consentScope = (server, group, invitation, inviter, target, decision) =>
 const inviteTitleScope = (server, id, group, inviter, target, title) =>
   JSON.stringify(["ultron-mls-invite-title-v1", server, id, group, inviter, target, title]);
 const messageScope = (id, epoch, op, author, type, body) => JSON.stringify(["ultron-mls-message-v1", id, epoch, op, author, type, body]);
+const replyScope = (id, epoch, op, author, seq) => JSON.stringify(["ultron-mls-reply-v1", id, epoch, op, author, seq]);
 const pollScope = (id, epoch, op, author, poll) => JSON.stringify(["ultron-mls-poll-v1", id, epoch, op, author, poll]);
 const validPollId = (id) => typeof id === "string" && /^[0-9a-f]{32}$/.test(id);
 const validChoice = (value, limit) => typeof value === "string" && value.trim() === value && value.length > 0 && value.length <= limit;
@@ -335,7 +336,7 @@ async function flush(user, id, record, check) {
   }
   else if (pending.body.kind === "message") {
     updated.history = appendHistory(record.history, { seq: ack.seq, sender: user.lns, body: pending.text, poll: pending.poll,
-      attachment: pending.attachment, draftId: pending.draftId });
+      attachment: pending.attachment, replyTo: pending.replyTo, draftId: pending.draftId });
   }
   if (pending.nextMembers) updated.members = pending.nextMembers;
   else if (pending.body.kind !== "message") delete updated.members;
@@ -398,7 +399,7 @@ async function sync(user, row, ctx) {
       const decoded = await engine.receive(record.state, id, record.epoch, event, row.admin);
       let history = record.history, title = record.title, groupProfile = record.profile;
       if (decoded.payload !== null) {
-        const { body, signature, type, poll, poll_signature, profile, profile_signature, attachment, attachment_signature, title: managedTitle } = JSON.parse(decoded.payload);
+        const { body, signature, type, poll, poll_signature, profile, profile_signature, attachment, attachment_signature, reply_to, reply_signature, title: managedTitle } = JSON.parse(decoded.payload);
         const author = await credentials.identityFor(event.author);
         if (typeof body !== "string" || !["text", "title"].includes(type) ||
             (type === "title" ? event.author !== row.admin || !body || body.length > 60 : body.length > 2000) || !/^[a-f0-9]{6618}$/.test(signature || "") ||
@@ -420,7 +421,10 @@ async function sync(user, row, ctx) {
           const authenticatedAttachment = validAttachment(attachment) &&
             (!attachment.id || event.file === attachment.id) && /^[a-f0-9]{6618}$/.test(attachment_signature || "") &&
             verifyMessage(attachmentScope(id, record.epoch, event.op, event.author, attachment), attachment_signature, author);
-          history = appendHistory(history, { seq: event.seq, sender: event.author, body, poll: authenticatedPoll ? poll : undefined,
+          const replyTo = Number.isSafeInteger(reply_to) && reply_to > 0 && reply_to < event.seq &&
+            /^[a-f0-9]{6618}$/.test(reply_signature || "") &&
+            verifyMessage(replyScope(id, record.epoch, event.op, event.author, reply_to), reply_signature, author) ? reply_to : undefined;
+          history = appendHistory(history, { seq: event.seq, sender: event.author, body, replyTo, poll: authenticatedPoll ? poll : undefined,
             attachment: authenticatedAttachment ? attachment : undefined });
         }
       }
@@ -552,7 +556,7 @@ export function updatePilotGroup(user, row, kind, value, invitation, draftId) {
     for (let attempt = 0; ; attempt++) {
       try { return await writePilotGroup(user, row, kind, value, invitation, draftId, ctx); }
       catch (error) {
-        if (attempt || error?.response?.status !== 409 || !["message", "title", "profile", "managed-profile", "poll", "vote", "attachment"].includes(kind)) throw error;
+        if (attempt || error?.response?.status !== 409 || !["message", "reply", "title", "profile", "managed-profile", "poll", "vote", "attachment"].includes(kind)) throw error;
       }
     }
   });
@@ -563,15 +567,21 @@ async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx,
   const record = current || await sync(user, row, ctx);
   const { id } = row;
   if (draftId && record.history.some(item => item.draftId === draftId)) return detailsFor(engine, id, record);
-  if (["message", "attachment"].includes(kind) && draftId && engine.members(record.state, id, record.epoch).length < 2) {
+  if (["message", "reply", "attachment"].includes(kind) && draftId && engine.members(record.state, id, record.epoch).length < 2) {
     throw new Error("Invita almeno un membro e attendi che l’ingresso sia completato.");
   }
-  const body = { op: randomHex(16), cursor: record.cursor, epoch: record.epoch, kind: ["title", "profile", "managed-profile", "poll", "vote", "attachment"].includes(kind) ? "message" : kind };
+  const body = { op: randomHex(16), cursor: record.cursor, epoch: record.epoch, kind: ["reply", "title", "profile", "managed-profile", "poll", "vote", "attachment"].includes(kind) ? "message" : kind };
   let update;
-  let text, type, poll, profile, attachment, managedTitle;
+  let text, type, poll, profile, attachment, managedTitle, replyTo;
   if (body.kind === "message") {
     type = ["title", "profile"].includes(kind) ? "title" : "text";
-    if (kind === "poll") {
+    if (kind === "reply") {
+      if (!Number.isSafeInteger(value.seq) || !record.history.some(item => item.seq === value.seq && item.poll?.kind !== "vote")) {
+        throw new Error("Messaggio originale non disponibile.");
+      }
+      text = value.text.trim();
+      replyTo = value.seq;
+    } else if (kind === "poll") {
       text = value.question.trim();
       poll = { kind: "poll", id: body.op, options: value.options.map(option => option.trim()) };
     } else if (kind === "vote") {
@@ -605,8 +615,10 @@ async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx,
     const profile_signature = profile ? signMessage(profileScope(id, record.epoch, body.op, user.lns, managedTitle ? { title: managedTitle, profile } : profile), user.sk) : undefined;
     const attachment_signature = attachment
       ? signMessage(attachmentScope(id, record.epoch, body.op, user.lns, attachment), user.sk) : undefined;
+    const reply_signature = replyTo ? signMessage(replyScope(id, record.epoch, body.op, user.lns, replyTo), user.sk) : undefined;
     update = await engine.send(record.state, id, record.epoch,
-      JSON.stringify({ body: text, signature, type, poll, poll_signature, profile, profile_signature, attachment, attachment_signature, title: managedTitle }));
+      JSON.stringify({ body: text, signature, type, poll, poll_signature, profile, profile_signature, attachment, attachment_signature,
+        reply_to: replyTo, reply_signature, title: managedTitle }));
   } else if (kind === "add" || kind === "remove") {
     if (row.admin !== user.lns) throw new Error("Solo l’amministratore può modificare i membri.");
     body.target = value.trim().toLowerCase();
@@ -639,8 +651,8 @@ async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx,
   } else throw new Error("Operazione gruppo non valida.");
 
   const nextMembers = body.kind === "message" ? undefined : engine.members(update.snapshot, id, record.epoch + 1);
-  const pending = { body: { ...body, wire: update.wire }, snapshot: update.snapshot, text, type, poll, profile, attachment, managedTitle, draftId, nextMembers,
-    silent: !["message", "attachment", "poll"].includes(kind) };
+  const pending = { body: { ...body, wire: update.wire }, snapshot: update.snapshot, text, type, poll, profile, attachment, managedTitle, replyTo, draftId, nextMembers,
+    silent: !["message", "reply", "attachment", "poll"].includes(kind) };
   const staged = { ...record, pending };
   check();
   await setBlobDurably(blob(user, id), staged);

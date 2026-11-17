@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from "react";
 import {
   View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
-  ActivityIndicator, Alert, AppState, Keyboard, Modal, Pressable, InteractionManager,
+  ActivityIndicator, Alert, AppState, Keyboard, InteractionManager,
 } from "react-native";
+import ChatMessageMenu from "../components/ChatMessageMenu";
+import { copyMessageText, shareMessageText, useMessagePreferences } from "../lib/chatMessageActions";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import * as ImagePicker from "expo-image-picker";
 import * as imageOpt from "../lib/imageOpt";
@@ -250,6 +252,8 @@ export default function ChatScreen({ route, navigation }) {
   }, [navigation, title, convId, others, exporting, onExport, vfy, user, lang]);
 
   const pilot = hostedRatchetPilot(user);
+  const messagePreferences = useMessagePreferences(pilot ? user : null, convId ? "direct:" + convId : null);
+  const visibleMessages = useMemo(() => msgs.filter(item => !messagePreferences.hidden.includes(String(item.id))), [msgs, messagePreferences.hidden]);
   const deletingChat = useRef(false);
   const deletionRevision = useRef(0);
   const shownGeneration = useRef(null);
@@ -304,14 +308,55 @@ export default function ChatScreen({ route, navigation }) {
 
   const onMessageActions = (item) => setActionItem(item);
   const doReact = async (it, e) => { setActionItem(null); try { await api.pulseReact(it.id, e); await load(convId); } catch (err) { setErr(api.apiErr(err)); } };
-  const doDelete = async (it, scope) => { setActionItem(null); try { await api.deleteMessage(it.id, scope); await load(convId); } catch (e) { setErr(api.apiErr(e)); } };
+  const doDelete = (it, scope) => {
+    setActionItem(null);
+    const all = scope === "all";
+    Alert.alert(all ? t("chat.deleteForAll") : t("chat.deleteForMe"),
+      lang === "en" ? "Remove this message from the conversation?" : "Rimuovere questo messaggio dalla conversazione?",
+      [{ text: t("cancel"), style: "cancel" }, { text: t("delete"), style: "destructive", onPress: async () => {
+        try {
+          if (!pilot || it.serverBacked) await api.deleteMessage(it.id, scope);
+          if (pilot) await messagePreferences.set("hidden", it.id, true);
+          if (it.sendFailed) sendingRef.current = sendingRef.current.filter(row => row.id !== it.id);
+          msgsSig.current = "";
+          setMsgs(rows => rows.filter(row => row.id !== it.id));
+          setReplyTo(reply => reply?.id === it.id ? null : reply);
+          if (convId) await load(convId);
+        } catch (error) { setErr(api.apiErr(error)); }
+      } }]);
+  };
   const startEdit = (it) => { setActionItem(null); if (!it.mine || !it.body) return; setReplyTo(null); setEditing({ id: it.id }); setText(it.body); };
-  const doPin = async (it) => { setActionItem(null); try { await api.pinMessage(it.id, !it.pinned); await load(convId); } catch (e) { setErr(api.apiErr(e)); } };
+  const isPinned = it => pilot ? messagePreferences.pinned.includes(String(it.id)) : it.pinned;
+  const doPin = async (it) => {
+    setActionItem(null);
+    try {
+      if (pilot) await messagePreferences.set("pinned", it.id, !isPinned(it));
+      else { await api.pinMessage(it.id, !it.pinned); await load(convId); }
+    } catch (error) { setErr(api.apiErr(error)); }
+  };
+  const withMessageText = async (item, action) => {
+    setActionItem(null);
+    try { await action(item.body); } catch (error) { setErr(api.apiErr(error)); }
+  };
+  const blockPeer = () => {
+    setActionItem(null);
+    if (!peer) return;
+    Alert.alert(lang === "en" ? "Block contact?" : "Bloccare il contatto?", peer, [
+      { text: t("cancel"), style: "cancel" },
+      { text: lang === "en" ? "Block" : "Blocca", style: "destructive", onPress: async () => {
+        try {
+          await api.blockContact(peer, true);
+          Alert.alert("ULTRON", lang === "en" ? "Contact blocked." : "Contatto bloccato.");
+        } catch (error) { setErr(api.apiErr(error)); }
+      } },
+    ]);
+  };
   const doReport = (it) => {
     setActionItem(null);
     Alert.alert(
       lang === "en" ? "Report message" : "Segnala messaggio",
-      lang === "en" ? "Report this message to moderators?" : "Segnalare questo messaggio ai moderatori?",
+      pilot ? (lang === "en" ? "Send only the message reference to the gateway?" : "Inviare al gateway solo il riferimento del messaggio?")
+        : (lang === "en" ? "Report this message to moderators?" : "Segnalare questo messaggio ai moderatori?"),
       [{ text: t("cancel"), style: "cancel" }, { text: lang === "en" ? "Report" : "Segnala", style: "destructive", onPress: async () => { try { await api.reportMessage(it.id, ""); Alert.alert("OK", lang === "en" ? "Reported. Thank you." : "Segnalato. Grazie."); } catch (e) { setErr(api.apiErr(e)); } } }]
     );
   };
@@ -458,7 +503,7 @@ export default function ChatScreen({ route, navigation }) {
           }
         }
         if (m.hidden === true) continue;
-        out.push({ id: m.message_id, mine: !!m.mine, body, atts, reply, signed, groupInvite, reactions: Array.isArray(m.reactions) ? m.reactions : [], ttl: ttlv, at: m.sent_at || m.created_at, delivered: !!m.delivered, read: !!m.read, edited: !!m.edited, pinned: !!m.pinned });
+        out.push({ id: m.message_id, serverBacked: true, mine: !!m.mine, body, atts, reply, signed, groupInvite, reactions: Array.isArray(m.reactions) ? m.reactions : [], ttl: ttlv, at: m.sent_at || m.created_at, delivered: !!m.delivered, read: !!m.read, edited: !!m.edited, pinned: !!m.pinned });
       }
       // Messaggi arrivati per cassetta anonima: vivono solo qui, cifrati sul telefono.
       try {
@@ -876,8 +921,6 @@ export default function ChatScreen({ route, navigation }) {
   const onChangeText = (t) => {
     const now = Date.now();
     if (convId && now - typingRef.current > 2500) { typingRef.current = now; api.pulseTyping(convId).catch(() => {}); }
-    // Invio dalla tastiera: il tasto "invio" spedisce il messaggio.
-    if (t.endsWith("\n")) { const clean = t.slice(0, -1); setText(clean); setTimeout(() => onSend(clean), 0); return; }
     setText(t);
   };
 
@@ -994,7 +1037,7 @@ export default function ChatScreen({ route, navigation }) {
 
   const renderItem = useCallback(({ item, index }) => (
     <>
-      {(index === 0 || dayKeyOf(item.at) !== dayKeyOf((msgs[index - 1] || {}).at)) && (
+      {(index === 0 || dayKeyOf(item.at) !== dayKeyOf((visibleMessages[index - 1] || {}).at)) && (
         <View style={styles.dayRow} testID={"chat-day-" + dayKeyOf(item.at)}>
           <View style={styles.dayLine} />
           <Text style={styles.dayText}>{dayLabelOf(item.at, lang, t)}</Text>
@@ -1011,7 +1054,7 @@ export default function ChatScreen({ route, navigation }) {
       <View style={[styles.bubble, item.mine ? styles.bubbleMe : styles.bubbleThem,
         // Colore d'accento scelto dall'utente, applicato alla bolla dei propri messaggi.
         item.mine ? { backgroundColor: accent + "22", borderColor: accent + "59" } : null]}>
-        {item.pinned && (<Text style={styles.pinnedTag} testID="msg-pinned">📌 {lang === "en" ? "Pinned" : "Fissato"}</Text>)}
+        {isPinned(item) && (<Text style={styles.pinnedTag} testID="msg-pinned">📌 {lang === "en" ? "Pinned" : "Fissato"}</Text>)}
         {item.reply && (
           <View style={styles.quote}>
             <Text style={styles.quoteName} numberOfLines={1}>{item.reply.name}</Text>
@@ -1063,7 +1106,7 @@ export default function ChatScreen({ route, navigation }) {
       </View>
     </TouchableOpacity>
     </>
-  ), [styles, onMessageActions, accent, lang, translations, toggleTr, msgs, t, renderGroupInvite]);
+  ), [styles, onMessageActions, accent, lang, translations, toggleTr, visibleMessages, messagePreferences.pinned, pilot, t, renderGroupInvite]);
 
   return (
     <KeyboardAvoidingView behavior="padding" keyboardVerticalOffset={headerHeight} style={styles.root}>
@@ -1091,7 +1134,7 @@ export default function ChatScreen({ route, navigation }) {
         <FlatList
           ref={listRef}
           style={{ flex: 1, backgroundColor: chatBg }}
-          data={msgs}
+          data={visibleMessages}
           keyExtractor={(m) => m.id}
           renderItem={renderItem}
           initialNumToRender={12}
@@ -1188,56 +1231,8 @@ export default function ChatScreen({ route, navigation }) {
           <Text style={styles.uploadTxt} testID="chat-upload-pct">{Math.round(uploadPct * 100)}%</Text>
         </View>
       )}
-      <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-        {recState.isRecording ? (
-          <View style={styles.recRow} testID="chat-recording">
-            <TouchableOpacity onPress={cancelRec} style={styles.recCancel} testID="rec-cancel"><Ionicons name="trash-outline" size={20} color="#FF6B7A" /></TouchableOpacity>
-            <View style={styles.recDot} />
-            <Text style={styles.recTime}>{mmss((recState.durationMillis || 0) / 1000)}</Text>
-            <Text style={styles.recHint}>{lang === "en" ? "Recording…" : "Registrazione…"}</Text>
-            <TouchableOpacity onPress={stopRecAndSend} style={styles.sendBtn} disabled={sending} testID="rec-send">
-              {sending ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="send-outline" size={18} color="#fff" />}
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <>
-            <TouchableOpacity style={styles.attachBtn} onPress={toggleAttachMenu} disabled={sending} testID="chat-attach">
-              <Ionicons name="add-circle-outline" size={26} color={tint} />
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.ttlBtn, ttl > 0 && styles.ttlBtnOn]} onPress={cycleTtl} testID="chat-ttl">
-              <Ionicons name="timer-outline" size={16} color={ttl > 0 ? "#fff" : theme.textDim} />
-              <Text style={[styles.ttlTxt, ttl > 0 && { color: "#fff" }]}>{ttlLabel(ttl)}</Text>
-            </TouchableOpacity>
-            <TextInput
-              style={styles.input}
-              placeholder={t("chat.placeholder")}
-              placeholderTextColor={theme.textFaint}
-              value={text}
-              onChangeText={onChangeText}
-              onSubmitEditing={() => onSend()}
-              onFocus={() => { setShowAttachMenu(false); setTimeout(() => scrollToEnd(true), 250); setTimeout(() => scrollToEnd(false), 550); }}
-              selectionColor={tint}
-              cursorColor={theme.text}
-              keyboardAppearance="dark"
-              returnKeyType="send"
-              blurOnSubmit={false}
-              multiline
-              testID="chat-input"
-            />
-            {text.trim() ? (
-              <TouchableOpacity style={[styles.sendBtn, sending && { opacity: 0.5 }]} onPress={() => onSend()} disabled={sending} testID="chat-send">
-                {sending ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.sendText}>↑</Text>}
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity style={[styles.sendBtn, sending && { opacity: 0.5 }]} onPress={startRec} disabled={sending} testID="chat-mic">
-                <Ionicons name="mic-outline" size={20} color="#fff" />
-              </TouchableOpacity>
-            )}
-          </>
-        )}
-      </View>
       {showAttachMenu && (
-        <View style={[styles.attachMenu, { bottom: 60 + Math.max(insets.bottom, 10) }]} testID="chat-attach-menu">
+        <View style={styles.attachMenu} testID="chat-attach-menu">
           <TouchableOpacity style={styles.attachItem} onPress={() => runAttach(takePhoto)} disabled={sending} testID="chat-attach-photo">
             <Ionicons name="camera-outline" size={20} color={tint} />
             <Text style={styles.attachItemText}>{lang === "en" ? "Camera" : "Fotocamera"}</Text>
@@ -1256,61 +1251,93 @@ export default function ChatScreen({ route, navigation }) {
           </TouchableOpacity>
         </View>
       )}
-      {actionItem && (
-        <Modal visible transparent animationType="fade" onRequestClose={() => setActionItem(null)}>
-          <Pressable style={styles.sheetWrap} onPress={() => setActionItem(null)}>
-            <Pressable style={styles.sheet}>
-              {!pilot && <View style={styles.emojiRow}>
-                {["👍", "❤️", "😂", "😮", "😢", "🙏"].map((em) => (
-                  <TouchableOpacity key={em} style={styles.emojiBtn} testID={`chat-react-${em}`} onPress={() => doReact(actionItem, em)}>
-                    <Text style={styles.emojiText}>{em}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>}
-              <TouchableOpacity style={styles.sheetItem} testID="chat-action-reply" onPress={() => { const it = actionItem; setActionItem(null); setReplyTo({ id: it.id, name: it.mine ? (user?.lns?.split("@")[0] || "?") : title, text: (it.body || "").slice(0, 140) }); }}>
-                <Ionicons name="arrow-undo-outline" size={18} color={theme.text} />
-                <Text style={styles.sheetItemText}>{t("chat.reply")}</Text>
+      <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+        {recState.isRecording ? (
+          <View style={styles.recRow} testID="chat-recording">
+            <TouchableOpacity onPress={cancelRec} style={styles.recCancel} testID="rec-cancel"><Ionicons name="trash-outline" size={20} color="#FF6B7A" /></TouchableOpacity>
+            <View style={styles.recDot} />
+            <Text style={styles.recTime}>{mmss((recState.durationMillis || 0) / 1000)}</Text>
+            <Text style={styles.recHint}>{lang === "en" ? "Recording…" : "Registrazione…"}</Text>
+            <TouchableOpacity onPress={stopRecAndSend} style={styles.sendBtn} disabled={sending} testID="rec-send">
+              {sending ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="send-outline" size={18} color="#fff" />}
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <>
+            <TouchableOpacity style={styles.attachBtn} onPress={toggleAttachMenu} disabled={sending} accessibilityRole="button" accessibilityLabel={lang === "en" ? "Add attachment" : "Aggiungi allegato"} testID="chat-attach">
+              <Ionicons name={showAttachMenu ? "close-circle-outline" : "add-circle-outline"} size={26} color={tint} />
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.ttlBtn, ttl > 0 && styles.ttlBtnOn]} onPress={cycleTtl} testID="chat-ttl">
+              <Ionicons name="timer-outline" size={16} color={ttl > 0 ? "#fff" : theme.textDim} />
+              <Text style={[styles.ttlTxt, ttl > 0 && { color: "#fff" }]}>{ttlLabel(ttl)}</Text>
+            </TouchableOpacity>
+            <TextInput
+              style={styles.input}
+              placeholder={t("chat.placeholder")}
+              placeholderTextColor={theme.textFaint}
+              value={text}
+              onChangeText={onChangeText}
+              onSubmitEditing={() => onSend()}
+              onFocus={() => { setShowAttachMenu(false); setTimeout(() => scrollToEnd(true), 250); setTimeout(() => scrollToEnd(false), 550); }}
+              selectionColor={tint}
+              cursorColor={theme.text}
+              keyboardAppearance="dark"
+              returnKeyType="send"
+              submitBehavior="submit"
+              multiline
+              testID="chat-input"
+            />
+            {text.trim() ? (
+              <TouchableOpacity style={[styles.sendBtn, sending && { opacity: 0.5 }]} onPress={() => onSend()} disabled={sending} accessibilityRole="button" accessibilityLabel={lang === "en" ? "Send" : "Invia"} testID="chat-send">
+                {sending ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.sendText}>↑</Text>}
               </TouchableOpacity>
-              {!pilot && actionItem.mine && !!actionItem.body && (
-                <TouchableOpacity style={styles.sheetItem} testID="chat-action-edit" onPress={() => startEdit(actionItem)}>
-                  <Ionicons name="create-outline" size={18} color={theme.text} />
-                  <Text style={styles.sheetItemText}>{lang === "en" ? "Edit" : "Modifica"}</Text>
-                </TouchableOpacity>
-              )}
-              {!!actionItem.body && (
-                <TouchableOpacity style={styles.sheetItem} testID="chat-action-translate" onPress={() => { const it = actionItem; setActionItem(null); onTranslate(it); }}>
-                  <Ionicons name="language-outline" size={18} color={theme.text} />
-                  <Text style={styles.sheetItemText}>{(lang === "en" ? "Translate text" : "Traduci testo")}{(() => { const dl = detectLang(actionItem.body); return dl ? "  " + langFlag(dl) : ""; })()}</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity style={styles.sheetItem} testID="chat-action-forward" onPress={() => { const it = actionItem; setActionItem(null); navigation.navigate("Forward", { text: it.body || "", atts: it.atts || [] }); }}>
-                <Ionicons name="arrow-redo-outline" size={18} color={theme.text} />
-                <Text style={styles.sheetItemText}>{lang === "en" ? "Forward" : "Inoltra"}</Text>
+            ) : (
+              <TouchableOpacity style={[styles.sendBtn, sending && { opacity: 0.5 }]} onPress={startRec} disabled={sending} accessibilityRole="button" accessibilityLabel={lang === "en" ? "Microphone" : "Microfono"} testID="chat-mic">
+                <Ionicons name="mic-outline" size={20} color="#fff" />
               </TouchableOpacity>
-              {!pilot && <TouchableOpacity style={styles.sheetItem} testID="chat-action-pin" onPress={() => doPin(actionItem)}>
-                <Ionicons name={actionItem.pinned ? "bookmark" : "bookmark-outline"} size={18} color={theme.text} />
-                <Text style={styles.sheetItemText}>{actionItem.pinned ? (lang === "en" ? "Unpin message" : "Rimuovi da fissati") : (lang === "en" ? "Pin message" : "Fissa messaggio")}</Text>
-              </TouchableOpacity>}
-              {!pilot && !actionItem.mine && (
-                <TouchableOpacity style={styles.sheetItem} testID="chat-action-report" onPress={() => doReport(actionItem)}>
-                  <Ionicons name="flag-outline" size={18} color={theme.text} />
-                  <Text style={styles.sheetItemText}>{lang === "en" ? "Report" : "Segnala"}</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity style={styles.sheetItem} testID="chat-action-delete-me" onPress={() => doDelete(actionItem, "me")}>
-                <Ionicons name="trash-outline" size={18} color={theme.text} />
-                <Text style={styles.sheetItemText}>{pilot ? (lang === "en" ? "Hide for me" : "Nascondi per me") : t("chat.deleteForMe")}</Text>
-              </TouchableOpacity>
-              {actionItem.mine && (
-                <TouchableOpacity style={styles.sheetItem} testID="chat-action-delete-all" onPress={() => doDelete(actionItem, "all")}>
-                  <Ionicons name="trash-outline" size={18} color={theme.danger} />
-                  <Text style={[styles.sheetItemText, { color: theme.danger }]}>{pilot ? (lang === "en" ? "Hide for both" : "Nascondi per entrambi") : t("chat.deleteForAll")}</Text>
-                </TouchableOpacity>
-              )}
-            </Pressable>
-          </Pressable>
-        </Modal>
-      )}
+            )}
+          </>
+        )}
+      </View>
+      {actionItem && <ChatMessageMenu onClose={() => setActionItem(null)} actions={[
+        { key: "chat-action-reply", label: t("chat.reply"), icon: "arrow-undo-outline", action: () => {
+          const item = actionItem;
+          setActionItem(null);
+          setReplyTo({ id: item.id, name: item.mine ? (user?.lns?.split("@")[0] || "?") : title,
+            text: (item.body || "").slice(0, 140) });
+        } },
+        actionItem.body && { key: "chat-action-copy", label: lang === "en" ? "Copy" : "Copia", icon: "copy-outline",
+          action: () => withMessageText(actionItem, copyMessageText) },
+        actionItem.body && { key: "chat-action-share", label: lang === "en" ? "Share" : "Condividi", icon: "share-social-outline",
+          action: () => withMessageText(actionItem, shareMessageText) },
+        !pilot && actionItem.mine && actionItem.body && { key: "chat-action-edit", label: lang === "en" ? "Edit" : "Modifica",
+          icon: "create-outline", action: () => startEdit(actionItem) },
+        actionItem.body && { key: "chat-action-translate", label: (lang === "en" ? "Translate text" : "Traduci testo") +
+          (detectLang(actionItem.body) ? "  " + langFlag(detectLang(actionItem.body)) : ""),
+          icon: "language-outline", action: () => { const item = actionItem; setActionItem(null); onTranslate(item); } },
+        { key: "chat-action-forward", label: lang === "en" ? "Forward" : "Inoltra", icon: "arrow-redo-outline",
+          action: () => { const item = actionItem; setActionItem(null); navigation.navigate("Forward", { text: item.body || "", atts: item.atts || [] }); } },
+        !actionItem.sendingLocal && { key: "chat-action-pin", label: isPinned(actionItem)
+          ? (lang === "en" ? "Unpin" : "Rimuovi da fissati") : (lang === "en" ? "Pin message" : "Fissa messaggio"),
+          icon: isPinned(actionItem) ? "bookmark" : "bookmark-outline", action: () => doPin(actionItem) },
+        !actionItem.mine && (!pilot || actionItem.serverBacked) && { key: "chat-action-report", label: lang === "en" ? "Report" : "Segnala",
+          icon: "flag-outline", action: () => doReport(actionItem) },
+        !actionItem.mine && peer && { key: "chat-action-block", label: lang === "en" ? "Block contact" : "Blocca contatto",
+          icon: "ban-outline", danger: true, action: blockPeer },
+        !actionItem.sendingLocal && { key: "chat-action-delete-me", label: t("chat.deleteForMe"),
+          icon: "trash-outline", danger: true, action: () => doDelete(actionItem, "me") },
+        actionItem.mine && !actionItem.sendingLocal && (!pilot || actionItem.serverBacked) &&
+          { key: "chat-action-delete-all", label: t("chat.deleteForAll"), icon: "trash-outline", danger: true,
+            action: () => doDelete(actionItem, "all") },
+      ]}>
+        {!pilot && <View style={styles.emojiRow}>
+          {["👍", "❤️", "😂", "😮", "😢", "🙏"].map(em => (
+            <TouchableOpacity key={em} style={styles.emojiBtn} testID={`chat-react-${em}`} onPress={() => doReact(actionItem, em)}>
+              <Text style={styles.emojiText}>{em}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>}
+      </ChatMessageMenu>}
     </KeyboardAvoidingView>
   );
 }
@@ -1344,7 +1371,7 @@ const makeStyles = (tint) => StyleSheet.create({
   replyBarText: { color: theme.textDim, fontSize: 13 },
   ticks: { flexDirection: "row", justifyContent: "flex-end", marginTop: 3, marginRight: -2 },
   attachBtn: { width: 40, height: 44, alignItems: "center", justifyContent: "center" },
-  attachMenu: { position: "absolute", left: 10, backgroundColor: theme.surfaceAlt, borderColor: theme.border, borderWidth: 1, borderRadius: 14, paddingVertical: 6, minWidth: 180, shadowColor: "#000", shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 8, zIndex: 20 },
+  attachMenu: { flexDirection: "row", flexWrap: "wrap", gap: 6, padding: 8, backgroundColor: theme.surfaceAlt },
   attachItem: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, paddingHorizontal: 16 },
   attachItemText: { color: theme.text, fontSize: 15, fontWeight: "600" },
   attachIcon: { fontSize: 22 },
@@ -1364,13 +1391,9 @@ const makeStyles = (tint) => StyleSheet.create({
   recTime: { color: theme.text, fontSize: 15, fontWeight: "800", minWidth: 44 },
   recHint: { flex: 1, color: theme.textDim, fontSize: 13 },
   reactRow: { flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 5 },
-  sheetWrap: { flex: 1, backgroundColor: "#0009", justifyContent: "flex-end" },
-  sheet: { backgroundColor: theme.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 14, paddingBottom: 30, borderTopWidth: 1, borderColor: theme.border },
   emojiRow: { flexDirection: "row", justifyContent: "space-around", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.border, marginBottom: 6 },
   emojiBtn: { padding: 6 },
   emojiText: { fontSize: 28 },
-  sheetItem: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14, paddingHorizontal: 6 },
-  sheetItemText: { color: theme.text, fontSize: 16, fontWeight: "600" },
   reactChip: { backgroundColor: "rgba(0,0,0,0.25)", borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2 },
   reactTxt: { color: "#fff", fontSize: 13, fontWeight: "700" },
   ttlTag: { color: "rgba(255,255,255,0.6)", fontSize: 10, marginTop: 4, fontWeight: "700" },
