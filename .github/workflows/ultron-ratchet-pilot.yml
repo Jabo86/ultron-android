@@ -29,7 +29,11 @@ jobs:
       - name: Install dependencies and verify pilot
         run: |
           npm ci --legacy-peer-deps --no-fund
-          npm audit --audit-level=low
+          audit_report="$RUNNER_TEMP/ultron-pilot-audit.json"
+          status=0
+          npm audit --audit-level=low --json > "$audit_report" || status=$?
+          if (( status > 1 )); then exit "$status"; fi
+          node tools/verify-ultron-pilot-dependencies.mjs audit "$audit_report"
           node tools/verify-ultron-hosted-ratchet-receive.mjs
           node tools/verify-ultron-hosted-prekeys.mjs
           node tools/verify-ultron-ratchet-history.mjs
@@ -64,6 +68,8 @@ jobs:
           badging=$("$tools/aapt" dump badging "$apk")
           grep -Fq "versionCode='${EXPO_PUBLIC_ULTRON_VERSION_CODE}'" <<< "$badging"
           grep -Fq "versionName='3.5.20-pilot.${EXPO_PUBLIC_ULTRON_VERSION_CODE}'" <<< "$badging"
+          node tools/verify-ultron-pilot-dependencies.mjs bundle \
+            android/app/build/generated/sourcemaps/react/release/index.android.bundle.map
           "$tools/apksigner" verify "$apk"
           mkdir -p dist
           asset="dist/ULTRON-Ratchet-Pilota-${EXPO_PUBLIC_ULTRON_VERSION_CODE}.apk"
