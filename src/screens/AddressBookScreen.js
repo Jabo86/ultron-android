@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl,
+  View, Text, StyleSheet, SectionList, TouchableOpacity, RefreshControl,
   TextInput, ActivityIndicator, Alert, Modal, Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -15,6 +15,27 @@ import { useUnread } from "../context/UnreadContext";
 import { getVerified } from "../lib/verify";
 
 import { RATCHET_PILOT } from "../config";
+
+const contactName = (contact) => contact.display_name?.trim() || contact.lns.split("@")[0];
+
+function alphabeticalSections(contacts, locale) {
+  const collator = new Intl.Collator(locale, { sensitivity: "base", numeric: true });
+  const byInitial = new Map();
+  for (const contact of contacts) {
+    const name = contactName(contact);
+    const normalized = name.normalize("NFD").replace(/\p{M}/gu, "").normalize("NFC");
+    const initial = normalized.toLocaleUpperCase(locale).match(/^\p{L}/u)?.[0] || "#";
+    if (!byInitial.has(initial)) byInitial.set(initial, []);
+    byInitial.get(initial).push(contact);
+  }
+  return [...byInitial.entries()]
+    .sort(([a], [b]) => a === "#" ? 1 : b === "#" ? -1 : collator.compare(a, b))
+    .map(([title, data]) => ({
+      key: title,
+      title,
+      data: data.sort((a, b) => collator.compare(contactName(a), contactName(b)) || a.lns.localeCompare(b.lns)),
+    }));
+}
 
 export default function AddressBookScreen({ navigation, route }) {
   const tint = useTint();
@@ -77,6 +98,7 @@ export default function AddressBookScreen({ navigation, route }) {
   const filtered = useMemo(() => (sq
     ? base.filter((c) => c.lns.includes(sq) || (c.display_name || "").toLowerCase().includes(sq) || (c.company_name || "").toLowerCase().includes(sq))
     : base), [base, sq]);
+  const sections = useMemo(() => alphabeticalSections(filtered, lang), [filtered, lang]);
 
   const candidate = api.normalizeLns(q);
   const canAdd = candidate.includes("@") && /\.(lns|uns)$/.test(candidate) && !contacts.some((c) => c.lns === candidate);
@@ -167,6 +189,8 @@ export default function AddressBookScreen({ navigation, route }) {
     finally { setAdding(false); }
   };
 
+  const openProfile = (c) => navigation.navigate("Profilo", { peer: c.lns });
+  const profileLabel = (c) => (lang === "en" ? "View profile: " : "Vedi profilo: ") + contactName(c);
   const startChat = (c) => navigation.navigate("Chat", {
     conv_id: null, others: [c.lns], title: c.display_name || c.lns.split("@")[0], title_lns: c.lns,
   });
@@ -241,11 +265,14 @@ export default function AddressBookScreen({ navigation, route }) {
       <Text style={styles.reqTitle}>{t("book.incoming") + " · " + incoming.length}</Text>
       {incoming.map((c) => (
         <View key={c.lns} style={styles.reqRow} testID="rubrica-incoming-row">
-          <Avatar seed={c.lns} label={c.display_name || c.lns} uri={c.avatar || undefined} />
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={styles.name} numberOfLines={1}>{t("book.incomingFrom", { name: c.display_name || c.lns.split("@")[0] })}</Text>
-            <Text style={styles.lns} numberOfLines={1}>{c.lns}</Text>
-          </View>
+          <TouchableOpacity style={styles.profileTouch} accessibilityRole="button"
+            accessibilityLabel={profileLabel(c)} onPress={() => openProfile(c)} testID="rubrica-incoming-profile">
+            <Avatar seed={c.lns} label={c.display_name || c.lns} uri={c.avatar || undefined} />
+            <View style={styles.info}>
+              <Text style={styles.name} numberOfLines={1}>{t("book.incomingFrom", { name: contactName(c) })}</Text>
+              <Text style={styles.lns} numberOfLines={1}>{c.lns}</Text>
+            </View>
+          </TouchableOpacity>
           {reqBusy === c.lns ? <ActivityIndicator color={theme.accent} /> : (
             <>
               <TouchableOpacity style={styles.reqAccept} onPress={() => acceptRequest(c)} testID="rubrica-accept-btn">
@@ -267,24 +294,27 @@ export default function AddressBookScreen({ navigation, route }) {
       <TouchableOpacity onPress={() => toggleFav(item)} testID="rubrica-fav-btn" hitSlop={8} style={styles.starBtn}>
         <Ionicons name={item.favorite ? "star" : "star-outline"} size={18} color={item.favorite ? "#50C878" : theme.textFaint} />
       </TouchableOpacity>
-      <Avatar seed={item.lns} label={item.display_name || item.lns} online={!!item.online} uri={item.avatar || undefined} />
-      <View style={styles.info}>
-        <View style={styles.nameRow}>
-          <Text style={styles.name} numberOfLines={1}>{item.display_name || item.lns.split("@")[0]}</Text>
-          {!item.same_company && !item.blind && <View style={styles.extTag}><Text style={styles.extTagTxt}>{item.company_name || t("rubrica.external")}</Text></View>}
-        </View>
-        <Text style={styles.lns} numberOfLines={1}>
-          {item.lns}
-          {item.department ? <Text style={styles.dept}>{"  ·  " + item.department}</Text> : null}
-        </Text>
-        {item.mutual === false && (
-          <Text style={styles.mutualHint} numberOfLines={2} testID="rubrica-mutual-hint">
-            {item.in_my_book === false
-              ? (lang === "en" ? "Not in your address book — add to write" : "Non è in rubrica: aggiungilo per scrivere")
-              : (lang === "en" ? "Waiting for them to add you back: messages are blocked until then" : "In attesa che ti aggiunga: fino ad allora i messaggi sono bloccati")}
+      <TouchableOpacity style={styles.profileTouch} accessibilityRole="button"
+        accessibilityLabel={profileLabel(item)} onPress={() => openProfile(item)} testID="rubrica-profile-btn">
+        <Avatar seed={item.lns} label={item.display_name || item.lns} online={!!item.online} uri={item.avatar || undefined} />
+        <View style={styles.info}>
+          <View style={styles.nameRow}>
+            <Text style={styles.name} numberOfLines={1}>{contactName(item)}</Text>
+            {!item.same_company && !item.blind && <View style={styles.extTag}><Text style={styles.extTagTxt}>{item.company_name || t("rubrica.external")}</Text></View>}
+          </View>
+          <Text style={styles.lns} numberOfLines={1}>
+            {item.lns}
+            {item.department ? <Text style={styles.dept}>{"  ·  " + item.department}</Text> : null}
           </Text>
-        )}
-      </View>
+          {item.mutual === false && (
+            <Text style={styles.mutualHint} numberOfLines={2} testID="rubrica-mutual-hint">
+              {item.in_my_book === false
+                ? (lang === "en" ? "Not in your address book — add to write" : "Non è in rubrica: aggiungilo per scrivere")
+                : (lang === "en" ? "Waiting for them to add you back: messages are blocked until then" : "In attesa che ti aggiunga: fino ad allora i messaggi sono bloccati")}
+            </Text>
+          )}
+        </View>
+      </TouchableOpacity>
       {item.in_my_book === false ? (
         <TouchableOpacity style={[styles.action, { borderColor: theme.accent }]} onPress={() => addFromDirectory(item.lns)} disabled={adding} testID="rubrica-add-btn">
           <Ionicons name="person-add-outline" size={18} color={theme.accent} />
@@ -348,15 +378,22 @@ export default function AddressBookScreen({ navigation, route }) {
             {"DIRECTORY ULTRON" + (dirBusy ? " …" : "")}
           </Text>
           {dirResults.slice(0, 8).map((d) => (
-            <TouchableOpacity key={d.lns} style={styles.dirRow} onPress={() => addFromDirectory(d.lns)} disabled={adding} testID="rubrica-directory-row">
-              <Avatar seed={d.lns} label={d.display_name || d.lns} uri={d.avatar || undefined} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.name} numberOfLines={1}>{d.display_name || d.lns.split("@")[0]}</Text>
-                <Text style={styles.lns} numberOfLines={1}>{d.lns}</Text>
-                {!!(d.headline || d.bio) && <Text style={styles.dirBio} numberOfLines={1}>{d.headline || d.bio}</Text>}
-              </View>
-              <Ionicons name="person-add-outline" size={18} color={theme.accent} />
-            </TouchableOpacity>
+            <View key={d.lns} style={styles.dirRow} testID="rubrica-directory-row">
+              <TouchableOpacity style={styles.profileTouch} accessibilityRole="button"
+                accessibilityLabel={profileLabel(d)} onPress={() => openProfile(d)} testID="rubrica-directory-profile">
+                <Avatar seed={d.lns} label={d.display_name || d.lns} uri={d.avatar || undefined} />
+                <View style={styles.info}>
+                  <Text style={styles.name} numberOfLines={1}>{contactName(d)}</Text>
+                  <Text style={styles.lns} numberOfLines={1}>{d.lns}</Text>
+                  {!!(d.headline || d.bio) && <Text style={styles.dirBio} numberOfLines={1}>{d.headline || d.bio}</Text>}
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.action} accessibilityRole="button"
+                accessibilityLabel={t("rubrica.addExternal", { lns: d.lns })} onPress={() => addFromDirectory(d.lns)}
+                disabled={adding} testID="rubrica-directory-add">
+                <Ionicons name="person-add-outline" size={18} color={theme.accent} />
+              </TouchableOpacity>
+            </View>
           ))}
         </View>
       )}
@@ -364,11 +401,15 @@ export default function AddressBookScreen({ navigation, route }) {
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={tint} /></View>
       ) : (
-        <FlatList
+        <SectionList
           ListHeaderComponent={requestsBlock}
-          data={filtered}
+          sections={sections}
           keyExtractor={(c) => c.lns}
           renderItem={renderItem}
+          renderSectionHeader={({ section }) => (
+            <Text accessibilityRole="header" style={styles.letter} testID="rubrica-letter">{section.title}</Text>
+          )}
+          stickySectionHeadersEnabled
           contentContainerStyle={{ paddingBottom: 24 }}
           ItemSeparatorComponent={() => <View style={styles.sep} />}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={tint} />}
@@ -382,7 +423,7 @@ export default function AddressBookScreen({ navigation, route }) {
               <Text style={styles.sheetTitle} numberOfLines={1}>{menuFor.display_name || menuFor.lns}</Text>
               <Text style={styles.sheetSub} numberOfLines={1}>{menuFor.lns}</Text>
               <TouchableOpacity style={styles.sheetItem} testID="rubrica-menu-profile"
-                onPress={() => { const peer = menuFor.lns; setMenuFor(null); navigation.navigate("Profilo", { peer }); }}>
+                onPress={() => { setMenuFor(null); openProfile(menuFor); }}>
                 <Ionicons name="person-circle-outline" size={19} color={theme.text} />
                 <Text style={styles.sheetItemTxt}>{lang === "en" ? "View profile" : "Vedi profilo"}</Text>
               </TouchableOpacity>
@@ -443,6 +484,9 @@ const makeStyles = (tint) => StyleSheet.create({
   reqIgnore: { borderWidth: 1, borderColor: theme.danger + "66", borderRadius: 9, paddingHorizontal: 9, paddingVertical: 7 },
   delBtn: { paddingHorizontal: 6, paddingVertical: 8 },
   row: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 18, paddingVertical: 12 },
+  profileTouch: { flex: 1, minWidth: 0, minHeight: 44, flexDirection: "row", alignItems: "center", gap: 10 },
+  letter: { paddingVertical: 6, paddingHorizontal: 18, backgroundColor: theme.surface,
+    color: tint, fontSize: 14, fontWeight: "800" },
   info: { flex: 1, minWidth: 0 },
   nameRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   name: { color: theme.text, fontSize: 15, fontWeight: "600", flexShrink: 1 },
