@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   Alert, View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator,
-  ScrollView, Switch, KeyboardAvoidingView, Platform,
+  ScrollView, Switch, KeyboardAvoidingView, NativeModules, Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -37,9 +37,24 @@ export default function SignupScreen({ navigation, route }) {
   const [showKeyExport, setShowKeyExport] = useState(false);
   const [created, setCreated] = useState(null); // { keyfile, lns_name }
   const [saved, setSaved] = useState(false);
+  const [wordsConfirmed, setWordsConfirmed] = useState(false);
+  const [copyStatus, setCopyStatus] = useState("");
   const [reviewPhrase, setReviewPhrase] = useState("");
   const tRef = useRef(null);
   const pending = useRef(null);
+  const submitting = useRef(false);
+
+  const signupError = (error) => {
+    if (["ERR_NETWORK", "ECONNABORTED", "ETIMEDOUT"].includes(error?.code)) {
+      return it
+        ? "Il gateway ULTRON non ha risposto. Controlla la connessione e riprova da questa schermata. Le chiavi restano le stesse."
+        : "The ULTRON gateway did not respond. Check your connection and retry from this screen. Your keys stay the same.";
+    }
+    if (error?.response?.status === 404) {
+      return it ? "La registrazione non è disponibile sul gateway selezionato." : "Signup is unavailable on the selected gateway.";
+    }
+    return api.apiErr(error);
+  };
 
   useEffect(() => { isDeviceSecure().then(setSecure).catch(() => {}); }, []);
 
@@ -63,19 +78,29 @@ export default function SignupScreen({ navigation, route }) {
 
   const doSignup = async (confirmed = false) => {
     const u = normUser(username);
-    if (u.length < 3 || busy || avail === false) return;
+    if (u.length < 3 || !/[a-z0-9]/.test(u) || submitting.current || (!confirmed && avail === false)) return;
     if (RATCHET_PILOT && !confirmed) {
-      if (pending.current?.username !== u) pending.current = { username: u, phrase: generateRecoveryPhrase() };
-      setReviewPhrase(pending.current.phrase);
+      try {
+        if (pending.current?.username !== u || pending.current.server !== server) {
+          const phrase = generateRecoveryPhrase();
+          pending.current = { username: u, server, phrase, keyfile: recoveryKeyfile(u, server, phrase) };
+          setSaved(false);
+          setWordsConfirmed(false);
+          setCopyStatus("");
+        }
+        setErr("");
+        setReviewPhrase(pending.current.phrase);
+      } catch (error) { setErr(api.apiErr(error)); }
       return;
     }
+    if (RATCHET_PILOT && (!saved || !wordsConfirmed || pending.current?.username !== u || pending.current.server !== server)) return;
+    submitting.current = true;
     setBusy(true); setErr("");
     try {
       // 1) chiavi generate SUL DISPOSITIVO: la privata non viene mai inviata al server
       const lns = `${u}@${DOMAIN}`;
-      if (RATCHET_PILOT && pending.current?.username !== u) throw new Error("Nome utente cambiato.");
       if (pending.current?.username !== u) pending.current = { username: u, keypair: keygen() };
-      const keys = RATCHET_PILOT ? recoveryKeyfile(u, server, pending.current.phrase) : null;
+      const keys = RATCHET_PILOT ? pending.current.keyfile : null;
       const kp = keys
         ? { publicKeyHex: keys.public_key_hex, secretKeyHex: keys.secret_key_hex }
         : pending.current.keypair;
@@ -93,33 +118,75 @@ export default function SignupScreen({ navigation, route }) {
       setReviewPhrase("");
     } catch (e) {
       if (e.response?.status === 404) setSignupUnavailable(true);
-      else setErr(api.apiErr(e));
-    } finally { setBusy(false); }
+      setErr(signupError(e));
+    } finally { submitting.current = false; setBusy(false); }
   };
 
-
+  const copyWords = () => {
+    Alert.alert(it ? "Copiare le 12 parole?" : "Copy the 12 words?",
+      it ? "Incollale solo in un gestore di password fidato. Copiarle negli appunti non le salva." : "Paste them only into a trusted password manager. Copying to the clipboard does not save them.",
+      [{ text: it ? "Annulla" : "Cancel", style: "cancel" }, {
+        text: it ? "Copia" : "Copy",
+        onPress: async () => {
+          try {
+            await NativeModules.LatticeDeviceInfo.copyRecoveryWords(reviewPhrase);
+            setCopyStatus(it ? "Parole copiate. Incollale in un posto sicuro." : "Words copied. Paste them somewhere safe.");
+          } catch {
+            setCopyStatus(it ? "Copia non riuscita. Puoi annotare le parole in ordine." : "Copy failed. You can write down the words in order.");
+          }
+        },
+      }]);
+  };
   const enter = async () => {
-    if (!created || busy) return;
+    if (!created || submitting.current || (RATCHET_PILOT && (!saved || !wordsConfirmed))) return;
+    submitting.current = true;
     setBusy(true); setErr("");
     try {
       if (useLock && secure) await saveAppLock(true);
       await signIn(created.keyfile, { persist: true });
-    } catch (e) { setErr(api.apiErr(e)); }
-    finally { setBusy(false); }
+    } catch (e) { setErr(signupError(e)); }
+    finally { submitting.current = false; setBusy(false); }
   };
 
   if (reviewPhrase && !created) {
     return (
       <ScrollView style={styles.root} contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 24 }]}>
-        <Text style={styles.title}>{it ? "Le tue 12 parole" : "Your 12 words"}</Text>
+        <Text style={styles.title}>{it ? "Salva i dati di recupero" : "Save your recovery information"}</Text>
         <Text style={styles.lnsBig}>{username}@{DOMAIN}</Text>
         <RecoveryWordGrid words={reviewPhrase.split(" ")} italian={it} />
         <Text style={styles.sub}>{it
-          ? "Annota le parole in ordine. Per rientrare dopo «Esci» servono queste parole, il tuo nome utente e lo stesso server. Chi conosce le parole può accedere al tuo account."
-          : "Write the words down in order. To sign in after signing out, use these words, your username and the same server. Anyone with these words can access your account."}</Text>
-        {!!err && <Text style={styles.err}>{err}</Text>}
-        <TouchableOpacity style={styles.primaryBtn} onPress={() => doSignup(true)} disabled={busy}>
-          <Text style={styles.primaryBtnTxt}>{busy ? (it ? "Creazione…" : "Creating…") : (it ? "Le ho annotate · Crea account" : "I wrote them down · Create account")}</Text>
+          ? "Conserva le 12 parole in ordine, insieme al nome utente. Chi le conosce può accedere al tuo account."
+          : "Save the 12 words in order together with your username. Anyone who knows them can access your account."}</Text>
+        <TouchableOpacity style={styles.secondaryBtn} onPress={copyWords} disabled={busy}
+          accessibilityRole="button" testID="signup-copy-words">
+          <Text style={styles.backTxt}>{it ? "Copia le 12 parole" : "Copy the 12 words"}</Text>
+        </TouchableOpacity>
+        {!!copyStatus && <Text style={styles.hint} accessibilityLiveRegion="polite">{copyStatus}</Text>}
+        <TouchableOpacity style={styles.secondaryBtn} onPress={() => setShowKeyExport(true)} disabled={busy}
+          accessibilityRole="button" testID="signup-save-keyfile">
+          <Text style={styles.backTxt}>{saved
+            ? (it ? "JSON cifrato salvato · Salva un’altra copia" : "Encrypted JSON saved · Save another copy")
+            : (it ? "Salva il file JSON cifrato" : "Save the encrypted JSON file")}</Text>
+        </TouchableOpacity>
+        {showKeyExport && <KeyfileExport keyfile={pending.current.keyfile} english={!it}
+          onClose={() => setShowKeyExport(false)} onSaved={() => { setSaved(true); setShowKeyExport(false); }} />}
+        <View style={styles.warnBox}>
+          <Text style={styles.warnTxt}>{it
+            ? "Se perdi il telefono o disinstalli ULTRON senza una copia di recupero utilizzabile, rischi di perdere l’accesso all’account. Per usare il file JSON ti serve anche la sua frase segreta."
+            : "If you lose your phone or uninstall ULTRON without a usable recovery copy, you could lose access to your account. The JSON file also requires its own passphrase."}</Text>
+        </View>
+        <TouchableOpacity style={styles.switchRow} disabled={!saved || busy}
+          onPress={() => setWordsConfirmed(value => !value)} accessibilityRole="checkbox"
+          accessibilityState={{ checked: wordsConfirmed, disabled: !saved || busy }} testID="signup-confirm-backup">
+          <Ionicons name={wordsConfirmed ? "checkbox-outline" : "square-outline"} size={22} color={theme.primary} />
+          <Text style={[styles.switchLabel, styles.flex]}>{it
+            ? "Confermo di aver conservato il file JSON, la sua frase segreta e le 12 parole."
+            : "I confirm that I saved the JSON file, its passphrase and the 12 recovery words."}</Text>
+        </TouchableOpacity>
+        {!!err && <Text style={styles.err} accessibilityLiveRegion="polite" testID="signup-error">{err}</Text>}
+        <TouchableOpacity style={[styles.primaryBtn, (!saved || !wordsConfirmed || busy) && styles.btnDim]}
+          onPress={() => doSignup(true)} disabled={!saved || !wordsConfirmed || busy} testID="signup-confirm-create">
+          <Text style={[styles.primaryBtnTxt, styles.pilotBtnTxt]}>{busy ? (it ? "Creazione…" : "Creating…") : (it ? "Crea account" : "Create account")}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.back} onPress={() => setReviewPhrase("")} disabled={busy}>
           <Text style={styles.backTxt}>{it ? "Indietro" : "Back"}</Text>
@@ -137,7 +204,7 @@ export default function SignupScreen({ navigation, route }) {
         <View style={styles.warnBox}>
           <Text style={styles.warnTxt}>
             {RATCHET_PILOT
-              ? (it ? "Puoi rientrare con le 12 parole annotate. La copia cifrata della chiave è facoltativa." : "You can sign in with the 12 words you wrote down. An encrypted keyfile copy is optional.")
+              ? (it ? "Conserva le 12 parole e il file JSON cifrato con la sua frase segreta in un posto sicuro." : "Keep the 12 words and the encrypted JSON file with its passphrase somewhere safe.")
               : it
               ? "ULTRON genera la chiave privata sul telefono. Se perdi l’accesso al dispositivo, puoi rientrare con il file chiave cifrato e la sua frase segreta."
               : "ULTRON generates your private key on the phone. If you lose access to the device, use the encrypted keyfile and its passphrase to sign in again."}
@@ -155,21 +222,21 @@ export default function SignupScreen({ navigation, route }) {
           </View>
         )}
         {!!err && <Text style={styles.err} testID="signup-error">{err}</Text>}
-        <TouchableOpacity style={[styles.primaryBtn, busy && styles.btnDim]} onPress={() => {
+        <TouchableOpacity style={[styles.primaryBtn, (busy || (RATCHET_PILOT && (!saved || !wordsConfirmed))) && styles.btnDim]} onPress={() => {
           if (saved || RATCHET_PILOT) { enter(); return; }
           Alert.alert(it ? "Continuare senza copia?" : "Continue without a copy?",
             it ? "Se perdi il telefono prima di esportare la chiave da Impostazioni, puoi perdere l’accesso all’account." : "If you lose the phone before exporting the key in Settings, you can lose access to the account.",
             [{ text: it ? "Annulla" : "Cancel", style: "cancel" },
               { text: it ? "Continua" : "Continue", onPress: enter }]);
-        }} disabled={busy} testID="signup-enter">
+        }} disabled={busy || (RATCHET_PILOT && (!saved || !wordsConfirmed))} testID="signup-enter">
           {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnTxt}>{it ? "Entra in ULTRON" : "Enter ULTRON"}</Text>}
         </TouchableOpacity>
-        <TouchableOpacity style={styles.back} disabled={busy} onPress={() => setShowKeyExport(true)} testID="signup-save-keyfile">
+        {!RATCHET_PILOT && <TouchableOpacity style={styles.back} disabled={busy} onPress={() => setShowKeyExport(true)} testID="signup-save-keyfile">
           <Text style={styles.backTxt}>{it ? "Salva una copia cifrata" : "Save an encrypted copy"}</Text>
-        </TouchableOpacity>
+        </TouchableOpacity>}
         {showKeyExport && <KeyfileExport keyfile={created.keyfile} english={!it}
           onClose={() => setShowKeyExport(false)} onShared={() => { setSaved(true); setShowKeyExport(false); }} />}
-        {!saved && <Text style={styles.hintCenter}>{it ? "Puoi salvare il file chiave anche dopo, dalle Impostazioni." : "You can save the keyfile later in Settings."}</Text>}
+        {!RATCHET_PILOT && !saved && <Text style={styles.hintCenter}>{it ? "Puoi salvare il file chiave anche dopo, dalle Impostazioni." : "You can save the keyfile later in Settings."}</Text>}
 
       </ScrollView>
     );
@@ -233,6 +300,9 @@ const styles = StyleSheet.create({
   scroll: { padding: 24, paddingBottom: 60 },
   back: { flexDirection: "row", alignItems: "center", marginBottom: 18 },
   backTxt: { color: theme.textDim, fontSize: 14, fontWeight: "600" },
+  flex: { flex: 1 },
+  secondaryBtn: { minHeight: 48, justifyContent: "center", paddingHorizontal: 14, marginTop: 10,
+    backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1, borderRadius: 12 },
   title: { color: theme.text, fontSize: 26, fontWeight: "900", marginBottom: 8 },
   sub: { color: theme.textDim, fontSize: 14, lineHeight: 21, marginBottom: 24 },
   label: { color: theme.textDim, fontSize: 12, fontWeight: "800", letterSpacing: 1, marginBottom: 8, marginTop: 8 },
@@ -253,6 +323,7 @@ const styles = StyleSheet.create({
   err: { color: "#FFB3BD", fontSize: 13, marginTop: 16 },
   primaryBtn: { backgroundColor: theme.primary, borderRadius: 14, paddingVertical: 16, alignItems: "center", marginTop: 24 },
   primaryBtnTxt: { color: "#fff", fontSize: 16, fontWeight: "800" },
+  pilotBtnTxt: { color: theme.onAccent || "#04152A" },
   btnDim: { opacity: 0.45 },
   okBadge: { alignSelf: "center", width: 62, height: 62, borderRadius: 31, alignItems: "center", justifyContent: "center", backgroundColor: theme.surface, borderColor: theme.accent, borderWidth: 1, marginBottom: 18 },
   lnsBig: { color: theme.primary, fontSize: 18, fontWeight: "800", marginBottom: 4 },

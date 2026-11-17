@@ -8,7 +8,7 @@ import { randomHex } from "../lib/crypto";
 import { withSystemActivity } from "../lib/lockGuard";
 import { theme } from "../theme";
 
-export default function KeyfileExport({ keyfile, english, onClose, onShared }) {
+export default function KeyfileExport({ keyfile, english, onClose, onShared, onSaved }) {
   const [password, setPassword] = useState("");
   const [generated, setGenerated] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -22,20 +22,38 @@ export default function KeyfileExport({ keyfile, english, onClose, onShared }) {
     setBusy(true);
     let uri;
     let shared = false;
+    let saved = false;
+    let target;
     try {
-      if (!(await Sharing.isAvailableAsync())) throw new Error();
-      const protectedFile = await protectKeyfile(keyfile, password);
-      uri = FileSystem.cacheDirectory + `ultron-chiave-cifrata-${randomHex(6)}.json`;
-      await FileSystem.writeAsStringAsync(uri, JSON.stringify(protectedFile));
-      await withSystemActivity(() => Sharing.shareAsync(uri, { mimeType: "application/json" }));
-      shared = true;
+      if (onSaved) {
+        const storage = FileSystem.StorageAccessFramework;
+        const folder = await withSystemActivity(() => storage.requestDirectoryPermissionsAsync());
+        if (!folder.granted) return;
+        const encrypted = JSON.stringify(await protectKeyfile(keyfile, password));
+        target = await storage.createFileAsync(folder.directoryUri,
+          `ultron-chiave-cifrata-${randomHex(6)}`, "application/json");
+        await storage.writeAsStringAsync(target, encrypted);
+        if (await storage.readAsStringAsync(target) !== encrypted) throw new Error("Keyfile readback failed");
+        saved = true;
+      } else {
+        if (!(await Sharing.isAvailableAsync())) throw new Error();
+        const protectedFile = await protectKeyfile(keyfile, password);
+        uri = FileSystem.cacheDirectory + `ultron-chiave-cifrata-${randomHex(6)}.json`;
+        await FileSystem.writeAsStringAsync(uri, JSON.stringify(protectedFile));
+        await withSystemActivity(() => Sharing.shareAsync(uri, { mimeType: "application/json" }));
+        shared = true;
+      }
     } catch {
-      Alert.alert("ULTRON", english ? "Could not share the encrypted keyfile." : "Impossibile condividere il file chiave cifrato.");
+      if (target) await FileSystem.StorageAccessFramework.deleteAsync(target, { idempotent: true }).catch(() => {});
+      Alert.alert("ULTRON", onSaved
+        ? (english ? "Could not save and verify the encrypted keyfile." : "Impossibile salvare e verificare il file chiave cifrato.")
+        : (english ? "Could not share the encrypted keyfile." : "Impossibile condividere il file chiave cifrato."));
     } finally {
       if (uri) await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
       running.current = false;
       setBusy(false);
     }
+    if (saved) onSaved();
     if (shared) onShared();
   };
 
@@ -44,8 +62,9 @@ export default function KeyfileExport({ keyfile, english, onClose, onShared }) {
       <View style={s.card}>
         <Text style={s.title}>{english ? "Encrypt keyfile" : "Cifra il file chiave"}</Text>
         <Text style={s.copy}>{english
-          ? "Use a unique passphrase of at least 16 characters. You will need it to open this copy."
-          : "Usa una frase segreta unica di almeno 16 caratteri. Ti servirà per aprire questa copia."}</Text>
+          ? "Choose and save a separate passphrase of at least 16 characters. You will need it to open this JSON."
+          : "Scegli e conserva una frase segreta separata di almeno 16 caratteri. Ti servirà per aprire questo JSON."}</Text>
+        {!onSaved && (
         <Pressable disabled={busy} accessibilityRole="button" onPress={() => {
           const phrase = generateRecoveryPhrase();
           setGenerated(phrase);
@@ -54,6 +73,7 @@ export default function KeyfileExport({ keyfile, english, onClose, onShared }) {
         }}>
           <Text style={s.actionText}>{english ? "Generate 12 words" : "Genera 12 parole"}</Text>
         </Pressable>
+        )}
         {!!generated && <Text style={s.copy}>{generated}</Text>}
         {!!generated && <Text style={s.copy}>{english
           ? "Write them down in order. You will need both the words and the encrypted file."
@@ -65,7 +85,9 @@ export default function KeyfileExport({ keyfile, english, onClose, onShared }) {
           editable={!busy} value={confirmation} onChangeText={setConfirmation} placeholder={english ? "Repeat passphrase" : "Ripeti la frase segreta"}
           placeholderTextColor={theme.textFaint} testID="keyfile-passphrase-confirm" />
         <Pressable style={[s.action, (!valid || busy) && s.disabled]} disabled={!valid || busy} onPress={share} accessibilityRole="button">
-          <Text style={s.actionText}>{busy ? (english ? "Encrypting…" : "Cifratura…") : (english ? "Encrypt and share" : "Cifra e condividi")}</Text>
+          <Text style={s.actionText}>{busy ? (english ? "Saving…" : "Salvataggio…")
+            : onSaved ? (english ? "Choose folder and save" : "Scegli cartella e salva")
+              : (english ? "Encrypt and share" : "Cifra e condividi")}</Text>
         </Pressable>
         <Pressable style={s.cancel} disabled={busy} onPress={onClose} accessibilityRole="button">
           <Text style={s.copy}>{english ? "Cancel" : "Annulla"}</Text>

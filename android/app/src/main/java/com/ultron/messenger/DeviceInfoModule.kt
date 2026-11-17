@@ -1,6 +1,9 @@
 package com.ultron.messenger
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.os.Build
+import android.os.PersistableBundle
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReactApplicationContext
@@ -21,6 +24,22 @@ class DeviceInfoModule(private val ctx: ReactApplicationContext) : ReactContextB
   @ReactMethod
   fun canInstallUpdates(promise: Promise) {
     promise.resolve(Build.VERSION.SDK_INT < Build.VERSION_CODES.O || ctx.packageManager.canRequestPackageInstalls())
+  }
+
+  @ReactMethod
+  fun copyRecoveryWords(words: String, promise: Promise) {
+    try {
+      val clipboard = ctx.getSystemService(ClipboardManager::class.java)
+        ?: throw IllegalStateException("Clipboard unavailable")
+      val clip = ClipData.newPlainText("ULTRON", words)
+      clip.description.extras = PersistableBundle().apply {
+        putBoolean("android.content.extra.IS_SENSITIVE", true)
+      }
+      clipboard.setPrimaryClip(clip)
+      promise.resolve(null)
+    } catch (error: Exception) {
+      promise.reject("RECOVERY_COPY_FAILED", "Could not copy the recovery words", error)
+    }
   }
 
   @ReactMethod
