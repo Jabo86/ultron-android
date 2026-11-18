@@ -42,7 +42,7 @@ export function verifyRelayReceipt(record, signature) {
 }
 
 export function createVolatileRelayTransport({ origin, token, sign, request = fetch, timeoutMs = 6000, loopback = false }) {
-  const allowed = /^https:\/\/[^/?#@\s]+$/.test(origin) ||
+  const allowed = /^https:\/\/[a-zA-Z0-9.-]+(?::\d{1,5})?(?:\/relay-lab)?$/.test(origin) ||
     (loopback && /^http:\/\/127\.0\.0\.1:\d+$/.test(origin));
   if (!allowed || typeof token !== "string" || !hex64.test(token) || typeof sign !== "function") {
     throw new Error("Configurazione del relay non valida.");

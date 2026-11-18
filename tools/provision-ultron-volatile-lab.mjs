@@ -17,7 +17,7 @@ const profilePath = index => join(dir, ["relay-a.json", "relay-b.json"][index]);
 const hex = bytes => Buffer.from(bytes).toString("hex");
 const writeNew = (path, value) => writeFile(path, value, { mode: 0o600, flag: "wx" });
 const sha = value => createHash("sha256").update(value).digest();
-const hostPattern = /^https:\/\/[a-zA-Z0-9.-]+(?::\d{1,5})?$/;
+const hostPattern = /^https:\/\/[a-zA-Z0-9.-]+(?::\d{1,5})?(?:\/relay-lab)?$/;
 const accountPattern = /^[a-z0-9._-]{3,32}@ultron\.uns$/;
 
 Object.defineProperty(globalThis, "crypto", {

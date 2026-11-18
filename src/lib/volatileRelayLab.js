@@ -8,7 +8,7 @@ export function validateRelayLabProfile(profile, owner) {
   const address = /^[a-z0-9._-]{3,32}@ultron\.uns$/;
   if (profile?.version !== 1 || profile.owner !== owner ||
       !address.test(mine?.account) || !address.test(peer?.account) || mine.account === peer.account ||
-      typeof registration?.origin !== "string" || !/^https:\/\/[a-zA-Z0-9.-]+(?::\d{1,5})?$/.test(registration.origin) ||
+      typeof registration?.origin !== "string" || !/^https:\/\/[a-zA-Z0-9.-]+(?::\d{1,5})?(?:\/relay-lab)?$/.test(registration.origin) ||
       !/^[a-f0-9]{64}$/.test(registration.token) || !/^[a-f0-9]{8064}$/.test(registration.secretKey) ||
       !/^[a-f0-9]{32}$/.test(registration.installation) ||
       !/^[a-f0-9]{64}$/.test(pairing?.id) || !Number.isSafeInteger(pairing.epoch) || pairing.epoch < 1 ||
