@@ -36,6 +36,14 @@ export function configureVolatileRelay(user, registration, onState) {
   });
   return {
     outbox,
+    admissionInfo: signal => { scope(); return transport.admissionInfo(signal); },
+    async admit(grant, signal) {
+      scope();
+      const address = await transport.admit(grant, signal);
+      scope();
+      if (address !== mailbox) throw new Error("Indirizzo relay diverso da quello configurato.");
+      return address;
+    },
     conversation({ peer, channel, receiveOnce }) {
       scope();
       return createVolatileRelayConversation({

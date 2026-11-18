@@ -3,11 +3,11 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { once } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { ml_dsa65 } from "@noble/post-quantum/ml-dsa.js";
 import { gcm } from "@noble/ciphers/aes.js";
 import { hexToBytes, bytesToHex, signMessage } from "../src/lib/crypto.js";
-import { createVolatileRelayTransport } from "../src/lib/volatileRelayTransport.js";
+import { createVolatileRelayTransport, volatileMailbox } from "../src/lib/volatileRelayTransport.js";
 import { createVolatileRelayOutbox } from "../src/lib/volatileRelayOutbox.js";
 import { createVolatileRelayConversation } from "../src/lib/volatileRelayConversation.js";
 
@@ -17,6 +17,22 @@ const fixtures = Array.from({ length: 2 }, () => ({
   seed: randomBytes(32).toString("hex"), token: randomBytes(32).toString("hex"),
 }));
 const keys = fixtures.map(item => ml_dsa65.keygen(hexToBytes(item.seed)));
+const authority = ml_dsa65.keygen(randomBytes(32));
+const authorityContext = Buffer.from("ULTRON relay admission v1");
+const sha256 = bytes => createHash("sha256").update(bytes).digest();
+
+function issueGrant(boot, index) {
+  const expires = Math.floor(Date.now() / 1000) + 90;
+  const time = Buffer.alloc(8);
+  time.writeBigUInt64BE(BigInt(expires));
+  const publicKey = bytesToHex(keys[index].publicKey);
+  const transcript = Buffer.concat([
+    Buffer.from(boot, "hex"), time, sha256(keys[index].publicKey),
+    sha256(Buffer.from(fixtures[index].token, "hex")),
+  ]);
+  const authoritySignature = bytesToHex(ml_dsa65.sign(transcript, authority.secretKey, { context: authorityContext }));
+  return { boot, expires, publicKey, authoritySignature };
+}
 
 async function startRelay() {
   const python = spawn("python3", ["volatile-relay-fixture.py"], {
@@ -24,19 +40,19 @@ async function startRelay() {
   });
   const exit = once(python, "exit");
   const rl = createInterface({ input: python.stdout });
-  python.stdin.write(JSON.stringify(fixtures) + "\n");
+  python.stdin.write(bytesToHex(authority.publicKey) + "\n");
   const [line] = await Promise.race([
     once(rl, "line"),
     exit.then(() => { throw new Error("The isolated Python relay failed to start"); }),
   ]);
-  const { origin, identities } = JSON.parse(line);
-  const accounts = identities.map((identity, index) => {
-    assert.equal(bytesToHex(keys[index].publicKey), identity.publicKey);
+  const { origin } = JSON.parse(line);
+  const accounts = keys.map((key, index) => {
+    const publicKey = bytesToHex(key.publicKey);
     return {
-      ...identity, secretKey: bytesToHex(keys[index].secretKey),
+      publicKey, mailbox: volatileMailbox(publicKey), secretKey: bytesToHex(key.secretKey),
       transport: createVolatileRelayTransport({
         origin, token: fixtures[index].token, loopback: true,
-        sign: (data, context) => ml_dsa65.sign(data, keys[index].secretKey, { context }),
+        sign: (data, context) => ml_dsa65.sign(data, key.secretKey, { context }),
       }),
     };
   });
@@ -100,6 +116,10 @@ let server = await startRelay();
 let devices = clients(server.accounts);
 const originalIds = server.accounts.map(account => account.mailbox);
 try {
+  const firstBoot = await server.accounts[0].transport.admissionInfo();
+  const previousGrant = issueGrant(firstBoot, 0);
+  await server.accounts[0].transport.admit(previousGrant);
+  await server.accounts[1].transport.admit(issueGrant(firstBoot, 1));
   await devices[0].chat.send(msg, "prova offline");
   assert.deepEqual(states[0], [[msg, "pending"]]);
   assert.equal(rendered, 0);
@@ -116,6 +136,12 @@ try {
   await server.stop();
   server = await startRelay();
   assert.deepEqual(server.accounts.map(account => account.mailbox), originalIds);
+  const secondBoot = await server.accounts[0].transport.admissionInfo();
+  assert.notEqual(secondBoot, firstBoot);
+  await assert.rejects(server.accounts[0].transport.admit(previousGrant), { status: 403 });
+  await assert.rejects(server.accounts[0].transport.inbox(), { status: 401 });
+  await server.accounts[0].transport.admit(issueGrant(secondBoot, 0));
+  await server.accounts[1].transport.admit(issueGrant(secondBoot, 1));
   devices = clients(server.accounts);
   retryClock += 65000;
   devices[0].outbox.resume();
@@ -126,7 +152,7 @@ try {
   assert.equal(states[0].at(-1)[1], "delivered");
   assert.equal(await vaults[0].read("test:entry:" + msg), null);
   assert.deepEqual(await server.accounts[1].transport.inbox(), { messages: [] });
-  console.log("PASS: relay restart, same mailbox after re-enrollment, sender retry, automatic signed receipt, no duplicate.");
+  console.log("PASS: relay restart, old admission blocked, same mailbox after new approval, sender retry, automatic signed receipt, no duplicate.");
 } finally {
   devices.forEach(device => device.close());
   await server.stop();
