@@ -3,6 +3,7 @@ import { authenticatedScope } from "./api";
 import { bytesToHex, hexToBytes, randomHex, sha256Hex, utf8Encode } from "./crypto";
 import { getBlob, setBlobsDurably } from "./lock";
 import { createVolatileRelayConversation } from "./volatileRelayConversation";
+import { createVolatileRelayMlsChannel } from "./volatileRelayMlsChannel";
 import { createVolatileRelayOutbox } from "./volatileRelayOutbox";
 import { createVolatileRelayTransport } from "./volatileRelayTransport";
 
@@ -31,9 +32,11 @@ export function configureVolatileRelay(user, registration, onState) {
     origin, token, sign: async (transcript, context) => hexToBytes(await signHex(transcript, context)),
   });
   const prefix = "relay-outbox:" + sha256Hex(JSON.stringify([user.server, user.lns, origin, installation, mailbox]));
+  const vault = { read: getBlob, write: setBlobsDurably };
   const outbox = createVolatileRelayOutbox({
-    prefix, sender: mailbox, vault: { read: getBlob, write: setBlobsDurably }, transport, scope, onState,
+    prefix, sender: mailbox, vault, transport, scope, onState,
   });
+  const signText = payload => signHex(utf8Encode(payload), new Uint8Array());
   return {
     outbox,
     admissionInfo: signal => { scope(); return transport.admissionInfo(signal); },
@@ -44,12 +47,17 @@ export function configureVolatileRelay(user, registration, onState) {
       if (address !== mailbox) throw new Error("Indirizzo relay diverso da quello configurato.");
       return address;
     },
-    conversation({ peer, channel, receiveOnce }) {
+    conversation({ engine, pairing, mine, peer, receiveOnce }) {
       scope();
+      if (mine.mailbox !== mailbox) throw new Error("Abbinamento locale diverso dal relay.");
+      const channel = createVolatileRelayMlsChannel({
+        engine, pairing, mine, peer, vault, scope, sign: signText,
+        storageKey: prefix + ":mls:" + sha256Hex(JSON.stringify([pairing.id, pairing.epoch, peer.mailbox])),
+      });
       return createVolatileRelayConversation({
         sender: mailbox, peer, transport, outbox, channel, receiveOnce, scope,
         randomId: () => randomHex(16),
-        signReceipt: payload => signHex(utf8Encode(payload), new Uint8Array()),
+        signReceipt: signText,
       });
     },
     close() {

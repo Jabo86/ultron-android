@@ -26,7 +26,7 @@ export function createVolatileRelayConversation({
     for (const packet of messages) {
       if (packet.sender !== peer.mailbox || !idPattern.test(packet.message_id)) continue;
       const digest = relayPacketDigest(packet.ciphertext);
-      const opened = await channel.open(packet.ciphertext);
+      const opened = await channel.open(packet.ciphertext, packet.message_id);
       guarded();
       if (opened.sender !== peer.mailbox || opened.recipient !== sender ||
           opened.id !== packet.message_id) throw new Error("Identità della busta relay non valida.");

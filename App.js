@@ -81,6 +81,8 @@ import { alpha } from "./src/components/Surface";
 import { loadAppLock, loadConsent, saveConsent, CONSENT_VERSION } from "./src/lib/store";
 import * as api from "./src/lib/api";
 import { DEFAULT_SERVER } from "./src/config";
+import { VOLATILE_RELAY_LAB } from "./src/lib/volatileRelayLabFlag";
+const VolatileRelayLabScreen = lazyScreen(() => require("./src/screens/VolatileRelayLabScreen"), "Relay pilota");
 import ErrorBoundary from "./src/components/ErrorBoundary";
 import { I18nProvider, useI18n } from "./src/lib/i18n";
 import { loadThreatList } from "./src/lib/threatList";
@@ -470,6 +472,7 @@ function Root() {
           <Stack.Screen name="Forward" component={ForwardScreen} options={{ headerShown: false }} />
           <Stack.Screen name="WhatsNew" component={WhatsNewScreen} options={{ headerShown: false }} />
           <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ headerShown: false }} />
+          {VOLATILE_RELAY_LAB && <Stack.Screen name="VolatileRelayLab" component={VolatileRelayLabScreen} options={{ title: "Relay pilota" }} />}
           <Stack.Screen name="PilotGroups" component={PilotGroupsScreen} options={{ title: "ULTRON" }} />
           <Stack.Screen name="Chat" component={ChatScreen} options={{ title: "Chat" }} />
           <Stack.Screen name="ChannelDetail" component={ChannelDetailScreen} options={{ title: "Gruppo" }} />

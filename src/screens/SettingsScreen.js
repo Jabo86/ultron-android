@@ -25,6 +25,7 @@ import KeyfileExport from "../components/KeyfileExport";
 import * as wake from "../lib/wake";
 import * as api from "../lib/api";
 import { DEFAULT_SERVER, RATCHET_PILOT } from "../config";
+import { VOLATILE_RELAY_LAB } from "../lib/volatileRelayLabFlag";
 import { isDeviceSecure, authenticate } from "../lib/biometrics";
 import { requestNotificationPermission, scheduleDailyQuizReminder, loadReminderTimes } from "../lib/notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -545,6 +546,8 @@ export default function SettingsScreen({ navigation }) {
 
       {/* SECURITY */}
       <Text style={styles.section}>{t("settings.section.security")}</Text>
+      {VOLATILE_RELAY_LAB && <Row icon="flask-outline" label="Chat 1 a 1 · relay pilota"
+        onPress={() => navigation.navigate("VolatileRelayLab")} testID="settings-volatile-relay-lab" />}
       <View style={styles.privStatus} testID="settings-privacy-status">
         {[
           { on: chaff, label: chaff ? (en ? "Cover traffic enabled" : "Rumore abilitato") : (en ? "Cover traffic off" : "Rumore disattivato"), tid: "privstat-noise" },

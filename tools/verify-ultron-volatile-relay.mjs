@@ -3,9 +3,14 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { once } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, webcrypto } from "node:crypto";
 import { ml_dsa65 } from "@noble/post-quantum/ml-dsa.js";
-import { gcm } from "@noble/ciphers/aes.js";
+import { defaultClientConfig } from "ts-mls/clientConfig.js";
+import * as mls from "ts-mls";
+import { createMlsSubtleCrypto } from "../src/lib/mlsMobileCrypto.js";
+import { groupAuthenticationService, signGroupCredential } from "../src/lib/groupMemberProof.js";
+import { createMlsGroupEngine } from "../src/lib/mlsGroupEngine.js";
+import { createVolatileRelayMlsChannel } from "../src/lib/volatileRelayMlsChannel.js";
 import { hexToBytes, bytesToHex, signMessage } from "../src/lib/crypto.js";
 import { createVolatileRelayTransport, volatileMailbox } from "../src/lib/volatileRelayTransport.js";
 import { createVolatileRelayOutbox } from "../src/lib/volatileRelayOutbox.js";
@@ -17,7 +22,29 @@ const fixtures = Array.from({ length: 2 }, () => ({
   seed: randomBytes(32).toString("hex"), token: randomBytes(32).toString("hex"),
 }));
 const keys = fixtures.map(item => ml_dsa65.keygen(hexToBytes(item.seed)));
+Object.defineProperty(globalThis, "crypto", {
+  value: { getRandomValues: webcrypto.getRandomValues.bind(webcrypto), subtle: createMlsSubtleCrypto() },
+});
 const authority = ml_dsa65.keygen(randomBytes(32));
+const serverScope = "https://pilot.invalid/private-relay";
+const members = keys.map((key, index) => ({
+  account: ["alice@ultron.uns", "bob@ultron.uns"][index],
+  publicKey: bytesToHex(key.publicKey), secretKey: bytesToHex(key.secretKey),
+}));
+for (const member of members) member.mailbox = volatileMailbox(member.publicKey);
+const engines = await Promise.all(members.map(member => createMlsGroupEngine(mls, defaultClientConfig, {
+  authService: groupAuthenticationService(serverScope, async (account, device) =>
+    members.find(row => row.account === account && row.mailbox === device)?.publicKey),
+  createCredential: publicKey => ({ credentialType: "basic", identity: signGroupCredential(
+    { server: serverScope, lns: member.account, sk: member.secretKey }, member.mailbox, publicKey,
+  ) }),
+})));
+const groupId = randomBytes(32).toString("hex");
+const founder = members[0].account;
+const peerPackage = await engines[1].createKeyPackage();
+const created = await engines[0].change(await engines[0].create(groupId), groupId, 0,
+  "add", members[1].account, peerPackage.wire);
+const snapshots = [created.snapshot, await engines[1].join(groupId, 1, created.welcome, peerPackage, founder)];
 const authorityContext = Buffer.from("ULTRON relay admission v1");
 const sha256 = bytes => createHash("sha256").update(bytes).digest();
 
@@ -67,19 +94,6 @@ function memoryVault() {
   };
 }
 
-const channelKey = randomBytes(32);
-// Test-only cipher adapter. Android must supply its verified end-to-end channel.
-const channel = {
-  async seal(packet) {
-    const nonce = randomBytes(12);
-    return Buffer.concat([nonce, gcm(channelKey, nonce).encrypt(Buffer.from(JSON.stringify(packet)))]).toString("base64");
-  },
-  async open(text) {
-    const bytes = Buffer.from(text, "base64");
-    return JSON.parse(Buffer.from(gcm(channelKey, bytes.subarray(0, 12)).decrypt(bytes.subarray(12))).toString());
-  },
-};
-
 const vaults = [memoryVault(), memoryVault()];
 const localInbox = new Map();
 const states = [[], []];
@@ -90,6 +104,12 @@ function clients(accounts) {
     const outbox = createVolatileRelayOutbox({
       prefix: "test", sender: account.mailbox, vault: vaults[index], transport: account.transport, scope() {},
       onState(id, status) { states[index].push([id, status]); }, clock: () => retryClock,
+    });
+    const channel = createVolatileRelayMlsChannel({
+      engine: engines[index], vault: vaults[index], storageKey: "mls",
+      pairing: { id: groupId, epoch: 1, founder, snapshot: snapshots[index] },
+      mine: members[index], peer: members[1 - index],
+      sign: message => signMessage(message, account.secretKey), scope() {},
     });
     const chat = createVolatileRelayConversation({
       sender: account.mailbox, peer: accounts[1 - index], transport: account.transport, outbox, channel,
@@ -125,6 +145,9 @@ try {
   assert.equal(rendered, 0);
   devices[0].outbox.resume();
   await until(() => states[0].some(([, value]) => value === "awaiting-receipt"));
+  const spy = await server.accounts[1].transport.inbox();
+  assert.equal(spy.messages.length, 1);
+  assert.equal(Buffer.from(spy.messages[0].ciphertext, "base64").includes(Buffer.from("prova offline")), false);
   await devices[1].chat.poll();
   assert.equal(rendered, 1);
   assert.equal(localInbox.get(originalIds[0] + ":" + msg), "prova offline");
@@ -152,7 +175,7 @@ try {
   assert.equal(states[0].at(-1)[1], "delivered");
   assert.equal(await vaults[0].read("test:entry:" + msg), null);
   assert.deepEqual(await server.accounts[1].transport.inbox(), { messages: [] });
-  console.log("PASS: relay restart, old admission blocked, same mailbox after new approval, sender retry, automatic signed receipt, no duplicate.");
+  console.log("PASS: verified two-device MLS, relay restart, old admission blocked, same mailbox after new approval, sender retry, automatic signed receipt, no duplicate.");
 } finally {
   devices.forEach(device => device.close());
   await server.stop();
