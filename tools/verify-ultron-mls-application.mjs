@@ -22,6 +22,7 @@ for (const n of ["alice", "bob", "carol"]) {
 const [a,b,c] = users.values();
 const appData = new Map(), groups = new Map(), packages = new Map(), invites = new Map();
 const notices = [];
+const quizzes = new Map();
 let registrationError = false, failedRegistrations = 0;
 let actor, loseOnce = false, conflictOnce = false, loseCreate = true, claims = 0;
 const missing = () => Object.assign(new Error("missing"),{response:{status:404}});
@@ -76,6 +77,13 @@ const api = {
     }));
     return {seq:g.seq,epoch:g.epoch,since,events};
   },
+  mlsQuiz: async (group, payload) => {
+    assert.equal(payload.action, "prepare");
+    const key = group + ":" + payload.id;
+    if (quizzes.has(key)) assert.equal(JSON.stringify(quizzes.get(key)), JSON.stringify(payload));
+    quizzes.set(key, payload);
+    return { ok: true };
+  },
   mlsAppend: async (id, body, silent) => {
     const group=groups.get(id);
     if (!group.members.has(actor.lns)) throw missing();
@@ -110,7 +118,7 @@ const hostedGroupCredentials=async user => ({
 });
 const source=readFileSync(new URL("../src/lib/pilotGroups.js", import.meta.url),"utf8")
   .replace(/^import .+;$/gm,"").replace(/^export /gm,"").replace(/let dependency;[\s\S]+?(?=function serial)/,"const loadMls=async()=>[mls,{defaultClientConfig}];\n");
-const app=runInNewContext(source+"\n({cachedPilotGroupSummary,listPilotGroups,preparePilotGroupInvites,deliverPilotGroupInvitation,createPilotGroup,finishAcceptedPilotGroupInvites,openPilotGroup,updatePilotGroup,presentPilotGroupHistory,listPublicPilotGroups,pilotInvitationInbox,pilotInvitationTitle,requestPilotGroupInvitation,decidePilotGroupInvitation})",{
+const app=runInNewContext(source+"\n({cachedPilotGroupSummary,listPilotGroups,preparePilotGroupInvites,deliverPilotGroupInvitation,createPilotGroup,finishAcceptedPilotGroupInvites,openPilotGroup,updatePilotGroup,presentPilotGroupHistory,preparePilotQuiz,openPilotQuiz,listPublicPilotGroups,pilotInvitationInbox,pilotInvitationTitle,requestPilotGroupInvitation,decidePilotGroupInvitation})",{
   ...cryptoLib,api,registerHostedRatchet:async()=>{ if (registrationError) { failedRegistrations++; throw new Error("registration unavailable"); } },
   sendPilotMessage:async(payload,user,peer,{receiptName})=>{
     assert.equal(actor,user);
@@ -265,6 +273,33 @@ const peerReply = (await app.openPilotGroup(a, publicGroup)).history.at(-1);
 assert.equal(peerReply.replyTo, replySeq);
 assert.equal(peerReply.body, "Risposta di prova");
 
+const quizDraft = app.preparePilotQuiz({ question: "Città australiana", options: ["Perth", "Canberra"], correct: 1,
+  explanation: "È la capitale.", link: "https://example.org" });
+assert.equal(quizDraft.request.prompt.data.includes("Canberra"), false);
+assert.equal(quizDraft.request.solution.data.includes("capitale"), false);
+assert.throws(() => app.preparePilotQuiz({ question: "Q", options: ["A", "B"], correct: 2, explanation: "", link: "" }), /non valida/);
+assert.throws(() => app.preparePilotQuiz({ question: "Q", options: ["A", "B"], correct: 0, explanation: "", link: "intent://unsafe" }), /non valida/);
+const quizSent = await app.updatePilotGroup(a, publicGroup, "quiz", quizDraft, undefined, quizDraft.id);
+assert.equal(quizSent.history.at(-1).body, "Quiz");
+assert.equal(quizSent.history.at(-1).poll.correct, undefined);
+assert.equal(groups.get(publicGroup.id).events.at(-1).quiz, true);
+assert.equal(groups.get(publicGroup.id).events.at(-1).silent, false);
+actor = b;
+const quizMessage = (await app.openPilotGroup(b, publicMemberRow)).history.at(-1);
+assert.equal(quizMessage.poll.id, quizDraft.id);
+const { prompt, solution } = quizzes.get(publicGroup.id + ":" + quizDraft.id);
+const before = app.openPilotQuiz(quizMessage.poll, { prompt, started: true });
+assert.equal(before.question, "Città australiana");
+assert.equal(before.correct, undefined);
+assert.equal(before.explanation, undefined);
+const after = app.openPilotQuiz(quizMessage.poll, { prompt, solution, correct: 1, totals: [1, 2], choice: 0 });
+assert.equal(after.correct, 1);
+assert.equal(after.choice, 0);
+assert.equal(after.explanation, "È la capitale.");
+assert.throws(() => app.openPilotQuiz(quizMessage.poll, { prompt, solution, correct: 0, totals: [1, 2], choice: 0 }), /non validi/);
+actor = a;
+console.log("Quiz MLS: signed opaque notification, separately sealed prompt and solution, and mismatched answer rejection passed.");
+
 console.log("Direct chat notice, delivery receipt and acceptance with delayed key publishing passed.");
 console.log("Three pilot clients: create, invite, signed text, scoped title, encrypted polls, signed consent, public listing, unread counts, encrypted profile and attachment, automatic invitation completion, removal and durable send retry passed.");
 
@@ -289,7 +324,7 @@ const renderGroup = runInNewContext(screen + "\nPilotGroupsScreen", {
   Ionicons: view("Ionicons"), Text: view("Text"), TextInput: view("TextInput"), View: view("View"),
   ScrollView: view("ScrollView"), TouchableOpacity: view("TouchableOpacity"), ActivityIndicator: view("ActivityIndicator"),
   KeyboardAvoidingView: view("KeyboardAvoidingView"), FlatList: view("FlatList"),
-  SafeText: view("SafeText"), ThreatBanner: view("ThreatBanner"), analyzeMessage,
+  GroupQuiz: view("GroupQuiz"), SafeText: view("SafeText"), ThreatBanner: view("ThreatBanner"), analyzeMessage,
   RecordingPresets: { HIGH_QUALITY: {} }, useAudioRecorder: () => ({}), useAudioRecorderState: () => ({}),
   useMessagePreferences: () => ({ hidden: [], pinned: [] }),
 });
@@ -309,6 +344,9 @@ function findView(element, match) {
 }
 const groupChat = renderGroup({ navigation: {}, route: { params: { group: row } } });
 const [, groupList] = findView(groupChat, node => node[0] === "FlatList");
+const quizRow = groupList.renderItem({ item: quizMessage });
+assert.ok(findView(quizRow, node => node[0] === "GroupQuiz"));
+assert.equal(findView(quizRow, node => node[0] === "SafeText"), null);
 const link = "https://example.org/health";
 const message = "Conferma le tue credenziali: http://192.0.2.1/login";
 const messageRow = groupList.renderItem({ item: { seq: 1, sender: b.lns, body: message } });

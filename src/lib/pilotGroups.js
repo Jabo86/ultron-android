@@ -1,5 +1,5 @@
 import * as api from "./api";
-import { decryptEnvelope, encryptForRecipients, packMessage, randomHex, sha256Hex, signMessage, utf8Encode, verifyMessage } from "./crypto";
+import { bytesToHex, decryptEnvelope, decryptFileBytes, encryptFileBytes, encryptForRecipients, hexToBytes, packMessage, randomHex, sha256Hex, signMessage, utf8Decode, utf8Encode, verifyMessage } from "./crypto";
 import { registerHostedRatchet, sendPilotMessage, verifiedContact } from "./hostedRatchetChat";
 import { hostedGroupCredentials } from "./hostedGroupCredentials";
 import { getBlob, setBlobDurably, setBlobsDurably } from "./lock";
@@ -68,11 +68,66 @@ const replyScope = (id, epoch, op, author, seq) => JSON.stringify(["ultron-mls-r
 const pollScope = (id, epoch, op, author, poll) => JSON.stringify(["ultron-mls-poll-v1", id, epoch, op, author, poll]);
 const validPollId = (id) => typeof id === "string" && /^[0-9a-f]{32}$/.test(id);
 const validChoice = (value, limit) => typeof value === "string" && value.trim() === value && value.length > 0 && value.length <= limit;
+function validQuizChoices(options) {
+  return Array.isArray(options) && options.length >= 2 && options.length <= 6 &&
+    options.every(choice => validChoice(choice, 80)) && new Set(options).size === options.length;
+}
+
+export function preparePilotQuiz({ question, options, correct, explanation, link, file }) {
+  const prompt = { question: question.trim(), options: options.map(option => option.trim()) };
+  const solution = { correct, explanation: explanation.trim(), link: link.trim(), file };
+  if (!validChoice(prompt.question, 140) || !validQuizChoices(prompt.options) ||
+      !Number.isInteger(correct) || correct < 0 || correct >= prompt.options.length ||
+      !validQuizSolution(solution)) throw new Error("Domanda, risposta o spiegazione del quiz non valida.");
+  const seal = value => {
+    const { key, iv, ciphertext } = encryptFileBytes(utf8Encode(JSON.stringify(value)));
+    return { wire: { data: bytesToHex(ciphertext), iv }, key };
+  };
+  const sealedPrompt = seal(prompt);
+  const sealedSolution = seal(solution);
+  const id = randomHex(16);
+  return {
+    id,
+    request: { action: "prepare", id, options: prompt.options.length, correct, prompt: sealedPrompt.wire, solution: sealedSolution.wire },
+    event: { kind: "quiz", id, promptKey: sealedPrompt.key, solutionKey: sealedSolution.key },
+    file: file?.id,
+  };
+}
+
+function validQuizSolution(value) {
+  return value && typeof value.explanation === "string" && value.explanation.length <= 500 &&
+    typeof value.link === "string" && value.link.length <= 512 &&
+    (!value.link || /^https?:\/\/[^\s]+$/i.test(value.link)) &&
+    (!value.file || (validAttachment(value.file) && value.file.id &&
+      /^(image|audio)\//i.test(value.file.mime)));
+}
+
+export function openPilotQuiz(event, state) {
+  function decode(value, key) {
+    if (typeof value?.data !== "string" || !/^(?:[0-9a-f]{2}){17,8192}$/.test(value.data) ||
+        !/^[0-9a-f]{24}$/.test(value.iv || "")) throw new Error("Dati del quiz non validi.");
+    return JSON.parse(utf8Decode(decryptFileBytes(hexToBytes(value.data), key, value.iv)));
+  }
+  const prompt = decode(state.prompt, event.promptKey);
+  if (!validChoice(prompt?.question, 140) || !validQuizChoices(prompt.options)) throw new Error("Domanda del quiz non valida.");
+  if (state.solution == null) return { ...prompt, started: state.started === true };
+  const solution = decode(state.solution, event.solutionKey);
+  if (!validQuizSolution(solution) || !Number.isInteger(state.correct) || state.correct < 0 ||
+      state.correct >= prompt.options.length || state.correct !== solution.correct ||
+      !Array.isArray(state.totals) || state.totals.length !== prompt.options.length || !state.totals.every(validNumber) ||
+      (state.author !== true && (!Number.isInteger(state.choice) || state.choice < 0 || state.choice >= prompt.options.length))) {
+    throw new Error("Risultati del quiz non validi.");
+  }
+  return { ...prompt, ...solution, started: state.started === true, author: state.author === true,
+    choice: state.choice, totals: state.totals };
+}
+
 function validPoll(data, op, body) {
   if (!data || !validPollId(data.id)) return false;
-  if (data.kind === "poll") {
-    return data.id === op && validChoice(body, 140) && Array.isArray(data.options) && data.options.length >= 2 &&
-      data.options.length <= 6 && data.options.every(choice => validChoice(choice, 80)) && new Set(data.options).size === data.options.length;
+  if (data.kind === "poll") return data.id === op && validChoice(body, 140) && validQuizChoices(data.options);
+  if (data.kind === "quiz") {
+    return data.id === op && body === "Quiz" && /^[a-f0-9]{64}$/.test(data.promptKey || "") &&
+      /^[a-f0-9]{64}$/.test(data.solutionKey || "");
   }
   return data.kind === "vote" && Number.isInteger(data.choice) && data.choice >= 0 && data.choice < 6;
 }
@@ -556,7 +611,7 @@ export function updatePilotGroup(user, row, kind, value, invitation, draftId) {
     for (let attempt = 0; ; attempt++) {
       try { return await writePilotGroup(user, row, kind, value, invitation, draftId, ctx); }
       catch (error) {
-        if (attempt || error?.response?.status !== 409 || !["message", "reply", "title", "profile", "managed-profile", "poll", "vote", "attachment"].includes(kind)) throw error;
+        if (attempt || error?.response?.status !== 409 || !["message", "reply", "title", "profile", "managed-profile", "poll", "quiz", "vote", "attachment"].includes(kind)) throw error;
       }
     }
   });
@@ -570,7 +625,7 @@ async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx,
   if (["message", "reply", "attachment"].includes(kind) && draftId && engine.members(record.state, id, record.epoch).length < 2) {
     throw new Error("Invita almeno un membro e attendi che l’ingresso sia completato.");
   }
-  const body = { op: randomHex(16), cursor: record.cursor, epoch: record.epoch, kind: ["reply", "title", "profile", "managed-profile", "poll", "vote", "attachment"].includes(kind) ? "message" : kind };
+  const body = { op: kind === "quiz" ? value.id : randomHex(16), cursor: record.cursor, epoch: record.epoch, kind: ["reply", "title", "profile", "managed-profile", "poll", "quiz", "vote", "attachment"].includes(kind) ? "message" : kind };
   let update;
   let text, type, poll, profile, attachment, managedTitle, replyTo;
   if (body.kind === "message") {
@@ -584,6 +639,15 @@ async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx,
     } else if (kind === "poll") {
       text = value.question.trim();
       poll = { kind: "poll", id: body.op, options: value.options.map(option => option.trim()) };
+    } else if (kind === "quiz") {
+      text = "Quiz";
+      poll = value.event;
+      if (!validPoll(poll, body.op, text)) throw new Error("Quiz non valido.");
+      check();
+      await api.mlsQuiz(id, value.request);
+      check();
+      body.quiz = true;
+      if (value.file) body.file = value.file;
     } else if (kind === "vote") {
       const original = record.history.find(item => item.poll?.kind === "poll" && item.poll.id === value.id);
       if (!original || value.choice >= original.poll.options.length) throw new Error("Sondaggio non disponibile.");
@@ -652,7 +716,7 @@ async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx,
 
   const nextMembers = body.kind === "message" ? undefined : engine.members(update.snapshot, id, record.epoch + 1);
   const pending = { body: { ...body, wire: update.wire }, snapshot: update.snapshot, text, type, poll, profile, attachment, managedTitle, replyTo, draftId, nextMembers,
-    silent: !["message", "reply", "attachment", "poll"].includes(kind) };
+    silent: !["message", "reply", "attachment", "poll", "quiz"].includes(kind) };
   const staged = { ...record, pending };
   check();
   await setBlobDurably(blob(user, id), staged);

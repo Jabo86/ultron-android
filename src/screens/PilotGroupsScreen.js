@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, Image, Keyboard, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Image, Keyboard, ScrollView, Share, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio";
+import GroupQuiz from "../components/GroupQuiz";
 import ChatMessageMenu from "../components/ChatMessageMenu";
 import { copyMessageText, shareMessageText, useMessagePreferences } from "../lib/chatMessageActions";
 import * as DocumentPicker from "expo-document-picker";
@@ -15,7 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../lib/i18n";
 import { useFocusEffect } from "@react-navigation/native";
-import { apiErr, blockContact, contacts, mlsAction, mlsDeleteGroup, mlsRedeem, mlsReport, mlsReports, mlsReview,
+import { apiErr, blockContact, contacts, mlsAction, mlsDeleteGroup, mlsRedeem, mlsQuiz, mlsReport, mlsReports, mlsReview,
   mlsUpload } from "../lib/api";
 import { contactAddress, matchesContact } from "../lib/contactAddress";
 import { pickAvatarDataUrl } from "../lib/avatar";
@@ -26,7 +27,7 @@ import { usePoll } from "../lib/usePoll";
 import { getVerified } from "../lib/verify";
 import { announcePilotGroupProfile, cachedPilotGroupDetails, cachedPilotGroupTitle, createPilotGroup, decidePilotGroupInvitation, deliverPilotGroupInvitation, finishAcceptedPilotGroupInvites,
   forgetPilotGroup, listPilotGroups, listPublicPilotGroups, openPilotGroup, pilotGroupPolicy,
-  pilotGroupInvitations, pilotInvitationInbox, pilotInvitationTitle, preparePilotGroupInvites, presentPilotGroupHistory,
+  pilotGroupInvitations, pilotInvitationInbox, pilotInvitationTitle, preparePilotGroupInvites, preparePilotQuiz, presentPilotGroupHistory,
   PILOT_GROUP_AVATAR_LIMIT, PILOT_GROUP_FILE_LIMIT, PILOT_GROUP_UPLOAD_LIMIT, requestPilotGroupInvitation,
   updatePilotGroup, verifyPilotGroupAccount } from "../lib/pilotGroups";
 import { theme } from "../theme";
@@ -79,6 +80,13 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const [description, setDescription] = useState("");
   const [avatar, setAvatar] = useState(null);
   const [pollEditor, setPollEditor] = useState(false);
+  const [quizMode, setQuizMode] = useState(false);
+  const [correctChoice, setCorrectChoice] = useState(null);
+  const [explanation, setExplanation] = useState("");
+  const [explanationLink, setExplanationLink] = useState("");
+  const [quizFile, setQuizFile] = useState(null);
+  const quizDraft = useRef(null);
+  const [ranking, setRanking] = useState(null);
   const [question, setQuestion] = useState("");
   const [choices, setChoices] = useState(["", ""]);
   const listRef = useRef(null);
@@ -233,7 +241,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const open = (row) => run(async () => {
     stickToBottom.current = true;
     draft.current = null;
-    setComposerMenu(false); setFileDraft(null); setQuestion(""); setChoices(["", ""]);
+    setComposerMenu(false); setFileDraft(null); setQuestion(""); setChoices(["", ""]); resetQuiz(); setRanking(null);
     triedInvites.current.clear();
     setPolicy(null); setInviteCode(""); setModerate(null); setReports(null); setReportForm(null);
     setDetails(null); setGroup(row); setManage(false); setMessage(""); setPollEditor(false); setQuery(""); setSelected([]);
@@ -298,7 +306,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
     setMessage("");
     setReplyTarget(null);
   });
-  const prepareFile = async (asset, removeCopy) => {
+  const prepareFile = async (asset, removeCopy, forQuiz = false) => {
     if (!group || !asset?.uri) return;
     try {
       const info = await FileSystem.getInfoAsync(asset.uri, { size: true });
@@ -312,7 +320,11 @@ export default function PilotGroupsScreen({ navigation, route }) {
         position: 0, length: limit + 1 });
       const mime = /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(asset.mimeType || "") ? asset.mimeType : "application/octet-stream";
       const name = asset.name?.replace(/[\x00-\x1f\x7f]/g, "").trim().slice(0, 160) || say("Allegato", "Attachment");
-      setFileDraft({ id: randomHex(16), groupId: group.id, attachment: { name, mime, size, data } });
+      const file = { id: randomHex(16), groupId: group.id, attachment: { name, mime, size, data } };
+      if (forQuiz) {
+        if (!/^(image|audio)\//i.test(mime)) throw new Error(say("Scegli una foto o un breve audio.", "Choose a photo or a short audio file."));
+        setQuizFile(file);
+      } else setFileDraft(file);
     } finally {
       if (removeCopy && FileSystem.cacheDirectory && asset.uri.startsWith(FileSystem.cacheDirectory)) {
         await FileSystem.deleteAsync(asset.uri, { idempotent: true }).catch(() => {});
@@ -323,6 +335,10 @@ export default function PilotGroupsScreen({ navigation, route }) {
     setComposerMenu(false);
     const result = await withSystemActivity(() => DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true }));
     if (!result.canceled) await prepareFile(result.assets?.[0], true);
+  });
+  const pickQuizFile = () => run(async () => {
+    const result = await withSystemActivity(() => DocumentPicker.getDocumentAsync({ type: ["image/*", "audio/*"], copyToCacheDirectory: true }));
+    if (!result.canceled) await prepareFile(result.assets?.[0], true, true);
   });
   const pickMedia = (source) => run(async () => {
     setComposerMenu(false);
@@ -375,9 +391,43 @@ export default function PilotGroupsScreen({ navigation, route }) {
     setDetails(await updatePilotGroup(user, group, "attachment", attachment, undefined, fileDraft.id));
     setFileDraft(null);
   });
+  const resetQuiz = () => {
+    setQuizMode(false); setCorrectChoice(null); setExplanation(""); setExplanationLink(""); setQuizFile(null);
+    quizDraft.current = null;
+  };
   const createPoll = () => run(async () => {
-    setDetails(await updatePilotGroup(user, group, "poll", { question, options: choices }));
+    if (quizMode) {
+      const input = { question, options: choices, correct: correctChoice, explanation, link: explanationLink };
+      const selectedFile = quizFile?.groupId === group.id ? quizFile : null;
+      const fingerprint = JSON.stringify([group.id, input, selectedFile?.id]);
+      if (quizDraft.current?.fingerprint !== fingerprint) {
+        let file, ciphertext;
+        if (selectedFile) {
+          const { data, ...metadata } = selectedFile.attachment;
+          const bytes = base64ToBytes(data);
+          if (bytes.length !== metadata.size) throw new Error(say("File incompleto.", "Incomplete file."));
+          const sealed = encryptFileBytes(bytes);
+          ciphertext = sealed.ciphertext;
+          file = { ...metadata, id: randomHex(16), key: sealed.key, iv: sealed.iv };
+        }
+        const quiz = preparePilotQuiz({ ...input, file });
+        quizDraft.current = { fingerprint, quiz, ciphertext, uploaded: false };
+      }
+      const draft = quizDraft.current;
+      if (draft.ciphertext && !draft.uploaded) {
+        const receipt = await mlsUpload(group.id, draft.quiz.file, draft.ciphertext);
+        if (receipt?.id !== draft.quiz.file) throw new Error(say("Caricamento non confermato.", "Upload not confirmed."));
+        draft.uploaded = true;
+      }
+      setDetails(await updatePilotGroup(user, group, "quiz", draft.quiz, undefined, draft.quiz.id));
+    } else {
+      setDetails(await updatePilotGroup(user, group, "poll", { question, options: choices }));
+    }
+    resetQuiz();
     setPollEditor(false); setQuestion(""); setChoices(["", ""]);
+  });
+  const loadRanking = visible => run(async () => {
+    setRanking(await mlsQuiz(group.id, visible === undefined ? { action: "board" } : { action: "visibility", visible }));
   });
   const vote = (id, choice) => run(async () => {
     setDetails(await updatePilotGroup(user, group, "vote", { id, choice }));
@@ -478,7 +528,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
     setEditing(false);
   });
   const showInfo = () => {
-    setGroupTab("members"); setEditing(false); setManage(true); setComposerMenu(false);
+    setGroupTab("members"); setRanking(null); setEditing(false); setManage(true); setComposerMenu(false);
   };
 
   const localAction = (field, item, enabled) => {
@@ -707,14 +757,33 @@ export default function PilotGroupsScreen({ navigation, route }) {
           </View>}
         </View>
         <View accessibilityRole="tablist" style={styles.tabs}>
-          {[["members", say("Membri", "Members")], ["media", say("Allegati", "Attachments")], ["info", say("Informazioni", "Information")]].map(([key, label]) => (
+          {[["members", say("Membri", "Members")], ["media", say("Allegati", "Attachments")], ["info", say("Informazioni", "Information")], ["ranking", say("Classifica", "Ranking")]].map(([key, label]) => (
             <TouchableOpacity key={key} accessibilityRole="tab" accessibilityState={{ selected: groupTab === key }}
-              onPress={() => setGroupTab(key)} style={[styles.tab, groupTab === key && styles.tabActive]}>
+              onPress={() => { setGroupTab(key); if (key === "ranking") loadRanking(); }} style={[styles.tab, groupTab === key && styles.tabActive]}>
               <Text style={[styles.buttonText, groupTab === key && styles.sender]}>{label}</Text>
             </TouchableOpacity>
           ))}
         </View>
-        {groupTab === "info" ? <View style={styles.card}>
+        {groupTab === "ranking" ? <View style={styles.card}>
+          <Text style={styles.section}>{say("Classifica Quiz", "Quiz ranking")}</Text>
+          <Text style={styles.dim}>{say("10 punti per una risposta esatta, più 5 entro cinque secondi dall’avvio.", "10 points for a correct answer and 5 extra within five seconds of starting.")}</Text>
+          {ranking && <>
+            <Text style={styles.text}>{say("I tuoi punti", "Your points")} · {ranking.points}</Text>
+            <View style={styles.row}>
+              <Text style={[styles.text, { flex: 1 }]}>{say("Mostra il mio punteggio in classifica", "Show my score on the leaderboard")}</Text>
+              <Switch accessibilityLabel={say("Mostra il mio punteggio in classifica", "Show my score on the leaderboard")}
+                value={ranking.visible} disabled={busy} onValueChange={loadRanking} />
+            </View>
+            {ranking.leaders.map((entry, index) => <TouchableOpacity key={entry.account} style={styles.row}
+              accessibilityRole="button" onPress={() => openProfile(entry.account)}>
+              <Text style={[styles.text, { flex: 1 }]}>{index + 1}. {entry.account}</Text>
+              <Text style={styles.sender}>{entry.points}</Text>
+            </TouchableOpacity>)}
+            {!ranking.leaders.length && <Text style={styles.dim}>{say("Il podio è ancora vuoto.", "The podium is empty.")}</Text>}
+          </>}
+          <Text style={styles.dim}>{say("La chat mostra solo risultati aggregati. Il gateway registra la scelta per impedire voti multipli e calcolare i punti.", "The chat shows aggregate results. The gateway records the choice to enforce one vote and calculate points.")}</Text>
+          {button(say("Aggiorna classifica", "Refresh ranking"), () => loadRanking(), { disabled: busy })}
+        </View> : groupTab === "info" ? <View style={styles.card}>
           <Text style={styles.section}>{say("Crittografia end-to-end", "End-to-end encryption")}</Text>
           <Text style={styles.dim}>{say("Solo i membri possono leggere i messaggi, la foto e la descrizione. Chi entra vede i messaggi inviati dopo il suo ingresso.", "Only members can read messages, the photo and the description. New members see messages sent after they join.")}</Text>
           <TouchableOpacity onPress={() => openProfile(group.admin)} accessibilityRole="button">
@@ -814,9 +883,11 @@ export default function PilotGroupsScreen({ navigation, route }) {
               <Text style={styles.sender} numberOfLines={1}>{historyBySequence.get(item.replyTo)?.sender || say("Risposta", "Reply")}</Text>
               <Text style={styles.dim} numberOfLines={2}>{historyBySequence.get(item.replyTo)?.body || say("Messaggio originale non disponibile.", "Original message unavailable.")}</Text>
             </View>}
-            {!!item.body && <SafeText text={item.body} style={styles.text} lang={lang} />}
-            {!!item.body && <ThreatBanner result={analyzeMessage(item.body, lang)} lang={lang} logLocally={false} />}
+            {!!item.body && item.poll?.kind !== "quiz" && <SafeText text={item.body} style={styles.text} lang={lang} />}
+            {!!item.body && item.poll?.kind !== "quiz" && <ThreatBanner result={analyzeMessage(item.body, lang)} lang={lang} logLocally={false} />}
             {!!item.attachment && renderAttachment(item)}
+            {item.poll?.kind === "quiz" && <GroupQuiz key={`${group.id}:${item.poll.id}`} group={group.id}
+              poll={item.poll} muted={policy?.muted || policy?.rotating} lang={lang} />}
             {item.poll?.kind === "poll" && <View style={styles.poll}>
               {item.poll.options.map((option, index) => (
                 <TouchableOpacity key={option} accessibilityRole="button" accessibilityState={{ disabled: busy, selected: index === item.choice }}
@@ -829,17 +900,43 @@ export default function PilotGroupsScreen({ navigation, route }) {
           </TouchableOpacity>}
         />
         {pollEditor && <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 260 }} contentContainerStyle={styles.pollEditor}>
+          <View style={styles.row}>
+            <Text style={[styles.text, { flex: 1 }]}>{say("Modalità Quiz", "Quiz mode")}</Text>
+            <Switch accessibilityLabel={say("Modalità Quiz", "Quiz mode")} value={quizMode} disabled={busy}
+              onValueChange={enabled => { if (enabled) setQuizMode(true); else resetQuiz(); }} />
+          </View>
+          {quizMode && <Text style={styles.dim}>{say("Seleziona una sola risposta esatta.", "Select one correct answer.")}</Text>}
           <TextInput {...inputProps} style={styles.input} placeholder={say("Domanda", "Question")}
             accessibilityLabel={say("Domanda", "Question")} maxLength={140} value={question} onChangeText={setQuestion} />
-          {choices.map((choice, index) => <TextInput key={index} {...inputProps} style={styles.input}
-            placeholder={say("Opzione", "Option") + " " + (index + 1)}
-            accessibilityLabel={say("Opzione", "Option") + " " + (index + 1)} value={choice} maxLength={80}
-            onChangeText={text => setChoices(previous => previous.map((value, i) => i === index ? text : value))} />)}
+          {choices.map((choice, index) => <View key={index} style={styles.quizChoice}>
+            {quizMode && <TouchableOpacity accessibilityRole="radio" accessibilityState={{ checked: correctChoice === index }}
+              accessibilityLabel={say("Risposta esatta", "Correct answer") + " " + (index + 1)} disabled={busy}
+              onPress={() => setCorrectChoice(index)} style={styles.attachButton}>
+              <Ionicons size={23} color={correctChoice === index ? "#7ee7ac" : theme.textDim}
+                name={correctChoice === index ? "checkmark-circle" : "ellipse-outline"} />
+            </TouchableOpacity>}
+            <TextInput {...inputProps} style={[styles.input, { flex: 1 }, correctChoice === index && styles.quizCorrect]}
+              placeholder={say("Opzione", "Option") + " " + (index + 1)}
+              accessibilityLabel={say("Opzione", "Option") + " " + (index + 1)} value={choice} maxLength={80}
+              onChangeText={text => setChoices(previous => previous.map((value, i) => i === index ? text : value))} />
+          </View>)}
+          {quizMode && <>
+            <TextInput {...inputProps} style={styles.input} value={explanation} onChangeText={setExplanation}
+              multiline maxLength={500} placeholder={say("Spiegazione della risposta", "Answer explanation")}
+              accessibilityLabel={say("Spiegazione della risposta", "Answer explanation")} />
+            <TextInput {...inputProps} style={styles.input} value={explanationLink} onChangeText={setExplanationLink}
+              autoCapitalize="none" keyboardType="url" maxLength={512}
+              placeholder={say("Link di approfondimento", "More information link")}
+              accessibilityLabel={say("Link di approfondimento", "More information link")} />
+            {button(quizFile ? quizFile.attachment.name : say("Aggiungi foto o breve audio", "Add a photo or short audio"),
+              pickQuizFile, { disabled: busy })}
+            {quizFile && button(say("Rimuovi allegato", "Remove attachment"), () => setQuizFile(null), { disabled: busy })}
+          </>}
           <View style={styles.actions}>
-            {button(say("Annulla", "Cancel"), () => setPollEditor(false))}
+            {button(say("Annulla", "Cancel"), () => { setPollEditor(false); resetQuiz(); })}
             {choices.length < 6 && button(say("Aggiungi opzione", "Add option"), () => setChoices(value => [...value, ""]))}
             {button(say("Pubblica", "Post"), createPoll, { primary: true,
-              disabled: busy || !question.trim() || choices.some(choice => !choice.trim()) ||
+              disabled: busy || (quizMode && (correctChoice === null || !policy)) || !question.trim() || choices.some(choice => !choice.trim()) ||
                 new Set(choices.map(choice => choice.trim())).size !== choices.length })}
           </View>
         </ScrollView>}
@@ -963,6 +1060,8 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 4, borderColor: theme.accentLine },
   poll: { gap: 6, marginTop: 6 },
   pollEditor: { padding: 12, gap: 6 },
+  quizChoice: { flexDirection: "row", alignItems: "center", gap: 6 },
+  quizCorrect: { borderColor: "#7ee7ac" },
   composer: { paddingHorizontal: 12, paddingTop: 10, backgroundColor: theme.surface, borderTopWidth: 1, borderColor: theme.border },
   menu: { flexDirection: "row", alignItems: "center", padding: 8, gap: 6, backgroundColor: theme.surface },
   fileName: { flex: 1 },

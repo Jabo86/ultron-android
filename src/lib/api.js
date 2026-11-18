@@ -500,6 +500,8 @@ export const mlsReport = (id, payload) =>
   withAuth((a, transport) => transport.post(`${mlsGroup(id)}/reports`, payload, a).then(r => r.data));
 export const mlsReports = (id) =>
   withAuth((a, transport) => transport.get(`${mlsGroup(id)}/reports`, a).then(r => r.data));
+export const mlsQuiz = (id, payload) =>
+  withAuth((a, transport) => transport.post(`${mlsGroup(id)}/quiz`, payload, a).then(r => r.data));
 const mlsFile = (group, id) => `${mlsGroup(group)}/files/${encodeURIComponent(id)}`;
 export const mlsUpload = (group, id, bytes) =>
   withAuth((a, transport) => transport.post(mlsFile(group, id), bytes.slice().buffer, {
