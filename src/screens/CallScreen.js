@@ -291,7 +291,7 @@ export default function CallScreen({ route, navigation }) {
         if (!okPerm) { if (mounted) { setErrMsg(lang === "en" ? "Microphone/camera permission denied" : "Permesso microfono/fotocamera negato"); setStatus("error"); setTimeout(() => hangup(), 6000); } return; }
         // La chiamata viene DICHIARATA al sistema prima di aprire il microfono: da qui in
         // poi, per Android, e' una telefonata vera e non gliela si puo togliere di mano.
-        try { await telecom.declare(incoming ? "in" : "out", peerName || "ULTRON"); } catch { /* si prosegue senza telecom */ }
+        try { await telecom.declare(incoming ? "in" : "out", peerName || "UNVOR"); } catch { /* si prosegue senza telecom */ }
         let stream;
         try {
           stream = await mediaDevices.getUserMedia(MEDIA_CONSTRAINTS);
@@ -341,8 +341,8 @@ export default function CallScreen({ route, navigation }) {
           if (hosted) {
             api.wakeCall(to, rid).then((result) => {
               if (mounted && !result?.devices) setWarn(lang === "en"
-                ? "The recipient needs ULTRON notifications enabled for background calls."
-                : "Per ricevere chiamate in background, il destinatario deve attivare le notifiche ULTRON.");
+                ? "The recipient needs UNVOR notifications enabled for background calls."
+                : "Per ricevere chiamate in background, il destinatario deve attivare le notifiche UNVOR.");
             }).catch(() => {
               if (mounted) setWarn(lang === "en" ? "Background call alert unavailable." : "Avviso di chiamata in background non disponibile.");
             });
@@ -513,8 +513,8 @@ export default function CallScreen({ route, navigation }) {
     return (
       <ScrollView style={styles.outcomePage} contentContainerStyle={styles.outcomeLayout} testID="call-outcome">
         <View style={styles.outcomeCard}>
-          <Image source={require("../../assets/ultron-logo.png")} style={styles.outcomeLogo}
-            resizeMode="contain" accessibilityLabel="ULTRON" />
+          <Image source={require("../../assets/unvor/emblem.webp")} style={styles.outcomeLogo}
+            resizeMode="contain" accessibilityLabel="UNVOR" />
           <View style={styles.outcomeIcon}>
             <Ionicons name={declined ? "call-outline" : "time-outline"} size={22} color={tint}
               style={declined ? { transform: [{ rotate: "135deg" }] } : undefined} />

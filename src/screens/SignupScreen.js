@@ -45,8 +45,8 @@ export default function SignupScreen({ navigation, route }) {
   const signupError = (error) => {
     if (["ERR_NETWORK", "ECONNABORTED", "ETIMEDOUT"].includes(error?.code)) {
       return it
-        ? "Il gateway ULTRON non ha risposto. Controlla la connessione e riprova da questa schermata. Le chiavi restano le stesse."
-        : "The ULTRON gateway did not respond. Check your connection and retry from this screen. Your keys stay the same.";
+        ? "Il gateway UNVOR non ha risposto. Controlla la connessione e riprova da questa schermata. Le chiavi restano le stesse."
+        : "The UNVOR gateway did not respond. Check your connection and retry from this screen. Your keys stay the same.";
     }
     if (error?.response?.status === 404) {
       return it ? "La registrazione non è disponibile sul gateway selezionato." : "Signup is unavailable on the selected gateway.";
@@ -170,8 +170,8 @@ export default function SignupScreen({ navigation, route }) {
           onClose={() => setShowKeyExport(false)} onSaved={() => { setSaved(true); setShowKeyExport(false); }} />}
         <View style={styles.warnBox}>
           <Text style={styles.warnTxt}>{it
-            ? "Se perdi il telefono o disinstalli ULTRON senza una copia di recupero utilizzabile, rischi di perdere l’accesso all’account. Per usare il file JSON ti serve anche la sua frase segreta."
-            : "If you lose your phone or uninstall ULTRON without a usable recovery copy, you could lose access to your account. The JSON file also requires its own passphrase."}</Text>
+            ? "Se perdi il telefono o disinstalli UNVOR senza una copia di recupero utilizzabile, rischi di perdere l’accesso all’account. Per usare il file JSON ti serve anche la sua frase segreta."
+            : "If you lose your phone or uninstall UNVOR without a usable recovery copy, you could lose access to your account. The JSON file also requires its own passphrase."}</Text>
         </View>
         <TouchableOpacity style={styles.switchRow} disabled={!saved || busy}
           onPress={() => setWordsConfirmed(value => !value)} accessibilityRole="checkbox"
@@ -204,8 +204,8 @@ export default function SignupScreen({ navigation, route }) {
             {RATCHET_PILOT
               ? (it ? "Conserva le 12 parole e il file JSON cifrato con la sua frase segreta in un posto sicuro." : "Keep the 12 words and the encrypted JSON file with its passphrase somewhere safe.")
               : it
-              ? "ULTRON genera la chiave privata sul telefono. Se perdi l’accesso al dispositivo, puoi rientrare con il file chiave cifrato e la sua frase segreta."
-              : "ULTRON generates your private key on the phone. If you lose access to the device, use the encrypted keyfile and its passphrase to sign in again."}
+              ? "UNVOR genera la chiave privata sul telefono. Se perdi l’accesso al dispositivo, puoi rientrare con il file chiave cifrato e la sua frase segreta."
+              : "UNVOR generates your private key on the phone. If you lose access to the device, use the encrypted keyfile and its passphrase to sign in again."}
           </Text>
         </View>
 
@@ -227,7 +227,7 @@ export default function SignupScreen({ navigation, route }) {
             [{ text: it ? "Annulla" : "Cancel", style: "cancel" },
               { text: it ? "Continua" : "Continue", onPress: enter }]);
         }} disabled={busy || (RATCHET_PILOT && (!saved || !wordsConfirmed))} testID="signup-enter">
-          {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnTxt}>{it ? "Entra in ULTRON" : "Enter ULTRON"}</Text>}
+          {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnTxt}>{it ? "Entra in UNVOR" : "Enter UNVOR"}</Text>}
         </TouchableOpacity>
         {!RATCHET_PILOT && <TouchableOpacity style={styles.back} disabled={busy} onPress={() => setShowKeyExport(true)} testID="signup-save-keyfile">
           <Text style={styles.backTxt}>{it ? "Salva una copia cifrata" : "Save an encrypted copy"}</Text>
@@ -249,14 +249,14 @@ export default function SignupScreen({ navigation, route }) {
         </TouchableOpacity>
 
         <Text style={styles.title}>{it ? "Crea il tuo account personale" : "Create your personal account"}</Text>
-        <Text style={styles.hint}>{server === DEFAULT_SERVER ? "Gateway ULTRON" : server}</Text>
+        <Text style={styles.hint}>{server === DEFAULT_SERVER ? "Gateway UNVOR" : server}</Text>
         {signupUnavailable && <Text accessibilityLiveRegion="polite" style={styles.err}>
           {it ? "La registrazione non è disponibile su questo server. Puoi riprovare dopo l’aggiornamento del server o tornare all’accesso e scegliere un altro indirizzo."
             : "Registration is unavailable on this server. Try again after the server update, or go back to sign-in and choose another address."}
         </Text>}
         <Text style={styles.sub}>
-          {it ? "Scegli un nome utente: sarà il tuo indirizzo ULTRON. Le chiavi vengono generate su questo dispositivo."
-              : "Pick a username: it becomes your ULTRON address. Keys are generated on this device."}
+          {it ? "Scegli un nome utente: sarà il tuo indirizzo UNVOR. Le chiavi vengono generate su questo dispositivo."
+              : "Pick a username: it becomes your UNVOR address. Keys are generated on this device."}
         </Text>
 
         <Text style={styles.label}>{it ? "Nome utente" : "Username"}</Text>

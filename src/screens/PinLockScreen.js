@@ -48,7 +48,7 @@ export default function PinLockScreen() {
 
   return (
     <View style={styles.root} testID="pin-lock-screen">
-      <Image source={require("../../assets/hud/core.webp")} style={styles.logo} resizeMode="contain" />
+      <Image source={require("../../assets/unvor/emblem.webp")} style={styles.logo} resizeMode="contain" />
       <Text style={styles.title}>Inserisci il PIN</Text>
       <Text style={styles.sub}>I tuoi messaggi e le tue chiavi sono cifrati su questo telefono: senza PIN non sono leggibili.</Text>
 

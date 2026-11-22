@@ -25,7 +25,7 @@ export default function LockScreen() {
 
   return (
     <View style={styles.root} testID="lock-screen">
-      <Image source={require("../../assets/hud/core.webp")} style={styles.logo} resizeMode="contain" />
+      <Image source={require("../../assets/unvor/emblem.webp")} style={styles.logo} resizeMode="contain" />
       <Text style={styles.title}>{t("lock.title")}</Text>
       <Text style={styles.sub}>{t("lock.sub")}</Text>
 

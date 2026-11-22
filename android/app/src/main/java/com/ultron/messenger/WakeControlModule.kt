@@ -11,7 +11,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 
-/** Controllo del servizio notifiche proprietario ULTRON.
+/** Controllo del servizio notifiche proprietario UNVOR.
  * Non usa Firebase, FCM, Play Services o token del dispositivo.
  */
 class WakeControlModule(ctx: ReactApplicationContext) : ReactContextBaseJavaModule(ctx) {

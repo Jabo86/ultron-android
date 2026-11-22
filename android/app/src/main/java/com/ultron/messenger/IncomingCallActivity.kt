@@ -107,12 +107,12 @@ class IncomingCallActivity : Activity() {
             background = panel(surface, 28, border)
         }
         val logo = ImageView(this).apply {
-            setImageResource(R.drawable.splashscreen_logo)
+            setImageResource(R.drawable.unvor_logo)
             scaleType = ImageView.ScaleType.FIT_CENTER
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
         val heading = TextView(this).apply {
-            text = "ULTRON"
+            text = "UNVOR"
             textSize = 15f
             letterSpacing = 0.18f
             typeface = displayFont

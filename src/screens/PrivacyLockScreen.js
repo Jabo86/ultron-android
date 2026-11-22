@@ -50,7 +50,7 @@ export default function PrivacyLockScreen({ navigation }) {
       if (esca) await lock.activateDecoy(pin, esca);
       setForm(null); setPin(""); setPin2(""); setEsca("");
       await refresh();
-      Alert.alert("PIN attivo", "Dopo cinque PIN di sblocco errati consecutivi, Android ripristina ULTRON. In questa schermata puoi verificare lo stato della cancellazione sul gateway.");
+      Alert.alert("PIN attivo", "Dopo cinque PIN di sblocco errati consecutivi, Android ripristina UNVOR. In questa schermata puoi verificare lo stato della cancellazione sul gateway.");
     } catch (e) { setErr(String(e?.message || e)); }
     finally { setBusy(false); }
   };
@@ -187,7 +187,7 @@ export default function PrivacyLockScreen({ navigation }) {
         <Card>
           <Text style={[styles.h2, { color: theme.danger }]}>Autodistruzione</Text>
           <Text style={styles.p}>
-            Dopo cinque PIN di sblocco errati consecutivi, Android cancella i dati di ULTRON e lascia l’app installata. Un PIN corretto azzera il contatore. Il debug USB e gli avvisi di integrità non causano un reset.
+            Dopo cinque PIN di sblocco errati consecutivi, Android cancella i dati di UNVOR e lascia l’app installata. Un PIN corretto azzera il contatore. Il debug USB e gli avvisi di integrità non causano un reset.
           </Text>
           <Text style={styles.hint}>
             {remoteReady ? "Cancellazione sul gateway registrata per questo account." : "Cancellazione sul gateway non confermata per questo account."}

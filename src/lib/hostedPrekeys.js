@@ -21,7 +21,7 @@ export function parsePools(reply) {
 }
 
 export function hostedPrekeyDevice(user, installation) {
-  if (typeof installation !== "string" || !installation) throw new Error("Dispositivo ULTRON non identificato.");
+  if (typeof installation !== "string" || !installation) throw new Error("Dispositivo UNVOR non identificato.");
   return sha256Hex(JSON.stringify([user.server, user.lns, installation])).slice(0, 32);
 }
 

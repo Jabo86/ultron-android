@@ -34,7 +34,7 @@ class DeviceInfoModule(private val ctx: ReactApplicationContext) : ReactContextB
     try {
       val clipboard = ctx.getSystemService(ClipboardManager::class.java)
         ?: throw IllegalStateException("Clipboard unavailable")
-      val clip = ClipData.newPlainText("ULTRON", text)
+      val clip = ClipData.newPlainText("UNVOR", text)
       clip.description.extras = PersistableBundle().apply {
         putBoolean("android.content.extra.IS_SENSITIVE", true)
       }

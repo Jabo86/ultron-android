@@ -100,7 +100,7 @@ export async function remindOwner(user, it) {
       title: titolo,
       body: corpo,
       data: { canary: "true" },
-      android: { channelId },
+      android: { channelId, smallIcon: "unvor_notification" },
     });
     await AsyncStorage.setItem(K_LAST, oggi + ":" + s.state + ":" + s.daysLeft);
     return true;

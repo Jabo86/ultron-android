@@ -50,8 +50,8 @@ export const LEGAL_TEXT = {
     en: ["This guide covers the Android app. The app uses device storage for preferences and app data. External sites and pages opened in a browser may use cookies under their own policies.", "For the server website's cookies, consult the notice published by its operator."],
   },
   dpa: {
-    it: ["Un accordo sul trattamento dei dati riguarda il rapporto tra titolare e responsabile quando applicabile. Se usi ULTRON per conto di un’organizzazione, chiedi al gestore l’accordo effettivamente applicabile al servizio."],
-    en: ["A data processing agreement concerns the relationship between controller and processor where applicable. If you use ULTRON for an organization, ask the operator for the agreement that applies to the service."],
+    it: ["Un accordo sul trattamento dei dati riguarda il rapporto tra titolare e responsabile quando applicabile. Se usi UNVOR per conto di un’organizzazione, chiedi al gestore l’accordo effettivamente applicabile al servizio."],
+    en: ["A data processing agreement concerns the relationship between controller and processor where applicable. If you use UNVOR for an organization, ask the operator for the agreement that applies to the service."],
   },
   license: { it: [SOFTWARE_LICENSE], en: [SOFTWARE_LICENSE] },
   acceptable: { it: [PUBLIC_RULES.it], en: [PUBLIC_RULES.en] },

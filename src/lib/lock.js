@@ -270,7 +270,7 @@ export function setBlobsDurably(entries) {
   };
   const write = durableWrites.then(async () => {
     checkScope();
-    if (!activeKey && await hasPin()) throw new Error("Sblocca ULTRON prima di salvare lo stato della chat.");
+    if (!activeKey && await hasPin()) throw new Error("Sblocca UNVOR prima di salvare lo stato della chat.");
     const key = activeKey || await deviceKey();
     if (namespace) {
       for (const [name] of entries) {

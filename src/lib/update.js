@@ -19,7 +19,7 @@ function authentic(m) {
   return Number.isSafeInteger(m?.versionCode) && Number.isSafeInteger(m.size)
     && m.size > 0 && /^[0-9a-f]{64}$/.test(m.sha256)
     && /^\d+\.\d+\.\d+$/.test(m.versionName)
-    && m.url === `${releaseBase}/download/android-${m.versionCode}/ULTRON-Messaggi.apk`
+    && m.url === `${releaseBase}/download/android-${m.versionCode}/UNVOR-Messaggi.apk`
     && verifyManifest(m);
 }
 
@@ -38,13 +38,13 @@ export async function checkUpdate() {
   } finally {
     clearTimeout(timer);
   }
-  if (!authentic(manifest)) throw new Error("Manifest ULTRON non valido.");
+  if (!authentic(manifest)) throw new Error("Manifest UNVOR non valido.");
   return manifest.versionCode > currentCode ? manifest : null;
 }
 
 export async function prepareUpdate(m, onProgress) {
   if (!updatesConfigured || !authentic(m) || m.versionCode <= currentCode) {
-    throw new Error("Aggiornamento ULTRON rifiutato.");
+    throw new Error("Aggiornamento UNVOR rifiutato.");
   }
   const url = m.url;
   const dest = FileSystem.cacheDirectory + "ultron-update-" + m.versionCode + ".apk";

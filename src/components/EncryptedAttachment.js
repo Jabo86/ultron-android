@@ -218,7 +218,7 @@ export default function EncryptedAttachment({ att, inlineData, pilotGroup }) {
         data, type, flags: 1,
       }));
     } catch {
-      Alert.alert("ULTRON", en ? "No installed app could open this file." : "Nessuna app installata ha potuto aprire questo file.");
+      Alert.alert("UNVOR", en ? "No installed app could open this file." : "Nessuna app installata ha potuto aprire questo file.");
     }
   });
 

@@ -179,7 +179,7 @@ export async function encryptContainer(payload, password) {
 
 export async function decryptContainer(container, password) {
   const legacy = container?.fmt === LEGACY_FMT;
-  if (!legacy && container?.fmt !== FMT) throw new Error("Questo file non è un backup ULTRON.");
+  if (!legacy && container?.fmt !== FMT) throw new Error("Questo file non è un backup UNVOR.");
   const k = container.kdf || {};
   const validKdf = legacy
     ? k.alg === "scrypt" && k.N === KDF.N && k.r === KDF.r && k.p === KDF.p
@@ -231,8 +231,8 @@ export async function pickBackupFile() {
   if (!asset) return null;
   const txt = await FileSystem.readAsStringAsync(asset.uri);
   let container;
-  try { container = JSON.parse(txt); } catch { throw new Error("File illeggibile: non è un backup ULTRON."); }
-  if (container?.fmt !== FMT && container?.fmt !== LEGACY_FMT) throw new Error("Questo file non è un backup ULTRON.");
+  try { container = JSON.parse(txt); } catch { throw new Error("File illeggibile: non è un backup UNVOR."); }
+  if (container?.fmt !== FMT && container?.fmt !== LEGACY_FMT) throw new Error("Questo file non è un backup UNVOR.");
   return { container, name: asset.name || "backup" };
 }
 
@@ -325,7 +325,7 @@ export async function setSchedule(mode) {
     });
     await notifee.createTriggerNotification({
       id,
-      title: "Backup ULTRON",
+      title: "Backup UNVOR",
       body: "Promemoria: crea un backup cifrato aggiornato delle tue chat.",
       android: { channelId },
     }, {

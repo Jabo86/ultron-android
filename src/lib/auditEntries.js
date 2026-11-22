@@ -1,11 +1,11 @@
-// Scope of each entry is this Android build and the available ULTRON gateway source.
+// Scope of each entry is this Android build and the available UNVOR gateway source.
 export const AUDIT_SECTIONS = [
   {
     title: ["Account, chat e contenuti", "Account, chats and content"],
     rows: [
       ["Account e server personale", "Account and personal server", "code",
-        "L’app crea un indirizzo ULTRON, genera o importa il file chiave e firma una richiesta di accesso del server. Il gateway riceve indirizzo, chiave pubblica e firma. Puoi scegliere un server HTTPS compatibile, che gestisce i suoi dati e le sue regole.",
-        "The app creates an ULTRON address, generates or imports a keyfile and signs the server’s login challenge. The gateway receives the address, public key and signature. You can choose a compatible HTTPS server with its own data policies."],
+        "L’app crea un indirizzo UNVOR, genera o importa il file chiave e firma una richiesta di accesso del server. Il gateway riceve indirizzo, chiave pubblica e firma. Puoi scegliere un server HTTPS compatibile, che gestisce i suoi dati e le sue regole.",
+        "The app creates an UNVOR address, generates or imports a keyfile and signs the server’s login challenge. The gateway receives the address, public key and signature. You can choose a compatible HTTPS server with its own data policies."],
       ["Chat, ricerca e allegati", "Chat, search and attachments", "code",
         "Le chat individuali gestiscono testo, risposte, inoltro, audio, immagini, video e documenti. I file scelti vengono letti e cifrati sul telefono. Il gateway può conservare buste e blocchi cifrati con partecipanti, orari, dimensioni e stato di consegna. L’anteprima usa una cache privata. Documenti e video possono essere aperti con il visualizzatore Android, che riceve l’accesso in lettura. Salvataggi e condivisioni possono lasciare copie leggibili.",
         "Direct chats handle text, replies, forwarding, audio, images, video and documents. Selected files are read and encrypted on the device. The gateway may store encrypted envelopes and chunks with participants, timestamps, sizes and delivery state. Previews use private cache. Documents and videos may be opened in an Android viewer with read access. Saving and sharing may leave readable copies."],
@@ -13,8 +13,8 @@ export const AUDIT_SECTIONS = [
         "Testo e foto dello stato sono cifrati per il pubblico selezionato e scadono sul gateway dopo 24 ore. Il gateway conosce autore, destinatari, visualizzazioni e reazioni. I destinatari possono conservare ciò che vedono.",
         "Status text and photos are encrypted for the selected audience and expire on the gateway after 24 hours. The gateway knows the author, audience, views and reactions. Recipients can keep copies."],
       ["Rubrica, blocchi e ricerca utenti", "Contacts, blocking and user search", "code",
-        "La ricerca usa nomi e indirizzi ULTRON. La rubrica locale è cifrata e il gateway può registrare relazioni tra account, richieste e blocchi. Le chat individuali sul gateway ULTRON richiedono la reciprocità prevista dal servizio.",
-        "Search uses ULTRON names and addresses. Local contacts are encrypted and the gateway can store contact relationships, requests and blocks. Direct chat on the ULTRON gateway follows the service’s mutual-contact rules."],
+        "La ricerca usa nomi e indirizzi UNVOR. La rubrica locale è cifrata e il gateway può registrare relazioni tra account, richieste e blocchi. Le chat individuali sul gateway UNVOR richiedono la reciprocità prevista dal servizio.",
+        "Search uses UNVOR names and addresses. Local contacts are encrypted and the gateway can store contact relationships, requests and blocks. Direct chat on the UNVOR gateway follows the service’s mutual-contact rules."],
     ],
   },
   {
@@ -38,8 +38,8 @@ export const AUDIT_SECTIONS = [
         "Il client contiene cifratura delle buste e degli allegati, ML-DSA, ML-KEM e percorsi ratchet/prekey. La protezione dipende dal percorso e dalle chiavi disponibili. Il padding non nasconde ogni dimensione o metadato.",
         "The client contains envelope and attachment encryption, ML-DSA, ML-KEM and ratchet/prekey paths. Protection depends on the path and keys. Padding does not conceal every size or metadata item."],
       ["Chiavi chat firmate", "Signed chat keys", "device",
-        "Sul gateway ULTRON compatibile, l’app verifica la firma ML-DSA delle chiavi pubbliche della chat e memorizza un’impronta della prima identità firmata. Se poi la firma scompare, è invalida o cambia l’identità, l’invio si ferma. Il QR verificato di persona permette di controllare anche il primo contatto. I contatti senza chiavi firmate restano compatibili. Questo percorso usa ancora buste statiche.",
-        "On a compatible ULTRON gateway, the app verifies the ML-DSA signature over public chat keys and remembers a fingerprint of the first signed identity. A missing or invalid signature or a changed identity blocks sending after that. Verify the QR in person to check the first contact. Contacts without signed keys remain compatible. This path still uses static envelopes."],
+        "Sul gateway UNVOR compatibile, l’app verifica la firma ML-DSA delle chiavi pubbliche della chat e memorizza un’impronta della prima identità firmata. Se poi la firma scompare, è invalida o cambia l’identità, l’invio si ferma. Il QR verificato di persona permette di controllare anche il primo contatto. I contatti senza chiavi firmate restano compatibili. Questo percorso usa ancora buste statiche.",
+        "On a compatible UNVOR gateway, the app verifies the ML-DSA signature over public chat keys and remembers a fingerprint of the first signed identity. A missing or invalid signature or a changed identity blocks sending after that. Verify the QR in person to check the first contact. Contacts without signed keys remain compatible. This path still uses static envelopes."],
       ["Verifica contatti e chiavi d’aggancio", "Contact verification and handshake keys", "device",
         "QR e numeri di sicurezza servono al confronto su due dispositivi. Pubblicazione, sostituzione e revoca delle chiavi richiedono API compatibili.",
         "QR codes and safety numbers are compared on two devices. Key publication, replacement and revocation require compatible APIs."],
@@ -113,8 +113,8 @@ export const PILOT_AUDIT = {
       "Il pilota usa un gateway e un archivio separati. La chat individuale richiede il QR verificato su entrambi i telefoni e un dispositivo per account. Usa prekey firmate e buste ratchet. Il gateway blocca l’invio statico. Partecipanti, orari e stato di consegna sono visibili al gateway.",
       "The pilot uses a separate gateway and database. Direct chat requires QR verification on both phones and one device per account. Chat uses signed prekeys and ratchet envelopes. The gateway blocks static sending. The gateway can see participants, timestamps and delivery status."],
     ["Rimozione dalla vista", "Hiding messages", "code",
-      "Sul gateway pilota abilitato, Elimina chat rimuove la cronologia e gli allegati dal server per entrambi. ULTRON rimuove la propria cache su ciascun telefono quando si sincronizza. I singoli messaggi possono essere nascosti e le loro buste restano sul gateway. Esportazioni, allegati salvati fuori dall’app e backup richiedono una cancellazione separata.",
-      "On a supported pilot gateway, Delete chat removes both participants’ history and attachments from the server. ULTRON clears its cache on each phone at sync. Individual messages can be hidden and their envelopes stay on the gateway. Exports, files saved outside the app and backups require separate deletion."],
+      "Sul gateway pilota abilitato, Elimina chat rimuove la cronologia e gli allegati dal server per entrambi. UNVOR rimuove la propria cache su ciascun telefono quando si sincronizza. I singoli messaggi possono essere nascosti e le loro buste restano sul gateway. Esportazioni, allegati salvati fuori dall’app e backup richiedono una cancellazione separata.",
+      "On a supported pilot gateway, Delete chat removes both participants’ history and attachments from the server. UNVOR clears its cache on each phone at sync. Individual messages can be hidden and their envelopes stay on the gateway. Exports, files saved outside the app and backups require separate deletion."],
     ["Funzioni del pilota", "Pilot capabilities", "code",
       "L’accesso è limitato al gateway di prova. La creazione di gruppi e le chiamate TURN richiedono funzioni server ulteriori. Gli aggiornamenti del pilota si installano tramite APK firmato.",
       "Sign-in is limited to the test gateway. Group creation and TURN calls require additional server support. Pilot updates are installed from the signed APK."],
@@ -122,7 +122,7 @@ export const PILOT_AUDIT = {
       "Al primo tentativo di invio a un nuovo contatto, il gateway riceve gli indirizzi necessari alla richiesta. Il testo resta nella bozza finché il destinatario accetta dalla Rubrica. L’avviso Android è generico. Dopo l’accettazione i messaggi richiedono anche il controllo QR previsto dal pilota.",
       "On first send to a new contact, the gateway receives the addresses needed for the request. The text stays in the draft until the recipient accepts in Contacts. The Android alert is generic. After accepting, messaging also requires the pilot QR check."],
     ["Avvisi messaggi", "Message alerts", "device",
-      "Il servizio Android chiede gli avvisi al gateway ULTRON. Per riceverli serve autorizzare questa app in Android e attivare le notifiche senza Google. Il test nelle impostazioni verifica se il server vede un dispositivo in ascolto. La consegna a schermo spento dipende anche dalle restrizioni del telefono.",
-      "The Android service polls the ULTRON gateway. Allow Android notifications for this app and enable notifications without Google. The Settings test checks whether the server sees a listening device. Lock-screen delivery also depends on device restrictions."],
+      "Il servizio Android chiede gli avvisi al gateway UNVOR. Per riceverli serve autorizzare questa app in Android e attivare le notifiche senza Google. Il test nelle impostazioni verifica se il server vede un dispositivo in ascolto. La consegna a schermo spento dipende anche dalle restrizioni del telefono.",
+      "The Android service polls the UNVOR gateway. Allow Android notifications for this app and enable notifications without Google. The Settings test checks whether the server sees a listening device. Lock-screen delivery also depends on device restrictions."],
   ],
 };

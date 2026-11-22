@@ -42,7 +42,7 @@ export default function SecurityScreen({ navigation }) {
     <Pressable accessibilityRole="button" onPress={() => navigation.goBack()} testID="security-back">
       <Text style={s.link}>{it ? "‹ Impostazioni" : "‹ Settings"}</Text>
     </Pressable>
-    <Text style={s.title}>{it ? "Come funziona ULTRON" : "How ULTRON works"}</Text>
+    <Text style={s.title}>{it ? "Come funziona UNVOR" : "How UNVOR works"}</Text>
     <Text style={s.description}>{it
       ? "Funzioni, dati trattati e controlli di sicurezza. Le voci indicano dove serve una verifica sul telefono o sul gateway."
       : "Features, data handling and security checks. Entries indicate where the phone or gateway needs verification."}</Text>

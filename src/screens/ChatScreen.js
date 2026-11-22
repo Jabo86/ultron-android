@@ -261,8 +261,8 @@ export default function ChatScreen({ route, navigation }) {
     if (!convId || deletingChat.current || (pilot && !peer)) return;
     Alert.alert(pilot ? (lang === "en" ? "Delete this chat for both?" : "Eliminare la chat per entrambi?") : t("chat.deleteChat.title"),
       pilot ? (lang === "en"
-        ? "Delete the history and its attachments from the gateway for both participants. A new message starts an empty chat. Copies saved or exported outside ULTRON stay on those devices."
-        : "Elimina la cronologia e gli allegati dal gateway per entrambi. Un nuovo messaggio aprirà una chat vuota. Le copie salvate o esportate fuori da ULTRON restano sui dispositivi.")
+        ? "Delete the history and its attachments from the gateway for both participants. A new message starts an empty chat. Copies saved or exported outside UNVOR stay on those devices."
+        : "Elimina la cronologia e gli allegati dal gateway per entrambi. Un nuovo messaggio aprirà una chat vuota. Le copie salvate o esportate fuori da UNVOR restano sui dispositivi.")
         : t("chat.deleteChat.text"), [
       { text: t("cancel"), style: "cancel" },
       { text: pilot ? (lang === "en" ? "Delete for both" : "Elimina per entrambi") : t("delete"), style: "destructive", onPress: async () => {
@@ -345,7 +345,7 @@ export default function ChatScreen({ route, navigation }) {
       { text: lang === "en" ? "Block" : "Blocca", style: "destructive", onPress: async () => {
         try {
           await api.blockContact(peer, true);
-          Alert.alert("ULTRON", lang === "en" ? "Contact blocked." : "Contatto bloccato.");
+          Alert.alert("UNVOR", lang === "en" ? "Contact blocked." : "Contatto bloccato.");
         } catch (error) { setErr(api.apiErr(error)); }
       } },
     ]);

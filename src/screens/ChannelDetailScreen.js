@@ -1382,7 +1382,7 @@ function ManageModal({ detail, user, groupKey, t, lang, onClose, onDeleted, onCh
   const shareGroup = async () => {
     const link = `${api.getServerUrl()}/invito.html?g=${encodeURIComponent(detail.chan_id)}`;
     const doShare = () => Share.share({
-      message: (lang === "en" ? `Join "${name || detail.name}" on ULTRON:\n` : `Entra nel gruppo "${name || detail.name}" su ULTRON:\n`) + link,
+      message: (lang === "en" ? `Join "${name || detail.name}" on UNVOR:\n` : `Entra nel gruppo "${name || detail.name}" su UNVOR:\n`) + link,
       url: link,
     }).catch(() => {});
     if (publicJoin) { doShare(); return; }

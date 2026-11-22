@@ -376,7 +376,7 @@ export default function AddressBookScreen({ navigation, route }) {
       {dirResults.length > 0 && (
         <View style={styles.dirBox}>
           <Text style={styles.dirTitle} testID="rubrica-directory-title">
-            {"DIRECTORY ULTRON" + (dirBusy ? " …" : "")}
+            {"DIRECTORY UNVOR" + (dirBusy ? " …" : "")}
           </Text>
           {dirResults.slice(0, 8).map((d) => (
             <View key={d.lns} style={styles.dirRow} testID="rubrica-directory-row">

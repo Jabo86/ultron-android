@@ -356,10 +356,10 @@ export default function ConversationsScreen({ navigation }) {
       <CanaryReminder user={user} t={t} />
       <View style={styles.header}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          <Image source={require("../../assets/hud/core.webp")} style={styles.logo} resizeMode="contain" />
+          <Image source={require("../../assets/unvor/emblem.webp")} style={styles.logo} resizeMode="contain" />
           <View>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Text style={styles.hTitle}>ULTRON</Text>
+              <Text style={styles.hTitle}>UNVOR</Text>
               {totalUnread > 0 && (
                 <View style={styles.totalBadge} testID="conv-total-unread"><Text style={styles.totalBadgeTxt}>{totalUnread}</Text></View>
               )}

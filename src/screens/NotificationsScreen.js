@@ -72,7 +72,7 @@ export default function NotificationsScreen({ navigation }) {
     setBusy(true);
     try {
       if (!(await wake.isOn()) || !(await requestNotificationPermission({ askPermission: false }))) {
-        setStatus(label("Attiva le notifiche ULTRON e consenti il permesso Android.", "Enable ULTRON notifications and allow them in Android."));
+        setStatus(label("Attiva le notifiche UNVOR e consenti il permesso Android.", "Enable UNVOR notifications and allow them in Android."));
         return;
       }
       await wake.refresh();

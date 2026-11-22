@@ -246,7 +246,7 @@ export async function pilotGroupInvitations(user, group) {
 export async function requestPilotGroupInvitation(user, group, target) {
   const check = api.authenticatedScope(user);
   const credentials = await hostedGroupCredentials(user);
-  if (!await credentials.identityFor(target)) throw new Error("Verifica il QR ULTRON del contatto.");
+  if (!await credentials.identityFor(target)) throw new Error("Verifica il QR UNVOR del contatto.");
   check();
   const id = randomHex(16);
   const title = group.admin === user.lns ? await cachedPilotGroupTitle(user, group) : null;
@@ -277,7 +277,7 @@ export async function deliverPilotGroupInvitation(user, group, invitation) {
     check();
     if (saved?.done) return;
     const title = group.title || await cachedPilotGroupTitle(user, group);
-    const text = title ? `Invito al gruppo «${title}»` : "Invito a un gruppo ULTRON";
+    const text = title ? `Invito al gruppo «${title}»` : "Invito a un gruppo UNVOR";
     const payload = saved?.payload || packMessage(text, [], null, 0, { id: invitation.id, group: group.id });
     if (!saved) await setBlobDurably(key, { payload });
     check();
@@ -691,7 +691,7 @@ async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx,
       const members = engine.members(record.state, id, record.epoch);
       if (members.includes(body.target)) return detailsFor(engine, id, record);
       const identity = await credentials.identityFor(body.target);
-      if (!identity) throw new Error("Per questo contatto manca l’impronta della firma nel QR ULTRON.");
+      if (!identity) throw new Error("Per questo contatto manca l’impronta della firma nel QR UNVOR.");
       if (invitation) {
         expectInvitation(invitation);
         const consent = consentScope(user.server, id, invitation.id, user.lns, body.target, "accepted");

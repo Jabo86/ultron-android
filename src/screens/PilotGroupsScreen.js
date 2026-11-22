@@ -476,7 +476,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
   });
   const redeem = () => run(async () => {
     const code = joiningLink.trim().replace(/^ultron:\/\/group-invite\//i, "");
-    if (!/^[a-f0-9]{64}\.[a-f0-9]{64}$/.test(code)) throw new Error(say("Link ULTRON non valido.", "Invalid ULTRON link."));
+    if (!/^[a-f0-9]{64}\.[a-f0-9]{64}$/.test(code)) throw new Error(say("Link UNVOR non valido.", "Invalid UNVOR link."));
     await mlsRedeem(code);
     setJoiningLink(""); setRedeemOpen(false);
     await refresh(null);
@@ -490,7 +490,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const renewLink = () => run(async () => {
     const result = await mlsAction(group.id, { action: "link" });
     if (!/^[a-f0-9]{64}\.[a-f0-9]{64}$/.test(result?.code || "")) throw new Error(say("Link non confermato.", "Link not confirmed."));
-    setInviteCode(`ultron://group-invite/${result.code}`);
+    setInviteCode(`unvor://group-invite/${result.code}`);
   });
   const exitGroup = async (deleting, block = false) => {
     if (deleting) await mlsDeleteGroup(group.id);
@@ -569,7 +569,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
         "Only the sender and message reference will be sent to moderators."),
       [{ text: say("Annulla", "Cancel"), style: "cancel" }, { text: say("Segnala", "Report"), onPress: () => run(async () => {
         await mlsReport(group.id, { target: item.sender, reason: "Messaggio MLS #" + item.seq });
-        Alert.alert("ULTRON", say("Segnalazione inviata.", "Report sent."));
+        Alert.alert("UNVOR", say("Segnalazione inviata.", "Report sent."));
       }) }]);
   };
   const blockGroupPeer = item => {
@@ -639,7 +639,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
     <ScrollView style={[styles.root, topStyle]} contentContainerStyle={pageStyle}>
       {iconButton("arrow-back", backLabel, () => setDiscover(false))}
       <Text style={styles.title}>{say("Gruppi pubblici", "Public groups")}</Text>
-      <Text style={styles.dim}>{say("Per entrare serve un invito e il QR ULTRON verificato.", "Entry requires an invitation and a verified ULTRON QR.")}</Text>
+      <Text style={styles.dim}>{say("Per entrare serve un invito e il QR UNVOR verificato.", "Entry requires an invitation and a verified UNVOR QR.")}</Text>
       {publicGroups.map(item => (
         <TouchableOpacity key={item.id} style={styles.row} onPress={() => openProfile(item.admin)} accessibilityRole="button">
           <View style={{ flex: 1 }}><Text style={styles.text}>{item.name}</Text><Text style={styles.dim}>{item.admin}</Text></View>
@@ -658,7 +658,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
         {redeemOpen && <View style={styles.card}>
           <TextInput {...inputProps} style={styles.input} value={joiningLink} onChangeText={setJoiningLink}
             autoCapitalize="none" autoCorrect={false} maxLength={200}
-            placeholder={say("Incolla il link ULTRON", "Paste the ULTRON link")} />
+            placeholder={say("Incolla il link UNVOR", "Paste the UNVOR link")} />
           {button(say("Apri invito", "Open invitation"), redeem, { primary: true, disabled: busy || !joiningLink.trim() })}
         </View>}
         {inbox.map(invitation => (

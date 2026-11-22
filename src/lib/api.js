@@ -45,7 +45,7 @@ const makeClient = (base) => attachChaff(axios.create({ baseURL: `${base}/api`, 
 export async function verifyServer(value) {
   const target = personalServerUrl(value);
   const { data } = await makeClient(target).get("/health", { timeout: 8000 });
-  if (data?.ok !== true) throw new Error("Il server non risponde come un gateway ULTRON.");
+  if (data?.ok !== true) throw new Error("Il server non risponde come un gateway UNVOR.");
   return target;
 }
 
@@ -80,7 +80,7 @@ export function setKeyfile(kf) { invalidateSession(); _kf = kf; }
 export function clearAuth() { setKeyfile(null); }
 
 function checkSession(signal) {
-  if (signal.aborted) throw new Error("La sessione ULTRON è cambiata.");
+  if (signal.aborted) throw new Error("La sessione UNVOR è cambiata.");
 }
 
 async function ensureSession() {
@@ -167,7 +167,7 @@ export function authenticatedScope(user) {
   const { signal } = session;
   const check = () => {
     checkSession(signal);
-    if (user?.lns !== _kf?.lns || user?.server !== _base) throw new Error("La sessione ULTRON è cambiata.");
+    if (user?.lns !== _kf?.lns || user?.server !== _base) throw new Error("La sessione UNVOR è cambiata.");
   };
   check();
   return check;

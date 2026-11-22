@@ -27,7 +27,7 @@ export function generateRecoveryPhrase() {
 
 export function recoveryKeyfile(address, server, phrase) {
   const username = address.trim().toLowerCase().replace(/@ultron\.uns$/, "");
-  if (!/^[a-z0-9._-]{3,32}$/.test(username) || !/[a-z0-9]/.test(username)) throw new Error("Invalid ULTRON account.");
+  if (!/^[a-z0-9._-]{3,32}$/.test(username) || !/[a-z0-9]/.test(username)) throw new Error("Invalid UNVOR account.");
   const lns = username + "@ultron.uns";
   const tokens = phrase.trim().toLowerCase().split(/\s+/);
   if (tokens.length !== 12 || !/^https:\/\/[^\s?#]+$/.test(server)) throw new Error("Invalid recovery input.");

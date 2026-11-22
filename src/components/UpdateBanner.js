@@ -91,7 +91,7 @@ export function UpdateProgress({ progress, english }) {
   return <Modal visible transparent animationType="fade" onRequestClose={() => {}}>
     <View style={styles.overlay}>
       <View style={styles.progressCard}>
-        <Image source={require("../../assets/ultron-logo.png")} resizeMode="contain" style={styles.logo} />
+        <Image source={require("../../assets/unvor/emblem.webp")} resizeMode="contain" style={styles.logo} />
         <Text style={styles.progressText}>{label}</Text>
         <View style={styles.track} accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: percent }}>
           <View style={[styles.fill, { width: percent + "%" }]} />

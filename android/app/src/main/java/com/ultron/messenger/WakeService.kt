@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
@@ -16,12 +17,13 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * Notifiche del nodo ULTRON, senza push di terze parti.
- * Tiene aperta una connessione in attesa verso il server ULTRON (long-poll) e mostra una
+ * Notifiche del nodo UNVOR, senza push di terze parti.
+ * Tiene aperta una connessione in attesa verso il server UNVOR (long-poll) e mostra una
  * notifica locale quando ci sono messaggi. Non conosce chiavi, non decifra nulla: sa solo
  * che "c'è posta". Il contenuto lo legge l'app, dopo lo sblocco.
  */
 class WakeService : Service() {
+  private val brandIcon by lazy { BitmapFactory.decodeResource(resources, R.drawable.unvor_logo, BitmapFactory.Options().apply { inSampleSize = 4 }) }
   @Volatile private var running = false
   private var worker: Thread? = null
   private var chaffWorker: Thread? = null
@@ -75,12 +77,12 @@ class WakeService : Service() {
   private fun channels() {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
     val nm = getSystemService(NotificationManager::class.java)
-    val svc = NotificationChannel(CH_SERVICE, "Connessione ULTRON", NotificationManager.IMPORTANCE_MIN)
+    val svc = NotificationChannel(CH_SERVICE, "Connessione UNVOR", NotificationManager.IMPORTANCE_MIN)
     svc.setShowBadge(false)
     nm.createNotificationChannel(svc)
     val msg = NotificationChannel(CH_MSG, "Messaggi", NotificationManager.IMPORTANCE_HIGH)
     nm.createNotificationChannel(msg)
-    val call = NotificationChannel(CH_CALL, "Chiamate ULTRON", NotificationManager.IMPORTANCE_HIGH)
+    val call = NotificationChannel(CH_CALL, "Chiamate UNVOR", NotificationManager.IMPORTANCE_HIGH)
     val sound = android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE)
     val audio = android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE).build()
     call.setSound(sound, audio)
@@ -100,13 +102,14 @@ class WakeService : Service() {
     super.onCreate()
     channels()
     val wake = wakeOn(this)
-    val title = if (wake) "ULTRON in ascolto" else "Protezione traffico attiva"
-    val body = if (wake) "Notifiche dal server ULTRON"
+    val title = if (wake) "UNVOR in ascolto" else "Protezione traffico attiva"
+    val body = if (wake) "Notifiche dal server UNVOR"
                else "Traffico invisibile: rumore di rete per nascondere quando comunichi"
     val n = NotificationCompat.Builder(this, CH_SERVICE)
       .setContentTitle(title)
       .setContentText(body)
-      .setSmallIcon(applicationInfo.icon)
+      .setSmallIcon(R.drawable.unvor_notification)
+        .setLargeIcon(brandIcon)
       .setOngoing(true)
       .setPriority(NotificationCompat.PRIORITY_MIN)
       .setContentIntent(openAppIntent())
@@ -131,7 +134,8 @@ class WakeService : Service() {
       val b = NotificationCompat.Builder(this, CH_MSG)
         .setContentTitle("Nuovo messaggio")
         .setContentText(text)
-        .setSmallIcon(applicationInfo.icon)
+        .setSmallIcon(R.drawable.unvor_notification)
+        .setLargeIcon(brandIcon)
         .setAutoCancel(true)
         .setPriority(NotificationCompat.PRIORITY_HIGH)
         .setContentIntent(openAppIntent())
@@ -142,10 +146,11 @@ class WakeService : Service() {
   private fun notifyContact() {
     try {
       val alert = NotificationCompat.Builder(this, CH_MSG)
-        .setContentTitle("Richiesta di contatto ULTRON")
+        .setContentTitle("Richiesta di contatto UNVOR")
         .setContentText("Una persona ti sta cercando. Apri la Rubrica per vedere la richiesta.")
         .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-        .setSmallIcon(applicationInfo.icon)
+        .setSmallIcon(R.drawable.unvor_notification)
+        .setLargeIcon(brandIcon)
         .setAutoCancel(true)
         .setContentIntent(openAppIntent())
         .build()
@@ -156,8 +161,9 @@ class WakeService : Service() {
   private fun notifyGroup() {
     try {
       val alert = NotificationCompat.Builder(this, CH_MSG)
-        .setSmallIcon(applicationInfo.icon)
-        .setContentTitle("ULTRON")
+        .setSmallIcon(R.drawable.unvor_notification)
+        .setLargeIcon(brandIcon)
+        .setContentTitle("UNVOR")
         .setContentText("Nuovi messaggi nei gruppi")
         .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
         .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -178,9 +184,10 @@ class WakeService : Service() {
       val open = PendingIntent.getActivity(this, CALL_ID, intent,
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
       val call = NotificationCompat.Builder(this, CH_CALL)
-        .setContentTitle("Chiamata ULTRON")
+        .setContentTitle("Chiamata UNVOR")
         .setContentText("Tocca per vedere la chiamata")
-        .setSmallIcon(applicationInfo.icon)
+        .setSmallIcon(R.drawable.unvor_notification)
+        .setLargeIcon(brandIcon)
         .setCategory(NotificationCompat.CATEGORY_CALL)
         .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
         .setPriority(NotificationCompat.PRIORITY_MAX)

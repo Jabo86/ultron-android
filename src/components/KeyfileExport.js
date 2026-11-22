@@ -46,7 +46,7 @@ export default function KeyfileExport({ keyfile, english, onClose, onShared, onS
       }
     } catch {
       if (target) await FileSystem.StorageAccessFramework.deleteAsync(target, { idempotent: true }).catch(() => {});
-      Alert.alert("ULTRON", onSaved
+      Alert.alert("UNVOR", onSaved
         ? (english ? "Could not save and verify the encrypted keyfile." : "Impossibile salvare e verificare il file chiave cifrato.")
         : (english ? "Could not share the encrypted keyfile." : "Impossibile condividere il file chiave cifrato."));
     } finally {

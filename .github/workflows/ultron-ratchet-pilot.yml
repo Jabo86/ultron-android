@@ -1,4 +1,4 @@
-name: ULTRON Ratchet Pilot APK
+name: UNVOR Chat Pilot APK
 on:
   push:
     branches: [ratchet-integration, fix/chat-hud-attachments]
@@ -35,6 +35,7 @@ jobs:
           npm audit --audit-level=low --json > "$audit_report" || status=$?
           if (( status > 1 )); then exit "$status"; fi
           node tools/verify-ultron-pilot-dependencies.mjs audit "$audit_report"
+          node tools/verify-unvor-brand.cjs
           node tools/verify-ultron-document-picker.mjs
           node tools/verify-ultron-binary-upload.mjs
           node tools/verify-ultron-contact-badge.cjs
@@ -76,9 +77,9 @@ jobs:
             android/app/build/generated/sourcemaps/react/release/index.android.bundle.map
           "$tools/apksigner" verify "$apk"
           mkdir -p dist
-          asset="dist/ULTRON-Ratchet-Pilota-${EXPO_PUBLIC_ULTRON_VERSION_CODE}.apk"
+          asset="dist/UNVOR-Chat-Pilota-${EXPO_PUBLIC_ULTRON_VERSION_CODE}.apk"
           cp "$apk" "$asset"
           sha256sum "$asset"
           gh release create "ratchet-pilot-${GITHUB_RUN_NUMBER}" "$asset" \
-            --target "$GITHUB_SHA" --prerelease --latest=false --title "ULTRON Ratchet Pilota ${GITHUB_RUN_NUMBER}" \
+            --target "$GITHUB_SHA" --prerelease --latest=false --title "UNVOR Chat Pilota ${GITHUB_RUN_NUMBER}" \
             --notes "App separata per account di prova. Gateway HTTPS /ratchet-pilot."

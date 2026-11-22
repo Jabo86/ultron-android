@@ -15,13 +15,13 @@ import androidx.annotation.RequiresApi
 
 // CHIAMATE SOVRANE — v2.5.0
 //
-// Il problema che risolve, in una riga: prima ULTRON era una app qualunque che teneva
+// Il problema che risolve, in una riga: prima UNVOR era una app qualunque che teneva
 // aperto il microfono. Se arrivava una chiamata GSM (o una di WhatsApp), il sistema
 // strappava l'audio senza dire niente a nessuno: la voce spariva, la chiamata sembrava
 // caduta e non c'era modo di riprenderla.
 //
 // Con una `ConnectionService` AUTOGESTITA (`CAPABILITY_SELF_MANAGED`) la chiamata di
-// ULTRON diventa una chiamata VERA per Android: entra nel registro del telecom, ha la
+// UNVOR diventa una chiamata VERA per Android: entra nel registro del telecom, ha la
 // priorita di una telefonata, e quando ne arriva un'altra il sistema NON ci spegne —
 // ci chiama `onHold()` e lascia decidere all'utente. Noi mettiamo in pausa il microfono e
 // lo riaccendiamo a `onUnhold()`, senza perdere la sessione crittografica.
@@ -56,13 +56,13 @@ class UltronConnectionService : ConnectionService() {
     conn.connectionCapabilities = Connection.CAPABILITY_HOLD or Connection.CAPABILITY_SUPPORT_HOLD or
       Connection.CAPABILITY_MUTE
     conn.audioModeIsVoip = true
-    conn.setCallerDisplayName("ULTRON", TelecomManager.PRESENTATION_ALLOWED)
+    conn.setCallerDisplayName("UNVOR", TelecomManager.PRESENTATION_ALLOWED)
     if (outgoing) conn.setDialing() else conn.setRinging()
     current = conn
     return conn
   }
 
-  // ── La singola connessione. Un canale, una chiamata: ULTRON non ne tiene due. ──
+  // ── La singola connessione. Un canale, una chiamata: UNVOR non ne tiene due. ──
   class UltronConnection : Connection() {
     override fun onAnswer() { setActive(); CallControlModule.emit("answer", "") }
     override fun onReject() { setDisconnected(DisconnectCause(DisconnectCause.REJECTED)); destroy(); current = null; CallControlModule.emit("reject", "") }
@@ -91,9 +91,9 @@ class UltronConnectionService : ConnectionService() {
       if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
       return try {
         val tm = ctx.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
-        val acc = PhoneAccount.builder(handle(ctx), "ULTRON")
+        val acc = PhoneAccount.builder(handle(ctx), "UNVOR")
           .setCapabilities(PhoneAccount.CAPABILITY_SELF_MANAGED)
-          .setShortDescription("ULTRON · voce cifrata")
+          .setShortDescription("UNVOR · voce cifrata")
           .build()
         tm.registerPhoneAccount(acc)
         true

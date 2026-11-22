@@ -15,7 +15,7 @@ export function groupIdentityFingerprint(account, key) {
 function fields(server, account, device, publicKey) {
   if (!/^https:\/\/[^\s?#]{1,200}$/.test(server) || !VALID_ACCOUNT.test(account) ||
       !isHex(device, 32) || !(publicKey instanceof Uint8Array) || publicKey.length !== MLS_KEY_BYTES) {
-    throw new Error("Invalid ULTRON group credential.");
+    throw new Error("Invalid UNVOR group credential.");
   }
   return [CREDENTIAL, server, GROUP_CIPHERSUITE, account, device, sha256Hex(bytesToHex(publicKey))];
 }
@@ -23,7 +23,7 @@ function fields(server, account, device, publicKey) {
 export function signGroupCredential(user, device, publicKey) {
   const transcript = fields(user.server, user.lns, device, publicKey);
   const signature = signMessage(JSON.stringify(transcript), user.sk);
-  if (!isHex(signature, 6618)) throw new Error("ULTRON identity key missing.");
+  if (!isHex(signature, 6618)) throw new Error("UNVOR identity key missing.");
   return utf8Encode(JSON.stringify([...transcript, signature]));
 }
 

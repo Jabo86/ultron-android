@@ -79,7 +79,7 @@ export default function StatusScreen() {
       if (!photo?.base64 || photo.base64.length > 409600) throw new Error("invalid photo");
       setImg({ base64: photo.base64, uri: photo.uri, mime: "image/jpeg" });
     } catch {
-      Alert.alert("ULTRON", lang === "en" ? "Could not open or resize the photo." : "Impossibile aprire o ridurre la foto.");
+      Alert.alert("UNVOR", lang === "en" ? "Could not open or resize the photo." : "Impossibile aprire o ridurre la foto.");
     } finally { setPicking(false); }
   };
 
@@ -110,7 +110,7 @@ export default function StatusScreen() {
       await load();
     } catch (e) {
       const unsupported = e?.response?.status === 404;
-      Alert.alert("ULTRON", unsupported
+      Alert.alert("UNVOR", unsupported
         ? (lang === "en" ? "This server does not support publishing statuses yet. Your draft is still here."
           : "Il server non supporta ancora la pubblicazione degli stati. La bozza è ancora qui.")
         : api.apiErr(e));
