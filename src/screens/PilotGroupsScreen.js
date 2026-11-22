@@ -6,7 +6,7 @@ import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder, use
 import GroupQuiz from "../components/GroupQuiz";
 import ChatMessageMenu from "../components/ChatMessageMenu";
 import { copyMessageText, shareMessageText, useMessagePreferences } from "../lib/chatMessageActions";
-import * as DocumentPicker from "expo-document-picker";
+import * as DocumentPicker from "../lib/documentPicker";
 import * as FileSystem from "expo-file-system/legacy";
 import EncryptedAttachment from "../components/EncryptedAttachment";
 import SafeText from "../components/SafeText";
@@ -335,11 +335,11 @@ export default function PilotGroupsScreen({ navigation, route }) {
   };
   const pickFile = () => run(async () => {
     setComposerMenu(false);
-    const result = await withSystemActivity(() => DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true }));
+    const result = await DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true });
     if (!result.canceled) await prepareFile(result.assets?.[0], true);
   });
   const pickQuizFile = () => run(async () => {
-    const result = await withSystemActivity(() => DocumentPicker.getDocumentAsync({ type: ["image/*", "audio/*"], copyToCacheDirectory: true }));
+    const result = await DocumentPicker.getDocumentAsync({ type: ["image/*", "audio/*"], copyToCacheDirectory: true });
     if (!result.canceled) await prepareFile(result.assets?.[0], true, true);
   });
   const pickMedia = (source) => run(async () => {

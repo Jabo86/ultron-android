@@ -26,7 +26,7 @@ import {
   unwrapGroupKey, encryptWithGroupKey, decryptWithGroupKey, wrapGroupKeyFor,
   packMessage, unpackMessage, base64ToBytes, bytesToBase64, encryptFileBytes, decryptFileBytes,
 } from "../lib/crypto";
-import * as DocumentPicker from "expo-document-picker";
+import * as DocumentPicker from "../lib/documentPicker";
 import * as bigatt from "../lib/bigatt";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";

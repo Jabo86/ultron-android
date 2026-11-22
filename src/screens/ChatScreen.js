@@ -7,7 +7,7 @@ import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import * as ImagePicker from "expo-image-picker";
 import * as imageOpt from "../lib/imageOpt";
 import * as appearance from "../lib/appearance";
-import * as DocumentPicker from "expo-document-picker";
+import * as DocumentPicker from "../lib/documentPicker";
 import * as bigatt from "../lib/bigatt";
 import * as FileSystem from "expo-file-system/legacy";
 import { useAudioRecorder, useAudioRecorderState, AudioModule, RecordingPresets, setAudioModeAsync } from "expo-audio";
@@ -108,6 +108,7 @@ export default function ChatScreen({ route, navigation }) {
   const [groupInvites, setGroupInvites] = useState(null);
   const [groupInviteActions, setGroupInviteActions] = useState({});
   const [busyInvite, setBusyInvite] = useState(null);
+  const documentFlow = useRef(false);
   const inviteBusyRef = useRef(false);
   const invitePreparedAt = useRef(0);
   const [invitePrepFailed, setInvitePrepFailed] = useState(false);
@@ -869,41 +870,44 @@ export default function ChatScreen({ route, navigation }) {
   };
   // File generico (documenti, qualsiasi tipo) via DocumentPicker, cifrato E2EE come gli altri allegati.
   const attachFile = async () => {
-    if (deletingChat.current) return;
-    if (others.length === 0 || !user?.kem) { setErr(t("chat.attach.noconv")); return; }
-    try { if (!(await maySendToContact())) return; }
-    catch (e) { setErr(api.apiErr(e)); return; }
-    suppressLock();
+    if (deletingChat.current || documentFlow.current) return;
+    documentFlow.current = true;
     try {
-      const res = await withSystemActivity(() => DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true }));
-      if (res.canceled || !res.assets?.[0]) return;
-      const a = res.assets[0];
-      const size = a.size ?? (await FileSystem.getInfoAsync(a.uri)).size ?? 0;
-      if (size > bigatt.MAX_ATT) { setErr(lang === "en" ? "File too large (max 100MB)" : "File troppo grande (max 100MB)"); return; }
-      setSending(true); setErr("");
-      setUploadPct(0);
-      const name = a.name || `file_${Date.now()}`;
-      const mime = a.mimeType || "application/octet-stream";
-      const onP = (p) => { if (mounted.current) setUploadPct(p); };
-      // Oltre i 4 MB si passa al formato a pezzi: si legge dal disco, si cifra e si
-      // spedisce un pezzo alla volta, senza mai tenere il file intero in memoria.
-      let att;
-      if (size > bigatt.ATT_CHUNK) {
-        att = await bigatt.uploadFileChunked({ uri: a.uri, name, mime, size, allowed: others, onProgress: onP });
-      } else {
-        const b64 = await FileSystem.readAsStringAsync(a.uri, { encoding: FileSystem.EncodingType.Base64 });
-        const bytes = base64ToBytes(b64);
-        const enc = encryptFileBytes(bytes);
-        const { id } = await api.blobUpload(enc.ciphertext, onP, others);
-        att = { id, name, mime, size: bytes.length, key: enc.key, iv: enc.iv };
-      }
-      const payload = packMessage(text.trim(), [att], replyTo, ttl);
-      const r2 = await sendChatMessage(payload, others, user);
-      setText(""); setReplyTo(null);
-      if (r2?.conv_id && r2.conv_id !== convId) setConvId(r2.conv_id);
-      await load(r2?.conv_id || convId);
-    } catch (e) { setErr(api.apiErr(e)); }
-    finally { setSending(false); setUploadPct(null); }
+      if (others.length === 0 || !user?.kem) { setErr(t("chat.attach.noconv")); return; }
+      try { if (!(await maySendToContact())) return; }
+      catch (e) { setErr(api.apiErr(e)); return; }
+      suppressLock();
+      try {
+        const res = await DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true });
+        if (res.canceled || !res.assets?.[0]) return;
+        const a = res.assets[0];
+        const size = a.size ?? (await FileSystem.getInfoAsync(a.uri)).size ?? 0;
+        if (size > bigatt.MAX_ATT) { setErr(lang === "en" ? "File too large (max 100MB)" : "File troppo grande (max 100MB)"); return; }
+        setSending(true); setErr("");
+        setUploadPct(0);
+        const name = a.name || `file_${Date.now()}`;
+        const mime = a.mimeType || "application/octet-stream";
+        const onP = (p) => { if (mounted.current) setUploadPct(p); };
+        // Oltre i 4 MB si passa al formato a pezzi: si legge dal disco, si cifra e si
+        // spedisce un pezzo alla volta, senza mai tenere il file intero in memoria.
+        let att;
+        if (size > bigatt.ATT_CHUNK) {
+          att = await bigatt.uploadFileChunked({ uri: a.uri, name, mime, size, allowed: others, onProgress: onP });
+        } else {
+          const b64 = await FileSystem.readAsStringAsync(a.uri, { encoding: FileSystem.EncodingType.Base64 });
+          const bytes = base64ToBytes(b64);
+          const enc = encryptFileBytes(bytes);
+          const { id } = await api.blobUpload(enc.ciphertext, onP, others);
+          att = { id, name, mime, size: bytes.length, key: enc.key, iv: enc.iv };
+        }
+        const payload = packMessage(text.trim(), [att], replyTo, ttl);
+        const r2 = await sendChatMessage(payload, others, user);
+        setText(""); setReplyTo(null);
+        if (r2?.conv_id && r2.conv_id !== convId) setConvId(r2.conv_id);
+        await load(r2?.conv_id || convId);
+      } catch (e) { setErr(api.apiErr(e)); }
+      finally { setSending(false); setUploadPct(null); }
+    } finally { documentFlow.current = false; }
   };
   // Apri/chiudi il menu allegati (stile identico ai gruppi).
   const toggleAttachMenu = () => {

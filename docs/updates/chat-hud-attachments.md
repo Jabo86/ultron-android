@@ -30,3 +30,11 @@ The user's original attachment failure is not yet reproduced on a physical phone
 Group uploads remain limited to 1 MiB when the managed-group gateway is available, or 96 KiB inline on the older path. Larger group documents/videos require a matching gateway protocol change; the app must not claim otherwise. Individual chats retain their existing chunked upload limit.
 
 Verify small-screen layout, font fallbacks, text scaling, keyboard insets, notifications, profile isolation and existing message history on Pixel and Samsung. Do not uninstall to update. No server persistence or cryptographic anonymity claim is added by this visual/transport change.
+
+## Follow-up: Android document picker concurrency
+
+A shared synchronous gate now covers every document picker caller (including backup/key import). Overlapping calls return a cancellation result without opening or queueing another selector. The individual-chat attachment handler additionally holds a synchronous ref from before its asynchronous consent check through completion of the send.
+
+The installed Expo 57.0.0 Android module sets `pendingPromise` before launching the picker and does not clear it if the launch throws. A narrowly matched, version-checked postinstall patch clears that flag on launch failure and rethrows the original error; applying the patch twice is safe and changed upstream sources fail explicitly.
+
+`node tools/verify-ultron-document-picker.mjs` covers duplicate taps, a single delivered result, cancellation, failure/retry, synchronous launch failure, PIN suppression during system selection, the actual chat handler's consent/upload lifetime and native patch idempotence. Physical device selection, cancellation/reopening and file transmission still require confirmation after installing the APK. No gateway update is needed for this picker-only fix.

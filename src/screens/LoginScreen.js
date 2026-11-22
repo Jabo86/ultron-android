@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { View, StyleSheet, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Alert, Image } from "react-native";
 import { Text, TextInput } from "../components/HudText";
-import * as DocumentPicker from "expo-document-picker";
+import * as DocumentPicker from "../lib/documentPicker";
 import * as FileSystem from "expo-file-system/legacy";
 import { KEYFILE_FORMAT, MAX_KEYFILE_BYTES, MAX_KEY_PASSWORD, openProtectedKeyfile } from "../lib/keyfileProtection";
 import { useAuth } from "../context/AuthContext";

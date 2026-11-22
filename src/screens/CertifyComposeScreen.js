@@ -4,7 +4,7 @@ import { Text, TextInput } from "../components/HudText";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import * as DocumentPicker from "expo-document-picker";
+import * as DocumentPicker from "../lib/documentPicker";
 import * as FileSystem from "expo-file-system/legacy";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { theme } from "../theme";

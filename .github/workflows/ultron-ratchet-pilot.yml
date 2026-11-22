@@ -23,6 +23,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+          cache: gradle
       - uses: android-actions/setup-android@v3
         with:
           packages: "platform-tools platforms;android-36 build-tools;36.0.0 ndk;27.1.12297006"
@@ -34,6 +35,7 @@ jobs:
           npm audit --audit-level=low --json > "$audit_report" || status=$?
           if (( status > 1 )); then exit "$status"; fi
           node tools/verify-ultron-pilot-dependencies.mjs audit "$audit_report"
+          node tools/verify-ultron-document-picker.mjs
           node tools/verify-ultron-binary-upload.mjs
           node tools/verify-ultron-contact-badge.cjs
           node tools/verify-ultron-hosted-ratchet-receive.mjs
