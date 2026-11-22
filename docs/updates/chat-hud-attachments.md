@@ -6,6 +6,7 @@ Base: ratchet-pilot-38 (APK 338). Launcher work is out of scope.
 
 - Shared black/white/cyan palette, local Orbitron headings and Roboto body fonts.
 - Shared native Text/TextInput wrappers retain refs, accessibility and explicit monospace styles.
+- Incoming-call native screen and notification accent use the same cyan and packaged fonts. Call behavior and keyguard requirements are unchanged.
 - Static local HUD background, small panel corner accents, shared helmet artwork on entry and conversation screens. No continuous animation, network font or extra service.
 - Android uploads use Expo's native binary upload task with already-encrypted bytes in a private temporary file. HTTP status remains available to session refresh, progress and abort are preserved, and the temporary ciphertext is removed on completion or error.
 - Group camera/gallery photos are resized within the gateway's existing limit. Documents and videos retain their bytes.

@@ -32,7 +32,7 @@ export function createCipherUploader(fs, encode, randomId) {
       let data = result.body;
       try { data = JSON.parse(result.body); } catch { /* Preserve non-JSON HTTP failures. */ }
       if (result.status < 200 || result.status >= 300) {
-        throw Object.assign(new Error("Il gateway ha rifiutato il trasferimento."), { response: { status: result.status, data } });
+        throw Object.assign(new Error(`Il gateway ha rifiutato il trasferimento (HTTP ${result.status}).`), { response: { status: result.status, data } });
       }
       return { data, status: result.status, headers: result.headers };
     } catch (error) {
