@@ -36,6 +36,8 @@ export function createCipherUploader(fs, encode, randomId) {
       }
       return { data, status: result.status, headers: result.headers };
     } catch (error) {
+      // Expo removes progress listeners on success; cancel also releases them after failure.
+      await task?.cancelAsync().catch(() => {});
       if (options.signal?.aborted) throw Object.assign(new Error("Trasferimento annullato."), { name: "AbortError" });
       if (timedOut) throw new Error("Tempo massimo del trasferimento superato.");
       throw error;
