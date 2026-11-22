@@ -290,7 +290,7 @@ export default function SettingsScreen({ navigation }) {
     setExporting(true);
     try {
       const data = await api.accountExport();
-      const path = FileSystem.cacheDirectory + `ultron-dati-${Date.now()}.json`;
+      const path = FileSystem.cacheDirectory + `unvor-dati-${Date.now()}.json`;
       await FileSystem.writeAsStringAsync(path, JSON.stringify(data, null, 2), { encoding: FileSystem.EncodingType.UTF8 });
       if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(path, { mimeType: "application/json", dialogTitle: t("settings.export") });
       else Alert.alert(t("settings.export"), t("settings.export.done"));

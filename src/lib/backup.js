@@ -210,7 +210,7 @@ export async function exportBackup({ user, includeAtts, password, onStep } = {})
   const { payload, counts } = await buildPayload({ user, includeAtts, onStep });
   onStep && onStep("Cifratura del file");
   const container = await encryptContainer(payload, password);
-  const name = `ultron-backup-${randomHex(8)}.ultron`;
+  const name = `unvor-backup-${randomHex(8)}.unvor`;
   const uri = FileSystem.documentDirectory + name;
   await FileSystem.writeAsStringAsync(uri, JSON.stringify(container));
   const info = await FileSystem.getInfoAsync(uri);
