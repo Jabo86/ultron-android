@@ -2,7 +2,8 @@
 // Gli indirizzi arrivano dalla rubrica di questo telefono e dall'elenco dei blocchi in
 // chiaro sul server: i blocchi della rubrica cieca restano anonimi per progetto.
 import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
+import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
+import { Text } from "../components/HudText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useI18n } from "../lib/i18n";

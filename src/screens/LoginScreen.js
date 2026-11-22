@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from "react";
-import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator,
-  KeyboardAvoidingView, Platform, ScrollView, Alert, Image,
-} from "react-native";
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Alert, Image } from "react-native";
+import { Text, TextInput } from "../components/HudText";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import { KEYFILE_FORMAT, MAX_KEYFILE_BYTES, MAX_KEY_PASSWORD, openProtectedKeyfile } from "../lib/keyfileProtection";
@@ -131,7 +129,7 @@ export default function LoginScreen({ navigation }) {
         </View>
 
         <View style={styles.brand}>
-          <Image source={require("../../assets/ultron-logo.png")} style={styles.logo} resizeMode="contain" />
+          <Image source={require("../../assets/hud/core.webp")} style={styles.logo} resizeMode="contain" />
           <Text style={styles.brandTitle}>ULTRON</Text>
           <Text style={styles.brandSub}>SOVEREIGN MESSAGING</Text>
         </View>

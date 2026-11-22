@@ -1,6 +1,7 @@
 import { writeCachedAttachment } from "../lib/attachmentCache";
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { View, Text, Image, TouchableOpacity, ActivityIndicator, Alert, StyleSheet, Modal, Pressable } from "react-native";
+import { View, Image, TouchableOpacity, ActivityIndicator, Alert, StyleSheet, Modal, Pressable } from "react-native";
+import { Text } from "./HudText";
 import * as FileSystem from "expo-file-system/legacy";
 // SDK 57: le funzioni `saveToLibraryAsync`/`createAssetAsync` importate da
 // "expo-media-library" sono deprecate e LANCIANO un errore invece di salvare (è il motivo

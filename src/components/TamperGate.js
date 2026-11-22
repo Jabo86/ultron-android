@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput } from "react-native";
+import { View, StyleSheet, Pressable, ScrollView } from "react-native";
+import { Text, TextInput } from "./HudText";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import * as integrity from "../lib/integrity";

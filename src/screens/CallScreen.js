@@ -1,6 +1,7 @@
 import { hostedRatchetPilot, verifiedContact } from "../lib/hostedRatchetChat";
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { View, Text, Image, ScrollView, StyleSheet, TouchableOpacity, Vibration, Alert, AppState } from "react-native";
+import { View, Image, ScrollView, StyleSheet, TouchableOpacity, Vibration, Alert, AppState } from "react-native";
+import { Text } from "../components/HudText";
 import { Ionicons } from "@expo/vector-icons";
 import { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription, mediaDevices } from "react-native-webrtc";
 import { useAudioPlayer } from "expo-audio";

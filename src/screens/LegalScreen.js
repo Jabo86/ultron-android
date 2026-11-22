@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Linking, Pressable, ScrollView, StyleSheet, Text } from "react-native";
+import { Linking, Pressable, ScrollView, StyleSheet } from "react-native";
+import { Text } from "../components/HudText";
 import { useI18n } from "../lib/i18n";
 import { LEGAL_DOCS, LEGAL_TEXT, legalServerUrl } from "../lib/legalDocuments";
 import { theme } from "../theme";

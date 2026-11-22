@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Animated, Easing, Platform } from "react-native";
+import { View, TouchableOpacity, ScrollView, StyleSheet, Animated, Easing, Platform } from "react-native";
+import { Text } from "../components/HudText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../theme";

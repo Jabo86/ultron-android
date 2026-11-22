@@ -15,10 +15,8 @@ import { RATCHET_PILOT } from "../config";
 // Nessuna verifica indebolita: il numero appare solo con impronte davvero disponibili, e
 // un cambio di chiavi viene segnalato con l'avviso rosso.
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Modal,
-  Share, TextInput, InteractionManager,
-} from "react-native";
+import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Modal, Share, InteractionManager } from "react-native";
+import { Text, TextInput } from "../components/HudText";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";

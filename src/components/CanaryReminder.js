@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, Text, Animated, Easing, StyleSheet, Platform, Pressable, Alert } from "react-native";
+import { View, Animated, Easing, StyleSheet, Platform, Pressable, Alert } from "react-native";
+import { Text } from "./HudText";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../theme";
 import { alpha } from "./Surface";

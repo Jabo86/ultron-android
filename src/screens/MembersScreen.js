@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
-import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, Alert, Modal,
-} from "react-native";
+import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Modal } from "react-native";
+import { Text, TextInput } from "../components/HudText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import KeyfileExport from "../components/KeyfileExport";

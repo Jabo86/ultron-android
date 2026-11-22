@@ -1,5 +1,6 @@
 import React, { useRef, useState } from "react";
-import { Alert, Modal, View, Text, TextInput, Pressable, StyleSheet } from "react-native";
+import { Alert, Modal, View, Pressable, StyleSheet } from "react-native";
+import { Text, TextInput } from "./HudText";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { MAX_KEY_PASSWORD, MIN_KEY_PASSWORD, protectKeyfile } from "../lib/keyfileProtection";

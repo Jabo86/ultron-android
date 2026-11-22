@@ -1,3 +1,6 @@
+import { setNativeBinaryUploader } from "./src/lib/binaryTransport";
+import { uploadEncryptedBytes } from "./src/lib/nativeBinaryUpload";
+import HudBackdrop from "./src/components/hud/HudBackdrop";
 import PilotGroupsScreen from "./src/screens/PilotGroupsScreen";
 import { hostedRatchetPilot, verifiedContact } from "./src/lib/hostedRatchetChat";
 import { setNativeExportKdf } from "./src/lib/exportKdf";
@@ -136,7 +139,7 @@ function MainTabs() {
           paddingBottom: 6 + insets.bottom,
           paddingTop: 6,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: "700" },
+        tabBarLabelStyle: { fontFamily: Platform.OS === "android" ? "UltronBody" : undefined, fontSize: 11, fontWeight: "700" },
         tabBarIcon: ({ color, size, focused }) => (
           <Ionicons name={focused ? TAB_ICONS[route.name] : `${TAB_ICONS[route.name]}-outline`} size={size} color={color} />
         ),
@@ -151,12 +154,13 @@ function MainTabs() {
 }
 
 setNativeExportKdf(NativeModules.LatticeKdf);
+setNativeBinaryUploader(uploadEncryptedBytes);
 
 const navTheme = {
   ...DarkTheme,
   colors: {
     ...DarkTheme.colors,
-    background: theme.bg,
+    background: "transparent",
     card: theme.surface,
     text: theme.text,
     border: theme.border,
@@ -437,9 +441,9 @@ function Root() {
       screenOptions={{
         headerStyle: { backgroundColor: theme.surface },
         headerTintColor: theme.text,
-        headerTitleStyle: { fontWeight: "800" },
+        headerTitleStyle: { fontFamily: Platform.OS === "android" ? "UltronDisplay" : undefined, fontWeight: "700", fontSize: 18 },
         headerShadowVisible: false,
-        contentStyle: { backgroundColor: theme.bg },
+        contentStyle: { backgroundColor: "transparent" },
         freezeOnBlur: true,
         animation: "slide_from_right",
       }}
@@ -494,6 +498,7 @@ function Shell({ children }) {
   // di ricostruire gli stili di quaranta file.
   return (
     <View style={{ flex: 1, direction: rtl ? "rtl" : "ltr", backgroundColor: look.color }}>
+      <HudBackdrop />
       {children}
     </View>
   );

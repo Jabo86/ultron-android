@@ -2,9 +2,8 @@ import { callAccessCopy } from "../lib/locales/callAccess";
 import { LEGAL_DOCS, PRIVACY_SUMMARY, CONTACTS_SUMMARY, DATA_PROTECTION } from "../lib/legalDocuments";
 import { isOwner as canaryIsOwner } from "../lib/canary";
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, ActivityIndicator, Alert, Linking, NativeModules, AppState, Platform, Modal, TextInput, Share,
-} from "react-native";
+import { View, StyleSheet, ScrollView, TouchableOpacity, Switch, ActivityIndicator, Alert, Linking, NativeModules, AppState, Platform, Modal, Share } from "react-native";
+import { Text, TextInput } from "../components/HudText";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as appearance from "../lib/appearance";

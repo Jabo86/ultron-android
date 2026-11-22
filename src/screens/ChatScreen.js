@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from "react";
-import {
-  View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
-  ActivityIndicator, Alert, AppState, Keyboard, InteractionManager,
-} from "react-native";
+import { View, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, AppState, Keyboard, InteractionManager } from "react-native";
+import { Text, TextInput } from "../components/HudText";
 import ChatMessageMenu from "../components/ChatMessageMenu";
 import { copyMessageText, shareMessageText, useMessagePreferences } from "../lib/chatMessageActions";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";

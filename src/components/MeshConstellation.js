@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { sovereignNodes } from "../lib/api";
-import { View, Text, Animated, Easing, StyleSheet, TouchableOpacity } from "react-native";
+import { View, Animated, Easing, StyleSheet, TouchableOpacity } from "react-native";
+import { Text } from "./HudText";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../theme";
 

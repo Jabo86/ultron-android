@@ -1,3 +1,4 @@
+import { postEncryptedBytes } from "./binaryTransport";
 // Lattice Pulse API client (sidecar session model, mirrors the web client).
 // Node-safe: only depends on axios + crypto.js (no React Native imports here),
 // so the same code path is exercised by the Node E2E test.
@@ -504,8 +505,8 @@ export const mlsQuiz = (id, payload) =>
   withAuth((a, transport) => transport.post(`${mlsGroup(id)}/quiz`, payload, a).then(r => r.data));
 const mlsFile = (group, id) => `${mlsGroup(group)}/files/${encodeURIComponent(id)}`;
 export const mlsUpload = (group, id, bytes) =>
-  withAuth((a, transport) => transport.post(mlsFile(group, id), bytes.slice().buffer, {
-    ...a, adapter: "xhr", headers: { ...a.headers, "Content-Type": "application/octet-stream" }, timeout: 30000,
+  withAuth((a, transport) => postEncryptedBytes(transport, mlsFile(group, id), bytes, {
+    ...a, headers: { ...a.headers, "Content-Type": "application/octet-stream", "X-Pad": randPad() }, timeout: 30000,
   }).then(r => r.data));
 export const mlsDownload = (group, id) =>
   withAuth(async (a, transport) => {
@@ -653,12 +654,11 @@ async function blobRequest(stage, action) {
 
 export const blobPutChunk = (upload_id, index, bytes, onProgress) =>
   blobRequest("trasferimento", () => withAuth((a, transport) =>
-    transport.post("/public/blob/chunk", bytes.slice().buffer, {
-      // React Native XHR sends ArrayBuffer as an explicit binary request body.
-      adapter: "xhr",
+    postEncryptedBytes(transport, "/public/blob/chunk", bytes, {
+      // The app registers the native binary uploader; Node tests keep their HTTP adapter.
       params: { upload_id, index },
       signal: a.signal,
-      headers: { ...a.headers, "Content-Type": "application/octet-stream" },
+      headers: { ...a.headers, "Content-Type": "application/octet-stream", "X-Pad": randPad() },
       timeout: 120000,
       onUploadProgress: ({ loaded, total }) => {
         if (total > 0) onProgress?.(Math.min(1, loaded / total));

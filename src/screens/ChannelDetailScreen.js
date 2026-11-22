@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { AppState,
-  View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
-  ActivityIndicator, Modal, Alert, Image, ScrollView, Pressable, Switch, Linking, Share,
-} from "react-native";
+import { AppState, View, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Modal, Alert, Image, ScrollView, Pressable, Switch, Linking, Share } from "react-native";
+import { Text, TextInput } from "../components/HudText";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useHeaderHeight } from "@react-navigation/elements";

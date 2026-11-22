@@ -1,8 +1,6 @@
 import React, { useState, useCallback, useRef, useMemo, useEffect } from "react";
-import {
-  View, Text, StyleSheet, SectionList, TouchableOpacity, RefreshControl,
-  TextInput, ActivityIndicator, Alert, Modal, Pressable,
-} from "react-native";
+import { View, StyleSheet, SectionList, TouchableOpacity, RefreshControl, ActivityIndicator, Alert, Modal, Pressable } from "react-native";
+import { Text, TextInput } from "../components/HudText";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useI18n } from "../lib/i18n";

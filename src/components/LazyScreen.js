@@ -2,7 +2,8 @@
 // file, generatore QR). Se uno di quei moduli esplode, esplode SOLO quando apri quella
 // schermata, con un messaggio leggibile: l'app non si chiude più all'avvio.
 import React from "react";
-import { View, Text, ActivityIndicator, ScrollView } from "react-native";
+import { View, ActivityIndicator, ScrollView } from "react-native";
+import { Text } from "./HudText";
 import { theme } from "../theme";
 
 export function lazyScreen(loader, label) {

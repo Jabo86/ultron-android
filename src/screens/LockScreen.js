@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Image, ActivityIndicator } from "react-native";
+import { View, StyleSheet, TouchableOpacity, Image, ActivityIndicator } from "react-native";
+import { Text } from "../components/HudText";
 import { authenticate } from "../lib/biometrics";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../lib/i18n";
@@ -24,7 +25,7 @@ export default function LockScreen() {
 
   return (
     <View style={styles.root} testID="lock-screen">
-      <Image source={require("../../assets/ultron-logo.png")} style={styles.logo} resizeMode="contain" />
+      <Image source={require("../../assets/hud/core.webp")} style={styles.logo} resizeMode="contain" />
       <Text style={styles.title}>{t("lock.title")}</Text>
       <Text style={styles.sub}>{t("lock.sub")}</Text>
 

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, Vibration, View } from "react-native";
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, TouchableOpacity, Vibration, View } from "react-native";
+import { Text } from "../components/HudText";
 import { Ionicons } from "@expo/vector-icons";
 import { createAudioPlayer } from "expo-audio";
 import { saveRingtone, loadRingtone, saveRingVolume, loadRingVolume, saveVibMode, loadVibMode } from "../lib/store";

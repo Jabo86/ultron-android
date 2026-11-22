@@ -1,5 +1,6 @@
 import React, { useRef, useState } from "react";
-import { TouchableOpacity, Text, View, ActivityIndicator, StyleSheet, NativeModules } from "react-native";
+import { TouchableOpacity, View, ActivityIndicator, StyleSheet, NativeModules } from "react-native";
+import { Text } from "./HudText";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { withSystemActivity } from "../lib/lockGuard";

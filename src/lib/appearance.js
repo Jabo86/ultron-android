@@ -13,7 +13,7 @@ const KEY = "ultron.look.blue.v1";
 // stesso contrasto. Il colore cambia l'umore dell'app, non la sua leggibilità.
 export const ACCENTS = [
   { id: "smeraldo", label: "Verde Smeraldo", color: "#50C878", deep: "#1E5637" },
-  { id: "blu", label: "Blu Elettrico", color: "#72C7FF", deep: "#133762" },
+  { id: "blu", label: "Blu Elettrico", color: "#21DFFF", deep: "#064257" },
   { id: "oro", label: "Giallo Oro", color: "#E8B33C", deep: "#6B4E12" },
   { id: "rubino", label: "Rosso Rubino", color: "#E0475F", deep: "#6B1622" },
   { id: "arancio", label: "Arancione Vivace", color: "#FF7A2F", deep: "#7A3410" },
@@ -22,7 +22,7 @@ export const ACCENTS = [
 
 export const BACKGROUNDS = [
   { id: "nero", label: "Deep Black", color: "#000000", surface: "#0A0A0A", surfaceAlt: "#121212", border: "#1C1C1C" },
-  { id: "blunotte", label: "Midnight Blue", color: "#050E1F", surface: "#09182D", surfaceAlt: "#102440", border: "#25476B" },
+  { id: "blunotte", label: "Midnight Blue", color: "#00050A", surface: "#001019", surfaceAlt: "#031B29", border: "#155268" },
   { id: "foresta", label: "Forest Green", color: "#00110A", surface: "#061A10", surfaceAlt: "#0A2417", border: "#123522" },
 ];
 

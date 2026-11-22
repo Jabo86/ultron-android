@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator, FlatList, Platform,
-} from "react-native";
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, FlatList, Platform } from "react-native";
+import { Text, TextInput } from "../components/HudText";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, Image, Keyboard, ScrollView, Share, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Image, Keyboard, ScrollView, Share, StyleSheet, Switch, TouchableOpacity, View } from "react-native";
+import { Text, TextInput } from "../components/HudText";
 import * as ImagePicker from "expo-image-picker";
 import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio";
 import GroupQuiz from "../components/GroupQuiz";
@@ -20,6 +21,7 @@ import { apiErr, blockContact, contacts, mlsAction, mlsDeleteGroup, mlsRedeem, m
   mlsUpload } from "../lib/api";
 import { contactAddress, matchesContact } from "../lib/contactAddress";
 import { pickAvatarDataUrl } from "../lib/avatar";
+import { shrinkPhoto } from "../lib/imageOpt";
 import { base64ToBytes, encryptFileBytes, randomHex } from "../lib/crypto";
 import { withSystemActivity } from "../lib/lockGuard";
 import { analyzeMessage } from "../lib/threatEngine";
@@ -352,8 +354,22 @@ export default function PilotGroupsScreen({ navigation, route }) {
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
     const video = asset.type === "video";
-    await prepareFile({ ...asset, name: asset.fileName || (video ? "video.mp4" : "foto.jpg"),
-      mimeType: asset.mimeType || (video ? "video/mp4" : "image/jpeg") }, true);
+    // Camera images need the same bounded preprocessing as individual chats.
+    // Documents and videos retain their original bytes and the gateway's size limit.
+    let selectedAsset = { ...asset, name: asset.fileName || (video ? "video.mp4" : "foto.jpg"),
+      mimeType: asset.mimeType || (video ? "video/mp4" : "image/jpeg") };
+    try {
+      if (!video) {
+        const limit = policy ? PILOT_GROUP_UPLOAD_LIMIT : PILOT_GROUP_FILE_LIMIT;
+        const resized = await shrinkPhoto(asset.uri, limit - 2048, 1600);
+        if (resized?.uri) selectedAsset = { uri: resized.uri, name: "foto.jpg", mimeType: "image/jpeg" };
+      }
+      await prepareFile(selectedAsset, true);
+    } finally {
+      if (selectedAsset.uri !== asset.uri && FileSystem.cacheDirectory && asset.uri.startsWith(FileSystem.cacheDirectory)) {
+        await FileSystem.deleteAsync(asset.uri, { idempotent: true }).catch(() => {});
+      }
+    }
   });
   const startVoice = () => run(async () => {
     setComposerMenu(false);

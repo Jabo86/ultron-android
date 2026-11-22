@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import * as FileSystem from "expo-file-system/legacy";
-import { AppState, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { AppState, Image, Modal, Pressable, StyleSheet, View } from "react-native";
+import { Text } from "./HudText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { theme } from "../theme";
 import { useI18n } from "../lib/i18n";

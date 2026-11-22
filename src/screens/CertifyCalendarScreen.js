@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert,
-} from "react-native";
+import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
+import { Text, TextInput } from "../components/HudText";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../theme";
 import { useI18n } from "../lib/i18n";

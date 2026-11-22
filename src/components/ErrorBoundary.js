@@ -1,5 +1,12 @@
 import React from "react";
-import { View, Text, ScrollView } from "react-native";
+import { View, ScrollView } from "react-native";
+
+// Mostra a schermo qualsiasi errore di rendering (invece di una chiusura silenziosa),
+// salva la traccia tecnica sul dispositivo.
+import { Text } from "./HudText";
+
+// Mostra a schermo qualsiasi errore di rendering (invece di una chiusura silenziosa),
+// salva la traccia tecnica sul dispositivo.
 
 // Mostra a schermo qualsiasi errore di rendering (invece di una chiusura silenziosa),
 // salva la traccia tecnica sul dispositivo.
