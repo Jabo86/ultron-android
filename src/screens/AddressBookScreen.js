@@ -48,7 +48,7 @@ export default function AddressBookScreen({ navigation, route }) {
   const [adding, setAdding] = useState(false);
   const [menuFor, setMenuFor] = useState(null);
   const [reqBusy, setReqBusy] = useState(null);
-  const { refresh: refreshBadges } = useUnread();
+  const { refresh: refreshBadges, updateContactRequests } = useUnread();
   const [dirResults, setDirResults] = useState([]);
   const [dirBusy, setDirBusy] = useState(false);
   const dirTimer = useRef(null);
@@ -72,13 +72,16 @@ export default function AddressBookScreen({ navigation, route }) {
         }
       } catch { /* si aspetta il server */ }
       const d = await api.contacts();
-      if (mounted.current) setContacts(Array.isArray(d) ? d : []);
+      if (mounted.current) {
+        setContacts(Array.isArray(d) ? d : []);
+        updateContactRequests(d);
+      }
     } catch (e) {
       if (mounted.current) Alert.alert("Errore", api.apiErr(e));
     } finally {
       if (mounted.current) { setLoading(false); setRefreshing(false); }
     }
-  }, []);
+  }, [updateContactRequests]);
 
   useFocusEffect(useCallback(() => {
     mounted.current = true;

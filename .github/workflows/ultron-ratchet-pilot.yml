@@ -34,6 +34,7 @@ jobs:
           npm audit --audit-level=low --json > "$audit_report" || status=$?
           if (( status > 1 )); then exit "$status"; fi
           node tools/verify-ultron-pilot-dependencies.mjs audit "$audit_report"
+          node tools/verify-ultron-contact-badge.cjs
           node tools/verify-ultron-hosted-ratchet-receive.mjs
           node tools/verify-ultron-hosted-prekeys.mjs
           node tools/verify-ultron-ratchet-history.mjs
