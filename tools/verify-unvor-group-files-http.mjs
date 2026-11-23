@@ -57,5 +57,8 @@ if(dbContainer){
  db('db.ultron_mobile_messages.updateOne({_id:ObjectId('+JSON.stringify(a)+')},{$set:{delivered:true}})');
  assert.equal((await poll()).message_notice,null);
  insert(b);response=await poll();assert.equal(response.message_notice,b);assert.equal(response.n,1,'same count, genuinely new message');
+ db('db.ultron_mobile_messages.deleteMany({to_lns:'+JSON.stringify(alice.lns)+'})');
+ await req('/public/pulse/test-notify',{},alice.token);
+ assert.equal((await poll()).test,true);assert.equal((await poll()).test,false);
  console.log('Wake: stable message identity, repeated polling, delivery then new message at the same count verified.');
 }

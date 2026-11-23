@@ -263,7 +263,7 @@ class WakeService : Service() {
                 previousMessageNotice = notice
                 noticeCursors.edit().putString("message:$rid", notice).apply()
                 notifyMessages(n)
-              }
+              } else if (event.optBoolean("test", false)) notifyMessages(n)
             } else if (n > previousCount) notifyMessages(n)
             if (groupNotice != null && groupNotice > previousGroupNotice) {
               previousGroupNotice = groupNotice
