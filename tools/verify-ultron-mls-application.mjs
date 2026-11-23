@@ -324,7 +324,7 @@ const renderGroup = runInNewContext(screen + "\nPilotGroupsScreen", {
   Ionicons: view("Ionicons"), Text: view("Text"), TextInput: view("TextInput"), View: view("View"),
   ScrollView: view("ScrollView"), TouchableOpacity: view("TouchableOpacity"), ActivityIndicator: view("ActivityIndicator"),
   KeyboardAvoidingView: view("KeyboardAvoidingView"), FlatList: view("FlatList"),
-  GroupQuiz: view("GroupQuiz"), SafeText: view("SafeText"), ThreatBanner: view("ThreatBanner"), analyzeMessage,
+  EncryptionNotice: view("EncryptionNotice"), GroupQuiz: view("GroupQuiz"), SafeText: view("SafeText"), ThreatBanner: view("ThreatBanner"), analyzeMessage,
   RecordingPresets: { HIGH_QUALITY: {} }, useAudioRecorder: () => ({}), useAudioRecorderState: () => ({}),
   useMessagePreferences: () => ({ hidden: [], pinned: [] }),
 });
