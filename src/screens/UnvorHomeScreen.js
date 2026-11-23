@@ -25,7 +25,7 @@ export default function UnvorHomeScreen({ navigation }) {
   ];
   return <View style={s.root}>
     <Image source={require("../../assets/unvor/background.webp")} style={StyleSheet.absoluteFill} resizeMode="cover" accessibilityIgnoresInvertColors />
-    <SafeAreaView style={s.safe} edges={["top"]}>
+    <SafeAreaView style={s.safe} edges={["top", "bottom"]}>
       <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
         <View style={s.top}>
           <View style={s.clockPanel}><Text style={s.clock}>{now.toLocaleTimeString(lang,{hour:"2-digit",minute:"2-digit"})}</Text><Text style={s.date}>{now.toLocaleDateString(lang,{weekday:"short",day:"numeric",month:"short"})}</Text></View>

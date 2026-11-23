@@ -135,6 +135,7 @@ function MainTabs() {
         tabBarLabel: route.name === "Home" ? "UNVOR" : t(TAB_KEY[route.name]),
         tabBarBadgeStyle: { backgroundColor: theme.danger, color: "#fff", fontSize: 10, fontWeight: "800" },
         tabBarStyle: {
+          display: route.name === "Home" ? "none" : "flex",
           backgroundColor: glassBg,
           borderTopColor: glassEdge,
           height: 58 + insets.bottom,
