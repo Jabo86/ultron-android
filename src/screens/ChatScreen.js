@@ -961,6 +961,7 @@ export default function ChatScreen({ route, navigation }) {
   // File generico (documenti, qualsiasi tipo) via DocumentPicker, cifrato E2EE come gli altri allegati.
   const attachFile = async () => {
     if (deletingChat.current || documentFlow.current || sending) return;
+    if (!others.length || !user?.kem) { setErr(t("chat.attach.noconv")); return; }
     documentFlow.current = true;
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true, multiple: true });

@@ -1015,17 +1015,17 @@ export default function PilotGroupsScreen({ navigation, route }) {
                   accessibilityLabel={say("Allegati e sondaggi", "Attachments and polls")}
                   disabled={busy || !hasRecipients || !!fileDraft}
                   onPress={() => { Keyboard.dismiss(); setPollEditor(false); setComposerMenu(value => !value); }}>
-                  <Ionicons name={composerMenu ? "close-circle-outline" : "add-circle-outline"} size={26} color={theme.primary} />
+                  <Ionicons name={composerMenu ? "close-circle-outline" : "attach-outline"} size={26} color={theme.primary} />
                 </TouchableOpacity>
                 <TextInput {...inputProps} style={[styles.input, styles.composeInput]} placeholder={say("Scrivi un messaggio", "Write a message")}
                   editable={!busy && hasRecipients} accessibilityLabel={say("Scrivi un messaggio", "Write a message")}
                   maxLength={2000} multiline value={message} onChangeText={setMessage} onFocus={() => setComposerMenu(false)}
-                  onSubmitEditing={send} submitBehavior="submit" returnKeyType="send" />
+                  submitBehavior="newline" returnKeyType="default" />
                 <TouchableOpacity accessibilityRole="button" style={styles.sendButton}
                   accessibilityLabel={message.trim() ? say("Invia", "Send") : say("Microfono", "Microphone")}
                   testID={message.trim() ? "mls-send" : "mls-mic"} disabled={busy || !hasRecipients || !!fileDraft}
                   onPress={message.trim() ? send : startVoice}>
-                  <Ionicons name={message.trim() ? "arrow-up" : "mic-outline"} size={20} color={theme.onAccent} />
+                  <Ionicons name={message.trim() ? "send" : "mic-outline"} size={20} color={theme.onAccent} />
                 </TouchableOpacity>
               </>}
             </View>}
