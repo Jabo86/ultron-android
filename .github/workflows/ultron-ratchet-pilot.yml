@@ -39,6 +39,15 @@ jobs:
           tar -xzf tools/gateway-attachments/source.tar.gz -C "$RUNNER_TEMP/unvor-gateway"
           npm ci --legacy-peer-deps --no-fund
           rustup toolchain install stable --profile minimal
+      - uses: actions/cache/restore@v4
+        id: gateway_cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ runner.temp }}/unvor-gateway/target
+          key: ${{ runner.os }}-unvor-gateway-v1-${{ hashFiles('tools/gateway-attachments/source.tar.gz') }}
+          restore-keys: ${{ runner.os }}-unvor-gateway-v1-
       - name: Compile and test gateway limits
         env:
           CARGO_INCREMENTAL: '0'
@@ -47,6 +56,14 @@ jobs:
           cd "$RUNNER_TEMP/unvor-gateway"
           cargo +stable test --locked --bin lattice-gateway mobile_chat::
           cargo +stable build --locked --bin lattice-gateway
+      - uses: actions/cache/save@v4
+        if: always() && steps.gateway_cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ runner.temp }}/unvor-gateway/target
+          key: ${{ steps.gateway_cache.outputs.cache-primary-key }}
       - name: HTTP integration at 50 MiB
         run: |
           "$RUNNER_TEMP/unvor-gateway/target/debug/lattice-gateway" > "$RUNNER_TEMP/unvor-gateway.log" 2>&1 &

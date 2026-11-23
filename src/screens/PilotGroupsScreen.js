@@ -324,7 +324,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
       const size = info.size;
       const limit = forQuiz ? PILOT_GROUP_FILE_LIMIT : policy ? PILOT_GROUP_UPLOAD_LIMIT : PILOT_GROUP_FILE_LIMIT;
       if (!info.exists || !Number.isSafeInteger(size) || size < 1 || size > limit) {
-        throw new Error(policy ? say("Scegli un file fino a 50 MB.", "Choose a file up to 50 MB.") :
+        throw new Error(policy && !forQuiz ? say("Scegli un file fino a 50 MB.", "Choose a file up to 50 MB.") :
           say("Scegli un file fino a 96 KB.", "Choose a file up to 96 KB."));
       }
       if (!forQuiz && size > bigatt.ATT_CHUNK) {
