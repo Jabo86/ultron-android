@@ -1,3 +1,4 @@
+import AttachmentSheet from "../components/AttachmentSheet";
 import EncryptionNotice from "../components/EncryptionNotice";
 import React, { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from "react";
 import { View, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, AppState, Keyboard, InteractionManager } from "react-native";
@@ -769,7 +770,7 @@ export default function ChatScreen({ route, navigation }) {
       // impiegava un'eternità a partire e ad aprirsi; la cifratura non cambia di una virgola.
       const info = isVid ? await FileSystem.getInfoAsync(asset.uri) : null;
       const size = asset.fileSize || info?.size || 0;
-      if (size > bigatt.MAX_ATT) throw new Error("File troppo grande (max 100 MB).");
+      if (size > bigatt.MAX_ATT) throw new Error("File troppo grande (max 50 MB).");
       if (isVid && size > bigatt.ATT_CHUNK) {
         setUploadPct(0);
         const att = await bigatt.uploadFileChunked({
@@ -883,7 +884,7 @@ export default function ChatScreen({ route, navigation }) {
         if (res.canceled || !res.assets?.[0]) return;
         const a = res.assets[0];
         const size = a.size ?? (await FileSystem.getInfoAsync(a.uri)).size ?? 0;
-        if (size > bigatt.MAX_ATT) { setErr(lang === "en" ? "File too large (max 100MB)" : "File troppo grande (max 100MB)"); return; }
+        if (size > bigatt.MAX_ATT) { setErr(lang === "en" ? "File too large (max 50 MB)" : "File troppo grande (max 50 MB)"); return; }
         setSending(true); setErr("");
         setUploadPct(0);
         const name = a.name || `file_${Date.now()}`;
@@ -1231,26 +1232,12 @@ export default function ChatScreen({ route, navigation }) {
           <Text style={styles.uploadTxt} testID="chat-upload-pct">{Math.round(uploadPct * 100)}%</Text>
         </View>
       )}
-      {showAttachMenu && (
-        <View style={styles.attachMenu} testID="chat-attach-menu">
-          <TouchableOpacity style={styles.attachItem} onPress={() => runAttach(takePhoto)} disabled={sending} testID="chat-attach-photo">
-            <Ionicons name="camera-outline" size={20} color={tint} />
-            <Text style={styles.attachItemText}>{lang === "en" ? "Camera" : "Fotocamera"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.attachItem} onPress={() => runAttach(recordVideo)} disabled={sending} testID="chat-attach-video">
-            <Ionicons name="videocam-outline" size={20} color={tint} />
-            <Text style={styles.attachItemText}>{lang === "en" ? "Video" : "Video"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.attachItem} onPress={() => runAttach(pickMedia)} disabled={sending} testID="chat-attach-gallery">
-            <Ionicons name="image-outline" size={20} color={tint} />
-            <Text style={styles.attachItemText}>{lang === "en" ? "Gallery" : "Galleria"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.attachItem} onPress={() => runAttach(attachFile)} disabled={sending} testID="chat-attach-file">
-            <Ionicons name="document-attach-outline" size={20} color={tint} />
-            <Text style={styles.attachItemText}>{lang === "en" ? "File" : "File"}</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+      {showAttachMenu && <AttachmentSheet testID="chat-attach-menu" disabled={sending} limitLabel={t("attachment.limit")} items={[
+        {id:"chat-attach-gallery",label:t("attachment.gallery"),icon:"images",color:"#24a9ff",action:()=>runAttach(pickMedia)},
+        {id:"chat-attach-photo",label:t("attachment.camera"),icon:"camera",color:"#fb428b",action:()=>runAttach(takePhoto)},
+        {id:"chat-attach-video",label:t("attachment.video"),icon:"videocam",color:"#22d5d8",action:()=>runAttach(recordVideo)},
+        {id:"chat-attach-file",label:t("attachment.document"),icon:"document-text",color:"#a27aff",action:()=>runAttach(attachFile)},
+      ]}/>}
       <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
         {recState.isRecording ? (
           <View style={styles.recRow} testID="chat-recording">

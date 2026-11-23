@@ -77,7 +77,7 @@ export default function EncryptedAttachment({ att, inlineData, pilotGroup }) {
         // volta scrivendo direttamente nella cache. La scansione euristica guarda il primo
         // pezzo: riconosce un eseguibile travestito senza tenere in memoria il file intero.
         if (bigatt.isChunked(att)) {
-          const first = await bigatt.decryptToFile(att, path);
+          const first = await bigatt.decryptToFile(att, path, undefined, pilotGroup);
           const scan2 = analyzeAttachment({ name: att.name, mime: att.mime, bytes: first }, lang);
           scans.set(cacheKey, scan2);
           if (!alive.current) return;

@@ -504,6 +504,11 @@ export const mlsReports = (id) =>
 export const mlsQuiz = (id, payload) =>
   withAuth((a, transport) => transport.post(`${mlsGroup(id)}/quiz`, payload, a).then(r => r.data));
 const mlsFile = (group, id) => `${mlsGroup(group)}/files/${encodeURIComponent(id)}`;
+export const mlsFileUrl = (group, id) => `${getServerUrl()}/api${mlsFile(group,id)}`;
+export const mlsPutFileChunk = (group,id,index,parts,size,bytes) =>
+  withAuth((a,transport)=>postEncryptedBytes(transport,mlsFile(group,id),bytes,{
+    ...a,params:{index,parts,size},headers:{...a.headers,"Content-Type":"application/octet-stream"},timeout:60000,
+  }).then(r=>r.data));
 export const mlsUpload = (group, id, bytes) =>
   withAuth((a, transport) => postEncryptedBytes(transport, mlsFile(group, id), bytes, {
     ...a, headers: { ...a.headers, "Content-Type": "application/octet-stream", "X-Pad": randPad() }, timeout: 30000,
