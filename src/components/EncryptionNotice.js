@@ -7,23 +7,10 @@ import { theme } from "../theme";
 
 export default function EncryptionNotice({ kind = "chat" }) {
   const [open, setOpen] = useState(false);
-  const { lang } = useI18n();
-  const it = lang !== "en";
+  const { t } = useI18n();
   const call = kind === "call" || kind === "group-call";
-  const title = call
-    ? (it ? "Chiamata con cifratura end-to-end" : "End-to-end encrypted call")
-    : (it ? "Messaggi e allegati con cifratura end-to-end" : "End-to-end encrypted messages and attachments");
-  const description = kind === "group-call"
-    ? (it ? "Questa chiamata usa connessioni WebRTC cifrate con DTLS-SRTP tra i dispositivi. Il relay inoltra i flussi cifrati e può vedere gli IP delle connessioni. La cifratura del collegamento e la verifica dell’identità dei partecipanti sono controlli distinti."
-      : "This call uses WebRTC connections encrypted with DTLS-SRTP between devices. The relay forwards encrypted streams and can see connection IP addresses. Connection encryption and verification of participants’ identities are separate checks.")
-    : call
-    ? (it ? "L’audio viene cifrato tra i telefoni con WebRTC e DTLS-SRTP. Il relay TURN inoltra l’audio cifrato senza decifrarlo. Confronta le emoji di sicurezza con l’altra persona per verificare la chiamata. Il relay può vedere gli IP delle connessioni."
-      : "Audio is encrypted between the phones using WebRTC and DTLS-SRTP. The TURN relay forwards encrypted audio without decrypting it. Compare the security emojis with the other person to verify the call. The relay can see connection IP addresses.")
-    : kind === "group"
-      ? (it ? "Nei gruppi MLS, messaggi e allegati vengono cifrati sui dispositivi e aperti dai membri autorizzati. Il gateway riceve contenuti cifrati. La cifratura end-to-end non nasconde da sola i metadati e non impedisce a un partecipante di conservare una copia."
-        : "In MLS groups, messages and attachments are encrypted on devices and opened by authorized members. The gateway receives encrypted content. End-to-end encryption alone does not hide metadata or prevent a participant from keeping a copy.")
-      : (it ? "Messaggi e allegati vengono cifrati sul telefono prima dell’invio e decifrati sui dispositivi dei partecipanti. Il gateway inoltra contenuti cifrati. Verifica le chiavi del contatto con lo scudo della chat. La cifratura end-to-end non rende anonimi i metadati della connessione."
-        : "Messages and attachments are encrypted on the phone before sending and decrypted on participants’ devices. The gateway forwards encrypted content. Verify your contact’s keys using the chat shield. End-to-end encryption does not make connection metadata anonymous.");
+  const title = t(call ? "encryption.call" : "encryption.chat");
+  const description = t(kind === "group-call" ? "encryption.groupCallInfo" : kind === "call" ? "encryption.callInfo" : kind === "group" ? "encryption.groupInfo" : "encryption.chatInfo");
   return <>
     <TouchableOpacity style={s.notice} accessibilityRole="button" accessibilityLabel={title} onPress={()=>setOpen(true)} testID={`e2ee-notice-${kind}`}>
       <Ionicons name="lock-closed-outline" size={13} color={theme.accent}/>
@@ -36,7 +23,7 @@ export default function EncryptionNotice({ kind = "chat" }) {
           <Ionicons name="shield-checkmark-outline" size={32} color={theme.accent}/>
           <Text style={s.title}>{title}</Text>
           <Text style={s.body}>{description}</Text>
-          <TouchableOpacity style={s.close} accessibilityRole="button" onPress={()=>setOpen(false)}><Text style={s.closeText}>{it?"Ho capito":"Got it"}</Text></TouchableOpacity>
+          <TouchableOpacity style={s.close} accessibilityRole="button" onPress={()=>setOpen(false)}><Text style={s.closeText}>{t("encryption.close")}</Text></TouchableOpacity>
         </View>
       </View>
     </Modal>

@@ -61,7 +61,7 @@ export default function UnvorHomeScreen({ navigation }) {
           <Image source={require("../../assets/unvor/emblem.webp")} style={s.emblem} resizeMode="contain" accessibilityLabel="UNVOR"/>
         </View>
         <Text style={s.wordmark}>UNVOR</Text>
-        <Text style={s.description}>{local?"UNVOR è la tua app per messaggi, gruppi e chiamate. Con la cifratura end-to-end (E2EE), messaggi e allegati vengono cifrati sul telefono e decifrati sui dispositivi dei partecipanti.":"UNVOR connects you through messages, groups and calls. With end-to-end encryption (E2EE), messages and attachments are encrypted on the phone and decrypted on participants’ devices."}</Text>
+        <Text style={s.description}>{t("unvor.intro")}</Text>
         <View style={s.tiles}>{tiles.map(tile=><TouchableOpacity key={tile.label} testID={`unvor-home-${tile.icon}`} style={[s.panel,s.tile]} onPress={tile.action} accessibilityRole="button" accessibilityLabel={tile.count?`${tile.label}, ${tile.count}`:tile.label}>
           <Ionicons name={tile.icon} size={26} color="#BFF7FF"/>{tile.count>0&&<View style={s.badge}><Text style={s.badgeText}>{tile.count>99?"99+":tile.count}</Text></View>}
           <Text style={s.tileLabel}>{tile.label}</Text><View style={s.edge}/>
