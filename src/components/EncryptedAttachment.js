@@ -13,7 +13,7 @@ import * as IntentLauncher from "expo-intent-launcher";
 import { withSystemActivity } from "../lib/lockGuard";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as api from "../lib/api";
-import { decryptFileBytes, base64ToBytes, bytesToBase64, sha256Hex } from "../lib/crypto";
+import { decryptFileBytesAsync, base64ToBytes, bytesToBase64, sha256Hex } from "../lib/crypto";
 import * as bigatt from "../lib/bigatt";
 import { analyzeAttachment } from "../lib/threatEngine";
 import ThreatBanner from "./ThreatBanner";
@@ -88,7 +88,7 @@ export default function EncryptedAttachment({ att, inlineData, pilotGroup }) {
         }
         const bytes = inlineData
           ? base64ToBytes(inlineData)
-          : decryptFileBytes(await (pilotGroup ? api.mlsDownload(pilotGroup, att.id) : api.blobDownload(att.id)), att.key, att.iv);
+          : await decryptFileBytesAsync(await (pilotGroup ? api.mlsDownload(pilotGroup, att.id) : api.blobDownload(att.id)), att.key, att.iv);
         if (att.size && bytes.length !== att.size) throw new Error("Allegato incompleto.");
         const scan = analyzeAttachment({ name: att.name, mime: att.mime, bytes }, lang);
         scans.set(cacheKey, scan);

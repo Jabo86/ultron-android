@@ -25,7 +25,7 @@ import { apiErr, blockContact, contacts, mlsAction, mlsDeleteGroup, mlsRedeem, m
 import { contactAddress, matchesContact } from "../lib/contactAddress";
 import { pickAvatarDataUrl } from "../lib/avatar";
 import { shrinkPhoto } from "../lib/imageOpt";
-import { base64ToBytes, encryptFileBytes, randomHex } from "../lib/crypto";
+import { base64ToBytes, encryptFileBytesAsync, randomHex } from "../lib/crypto";
 import { withSystemActivity } from "../lib/lockGuard";
 import { analyzeMessage } from "../lib/threatEngine";
 import { usePoll } from "../lib/usePoll";
@@ -422,7 +422,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
       const { data, ...metadata } = attachment;
       const bytes = base64ToBytes(data);
       if (bytes.length !== metadata.size) throw new Error(say("File incompleto.", "Incomplete file."));
-      const sealed = fileDraft.sealed || encryptFileBytes(bytes);
+      const sealed = fileDraft.sealed || await encryptFileBytesAsync(bytes);
       if (!fileDraft.sealed) setFileDraft({ ...fileDraft, sealed });
       const { ciphertext, key, iv } = sealed;
       const result = await mlsUpload(group.id, fileDraft.id, ciphertext);
@@ -448,7 +448,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
           const { data, ...metadata } = selectedFile.attachment;
           const bytes = base64ToBytes(data);
           if (bytes.length !== metadata.size) throw new Error(say("File incompleto.", "Incomplete file."));
-          const sealed = encryptFileBytes(bytes);
+          const sealed = await encryptFileBytesAsync(bytes);
           ciphertext = sealed.ciphertext;
           file = { ...metadata, id: randomHex(16), key: sealed.key, iv: sealed.iv };
         }

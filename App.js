@@ -1,3 +1,5 @@
+import { NativeModules as AttachmentNativeModules } from "react-native";
+import { setNativeAttachmentCipher } from "./src/lib/crypto";
 import UnvorHomeScreen from "./src/screens/UnvorHomeScreen";
 import { setNativeBinaryUploader } from "./src/lib/binaryTransport";
 import { uploadEncryptedBytes } from "./src/lib/nativeBinaryUpload";
@@ -159,6 +161,7 @@ function MainTabs() {
 
 setNativeExportKdf(NativeModules.LatticeKdf);
 setNativeBinaryUploader(uploadEncryptedBytes);
+if (AttachmentNativeModules.AttachmentCrypto?.crypt) setNativeAttachmentCipher((...args) => AttachmentNativeModules.AttachmentCrypto.crypt(...args));
 
 const navTheme = {
   ...DarkTheme,

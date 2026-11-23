@@ -28,7 +28,7 @@ const api = {
 function load(name, variables, exports) {
   const source = readFileSync(new URL("../src/lib/" + name, import.meta.url), "utf8")
     .replace(/^import .*\n/gm, "").replaceAll("export ", "");
-  return runInNewContext(source + "\n({" + exports + "})", variables);
+  return runInNewContext(source + "\n({" + exports + "})", {setTimeout,...variables});
 }
 function start() {
   return load("hostedPrekeys.js", {

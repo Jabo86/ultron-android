@@ -97,7 +97,7 @@ docker network inspect "$primary" >/dev/null
 image=$(docker inspect -f '{{.Image}}' "$old")
 docker run -d --name "$next" --restart unless-stopped --network "$primary" --ulimit core=0  --log-opt max-size=5m --log-opt max-file=2 --env-file "$stage/gateway.env"  --mount "type=bind,source=$stage/target/debug/$binary,target=/usr/local/bin/ultron-gateway,readonly"  "$image" /usr/local/bin/ultron-gateway >/dev/null
 started=1
-for net in "${nets[@]}"; do if [ "$net" != "$primary" ]; then docker network connect "$net" "$next"; fi; done
+for net in "${nets[@]}"; do if [ -n "$net" ] && [ "$net" != "$primary" ]; then docker network connect "$net" "$next"; fi; done
 for attempt in {1..60}; do
  if docker exec "$next" wget -q -T 2 -O /dev/null http://127.0.0.1:8002/api/health 2>/dev/null; then break; fi
  sleep 1

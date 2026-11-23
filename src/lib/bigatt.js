@@ -13,7 +13,7 @@ import { MAX_ATTACHMENT_BYTES, ATTACHMENT_CHUNK_BYTES } from "./attachmentLimits
 import { File, FileMode } from "expo-file-system";
 import { gcm } from "@noble/ciphers/aes.js";
 import * as api from "./api";
-import { bytesToHex, hexToBytes } from "./crypto";
+import { bytesToHex, hexToBytes, attachmentAes } from "./crypto";
 
 export const ATT_CHUNK = ATTACHMENT_CHUNK_BYTES;   // 4 MB in chiaro per pezzo
 export const MAX_ATT = MAX_ATTACHMENT_BYTES;   // tetto per allegato, come sul web
@@ -58,7 +58,7 @@ export async function uploadFileChunked({ uri, name, mime, size, allowed, onProg
     for (let i = 0; i < n; i++) {
       const plain = h.readBytes(ATT_CHUNK);
       if (plain?.length !== Math.min(ATT_CHUNK, total - i * ATT_CHUNK)) throw new Error("Il file è incompleto o è cambiato durante la lettura.");
-      const encrypted = gcm(key, attNonce(iv, i)).encrypt(plain);
+      const encrypted = await attachmentAes(plain, key, attNonce(iv, i), true);
       if (group) last = await api.mlsPutFileChunk(group, upload_id, i, n, total, encrypted);
       else await api.blobPutChunk(upload_id, i, encrypted);
       onProgress?.((i + 1) / n);
@@ -99,7 +99,7 @@ export async function decryptToFile(att, destUri, onProgress, group) {
           const size = Math.min(att.cs, att.size - i * att.cs) + TAG;
           const ct = rh.readBytes(size);
           if (ct.length !== size) throw new Error("Allegato cifrato incompleto.");
-          const plain = gcm(key, attNonce(iv, i)).decrypt(ct);
+          const plain = await attachmentAes(ct, key, attNonce(iv, i), false);
           if (i === 0) first = plain;
           wh.writeBytes(plain);
           onProgress?.((i + 1) / att.n);

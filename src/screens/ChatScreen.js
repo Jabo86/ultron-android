@@ -32,7 +32,7 @@ import { localPrekeyIds, deviceId as myDeviceId } from "../lib/devices";
 import * as mbx from "../lib/mailbox";
 import {
   decryptEnvelope, unpackMessage, encryptForRecipients, packMessage, bytesToHex,
-  encryptFileBytes, base64ToBytes, verifyMessage, decryptFileBytes, sha256Hex,
+  encryptFileBytesAsync, base64ToBytes, verifyMessage, decryptFileBytes, sha256Hex,
 } from "../lib/crypto";
 import EncryptedAttachment from "../components/EncryptedAttachment";
 import ThreatBanner from "../components/ThreatBanner";
@@ -788,11 +788,11 @@ export default function ChatScreen({ route, navigation }) {
       if (!isVid) {
         const small = await imageOpt.shrinkPhoto(asset.uri, 500 * 1024);
         if (small?.base64) b64 = small.base64;
-        prev = await imageOpt.microPreview(asset.uri);
+        prev = await imageOpt.microPreview(small?.uri || asset.uri);
       }
       if (!b64) b64 = asset.base64 || await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 });
       const bytes = base64ToBytes(b64);
-      const enc = encryptFileBytes(bytes);
+      const enc = await encryptFileBytesAsync(bytes);
       setUploadPct(0);
       const { id } = await api.blobUpload(enc.ciphertext, (p) => { if (mounted.current) setUploadPct(p); }, others);
       const att = {
@@ -837,7 +837,7 @@ export default function ChatScreen({ route, navigation }) {
     try {
       const b64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
       const bytes = base64ToBytes(b64);
-      const enc = encryptFileBytes(bytes);
+      const enc = await encryptFileBytesAsync(bytes);
       setUploadPct(0);
       const { id } = await api.blobUpload(enc.ciphertext, (p) => { if (mounted.current) setUploadPct(p); }, others);
       const att = { id, name: `vocale_${Date.now()}.m4a`, mime: "audio/m4a", size: bytes.length, key: enc.key, iv: enc.iv, kind: "voice", duration: dur };
@@ -866,7 +866,7 @@ export default function ChatScreen({ route, navigation }) {
   };
   const pickMedia = async () => {
     try {
-      const r = await withSystemActivity(() => ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images", "videos"], quality: 0.6 }));
+      const r = await withSystemActivity(() => ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images", "videos"], quality: 1 }));
       if (!r.canceled && r.assets?.[0]) sendAsset(r.assets[0]);
     } catch (e) { setErr(api.apiErr(e)); }
   };
@@ -876,13 +876,12 @@ export default function ChatScreen({ route, navigation }) {
     documentFlow.current = true;
     try {
       if (others.length === 0 || !user?.kem) { setErr(t("chat.attach.noconv")); return; }
-      try { if (!(await maySendToContact())) return; }
-      catch (e) { setErr(api.apiErr(e)); return; }
       suppressLock();
       try {
         const res = await DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true });
         if (res.canceled || !res.assets?.[0]) return;
         const a = res.assets[0];
+        if (!(await maySendToContact())) return;
         const size = a.size ?? (await FileSystem.getInfoAsync(a.uri)).size ?? 0;
         if (size > bigatt.MAX_ATT) { setErr(lang === "en" ? "File too large (max 50 MB)" : "File troppo grande (max 50 MB)"); return; }
         setSending(true); setErr("");
@@ -898,7 +897,7 @@ export default function ChatScreen({ route, navigation }) {
         } else {
           const b64 = await FileSystem.readAsStringAsync(a.uri, { encoding: FileSystem.EncodingType.Base64 });
           const bytes = base64ToBytes(b64);
-          const enc = encryptFileBytes(bytes);
+          const enc = await encryptFileBytesAsync(bytes);
           const { id } = await api.blobUpload(enc.ciphertext, onP, others);
           att = { id, name, mime, size: bytes.length, key: enc.key, iv: enc.iv };
         }

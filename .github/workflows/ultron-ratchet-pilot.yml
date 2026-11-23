@@ -65,6 +65,8 @@ jobs:
             ${{ runner.temp }}/unvor-gateway/target
           key: ${{ steps.gateway_cache.outputs.cache-primary-key }}
       - name: HTTP integration at 50 MiB
+        env:
+          UNVOR_TEST_MONGO_CONTAINER: ${{ job.services.mongo.id }}
         run: |
           "$RUNNER_TEMP/unvor-gateway/target/debug/lattice-gateway" > "$RUNNER_TEMP/unvor-gateway.log" 2>&1 &
           gateway_pid=$!
@@ -102,6 +104,7 @@ jobs:
           node tools/verify-ultron-pilot-dependencies.mjs audit "$audit_report"
           node tools/verify-unvor-brand.cjs
           node tools/verify-unvor-search.cjs
+          node tools/verify-unvor-attachment-speed.mjs
           node tools/verify-unvor-attachment-chunks.mjs
           node tools/verify-ultron-document-picker.mjs
           node tools/verify-ultron-binary-upload.mjs

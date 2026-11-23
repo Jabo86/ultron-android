@@ -208,6 +208,7 @@ class WakeService : Service() {
     var previousContact = ""
     val noticeCursors = getSharedPreferences("ultron-wake-cursors", Context.MODE_PRIVATE)
     val zeroNotice = "0".repeat(24)
+    var previousMessageNotice = zeroNotice
     var previousGroupNotice = zeroNotice
     var backoff = 5000L
     while (running) {
@@ -228,6 +229,7 @@ class WakeService : Service() {
         previousCall = ""
         incomingCall = null
         previousContact = ""
+        previousMessageNotice = noticeCursors.getString("message:$rid", zeroNotice) ?: zeroNotice
         previousGroupNotice = noticeCursors.getString("group:$rid", zeroNotice) ?: zeroNotice
       }
       try {
@@ -255,7 +257,14 @@ class WakeService : Service() {
               getSystemService(NotificationManager::class.java).cancel(CALL_ID)
             }
             previousCall = incoming
-            if (n > previousCount) notifyMessages(n)
+            if (event.has("message_notice")) {
+              val notice = event.optString("message_notice", "")
+              if (notice.matches(Regex("[a-f0-9]{24}")) && notice > previousMessageNotice) {
+                previousMessageNotice = notice
+                noticeCursors.edit().putString("message:$rid", notice).apply()
+                notifyMessages(n)
+              }
+            } else if (n > previousCount) notifyMessages(n)
             if (groupNotice != null && groupNotice > previousGroupNotice) {
               previousGroupNotice = groupNotice
               noticeCursors.edit().putString("group:$rid", groupNotice).apply()

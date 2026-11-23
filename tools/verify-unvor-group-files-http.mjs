@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {execFileSync} from 'node:child_process';
 import {createHash, randomBytes} from 'node:crypto';
 import {keygen,signMessage,signChallenge,randomHex} from '../src/lib/crypto.js';
 const origin=process.env.UNVOR_TEST_ORIGIN || 'http://127.0.0.1:8002';
@@ -42,3 +43,19 @@ await req(root+'/events',event(randomHex(16),1,partial),alice.token,404);
 await req(root+'/control',{},alice.token,200,'DELETE');
 await req(url,undefined,alice.token,404);
 console.log('Gateway: exact 50 MiB upload/download, retry identity, over-limit rejection, incomplete publication, outsider isolation and group deletion verified.');
+
+const dbContainer=process.env.UNVOR_TEST_MONGO_CONTAINER;
+if(dbContainer){
+ const rid=randomHex(32);
+ await req('/public/pulse/wake/register',{rid},alice.token);
+ const db=code=>execFileSync('docker',['exec',dbContainer,'mongosh','--quiet','unvor_attachment_test','--eval',code]);
+ const a='100000000000000000000001',b='100000000000000000000002';
+ const insert=id=>db('db.ultron_mobile_messages.insertOne({_id:ObjectId('+JSON.stringify(id)+'),to_lns:'+JSON.stringify(alice.lns)+',delivered:false,silent:false})');
+ const poll=()=>req('/public/wake/poll?rid='+rid+'&wait=0');
+ insert(a);let response=await poll();assert.equal(response.message_notice,a);assert.equal(response.n,1);
+ assert.equal((await poll()).message_notice,a,'same message retains its identity');
+ db('db.ultron_mobile_messages.updateOne({_id:ObjectId('+JSON.stringify(a)+')},{$set:{delivered:true}})');
+ assert.equal((await poll()).message_notice,null);
+ insert(b);response=await poll();assert.equal(response.message_notice,b);assert.equal(response.n,1,'same count, genuinely new message');
+ console.log('Wake: stable message identity, repeated polling, delivery then new message at the same count verified.');
+}
