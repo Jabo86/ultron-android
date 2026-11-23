@@ -1,3 +1,4 @@
+import EncryptionNotice from "../components/EncryptionNotice";
 import React, { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from "react";
 import { View, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Alert, AppState, Keyboard, InteractionManager } from "react-native";
 import { Text, TextInput } from "../components/HudText";
@@ -1112,10 +1113,7 @@ export default function ChatScreen({ route, navigation }) {
 
   return (
     <KeyboardAvoidingView behavior="padding" keyboardVerticalOffset={headerHeight} style={styles.root}>
-      <View style={styles.e2eeBadge} testID="chat-e2ee-badge">
-        <Ionicons name="lock-closed-outline" size={11} color={theme.accent} />
-        <Text style={styles.e2eeBadgeText}>{t("chat.e2eeBadge")}</Text>
-      </View>
+      <EncryptionNotice kind="chat" />
       {vfy === "changed" && others.length === 1 && (
         <TouchableOpacity
           style={styles.vfyBar}

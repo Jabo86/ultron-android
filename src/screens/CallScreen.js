@@ -1,3 +1,4 @@
+import EncryptionNotice from "../components/EncryptionNotice";
 import { hostedRatchetPilot, verifiedContact } from "../lib/hostedRatchetChat";
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { View, Image, ScrollView, StyleSheet, TouchableOpacity, Vibration, Alert, AppState } from "react-native";
@@ -495,16 +496,6 @@ export default function CallScreen({ route, navigation }) {
     : status === "connected" ? (lang === "en" ? "Connected" : "Connesso")
     : status === "error" ? (lang === "en" ? "Call failed" : "Chiamata non riuscita") : status;
 
-  const showE2eeInfo = useCallback(() => {
-    Alert.alert(
-      lang === "en" ? "🔒 End-to-end encrypted call" : "🔒 Chiamata cifrata E2EE",
-      lang === "en"
-        ? "WebRTC encrypts the audio between the phones with DTLS-SRTP. The relay can see connection IPs. Compare the security emojis through a trusted channel to verify the call."
-        : "WebRTC cifra l’audio tra i telefoni con DTLS-SRTP. Il relay può vedere gli IP delle connessioni. Confrontate le emoji di sicurezza tramite un canale fidato per verificare la chiamata.",
-      [{ text: "OK" }]
-    );
-  }, [lang]);
-
   if (status === "declined" || status === "unanswered") {
     const declined = status === "declined";
     const title = declined
@@ -537,11 +528,7 @@ export default function CallScreen({ route, navigation }) {
         <View style={styles.ringTop}>
           <Text style={styles.peer} testID="call-incoming-name">{peerName}</Text>
           <Text style={styles.status}>{lang === "en" ? "Incoming call…" : "Chiamata in arrivo…"}</Text>
-          <TouchableOpacity style={styles.ringE2ee} onPress={showE2eeInfo} testID="call-e2ee-badge-incoming" activeOpacity={0.7}>
-            <Ionicons name="lock-closed-outline" size={12} color={theme.accent} />
-            <Text style={styles.ringE2eeTxt}>E2EE · anonimo · ML-DSA-65</Text>
-            <Ionicons name="information-circle-outline" size={13} color={theme.accent} />
-          </TouchableOpacity>
+          <EncryptionNotice kind="call" />
         </View>
         <View style={styles.ringControls}>
           <View style={styles.ringBtnWrap}>
@@ -572,11 +559,7 @@ export default function CallScreen({ route, navigation }) {
             ? (lang === "en" ? "Direct connections allowed: the other side may see your IP" : "Connessioni dirette consentite: l’altra persona potrebbe vedere il tuo IP")
             : (lang === "en" ? "Relay only · the other person does not receive your IP" : "Solo relay · il tuo IP resta nascosto all’interlocutore")}
         </Text>
-        <TouchableOpacity style={styles.e2eeBadge} onPress={showE2eeInfo} testID="call-e2ee-badge" activeOpacity={0.75}>
-          <Ionicons name="lock-closed-outline" size={14} color="#04120a" />
-          <Text style={styles.e2eeBadgeTxt}>{lang === "en" ? "End-to-end encrypted" : "Cifrata end-to-end"}</Text>
-          <Ionicons name="information-circle-outline" size={15} color="#04120a" />
-        </TouchableOpacity>
+        <EncryptionNotice kind="call" />
         {verified === true && <View style={styles.verBadge} testID="call-verified"><Ionicons name="shield-checkmark-outline" size={13} color="#04120a" /><Text style={styles.verTxt}>{lang === "en" ? "Identity verified · ML-DSA-65" : "Identità verificata · ML-DSA-65"}</Text></View>}
         {verified === false && <View style={[styles.verBadge, styles.verBad]} testID="call-unverified"><Ionicons name="warning-outline" size={13} color="#fff" /><Text style={[styles.verTxt, { color: "#fff" }]}>{lang === "en" ? "Signature NOT verified" : "Firma NON verificata"}</Text></View>}
         {sas && (

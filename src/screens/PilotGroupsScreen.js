@@ -1,3 +1,4 @@
+import EncryptionNotice from "../components/EncryptionNotice";
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, FlatList, Image, Keyboard, ScrollView, Share, StyleSheet, Switch, TouchableOpacity, View } from "react-native";
 import { Text, TextInput } from "../components/HudText";
@@ -749,6 +750,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
       <View style={styles.signalTrack} accessibilityElementsHidden importantForAccessibility="no">
         <View style={styles.signalLead} /><View style={styles.signalTail} />
       </View>
+      {!manage && <EncryptionNotice kind="group" />}
       {warning}
       {!!err && !details && button(say("Riprova a sincronizzare", "Retry sync"), () => run(() => refresh(group)))}
       {manage ? <ScrollView contentContainerStyle={pageStyle} keyboardShouldPersistTaps="handled">
