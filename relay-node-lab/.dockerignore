@@ -1,0 +1,6 @@
+config/
+test/
+scripts/
+README.md
+docker-compose.yml
+Dockerfile
