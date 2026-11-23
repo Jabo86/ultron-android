@@ -1,5 +1,6 @@
 import React, { useEffect } from "react";
-import { View, Text, StyleSheet, Vibration } from "react-native";
+import { View, StyleSheet, Vibration } from "react-native";
+import { Text } from "./HudText";
 import { Ionicons } from "@expo/vector-icons";
 import { recordThreat } from "../lib/threatLog";
 

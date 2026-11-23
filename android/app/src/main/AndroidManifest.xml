@@ -50,6 +50,7 @@
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
         <data android:scheme="ultron"/>
+        <data android:scheme="unvor"/>
       </intent-filter>
     </activity>
     <activity android:name="com.ultron.messenger.IncomingCallActivity" android:showWhenLocked="true" android:turnScreenOn="true" android:excludeFromRecents="true" android:exported="false" android:launchMode="singleTop" />

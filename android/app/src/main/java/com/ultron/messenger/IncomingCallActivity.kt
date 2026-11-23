@@ -27,11 +27,18 @@ class IncomingCallActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private var rid = ""
     private var answering = false
-    private val surface = Color.rgb(10, 10, 10)
-    private val border = Color.rgb(40, 44, 42)
-    private val ink = Color.rgb(242, 244, 243)
-    private val muted = Color.rgb(164, 173, 168)
-    private val accent = Color.rgb(80, 200, 120)
+    private val surface = Color.rgb(0, 16, 25)
+    private val border = Color.rgb(21, 82, 104)
+    private val ink = Color.rgb(239, 252, 255)
+    private val muted = Color.rgb(168, 214, 228)
+    private val accent = Color.rgb(33, 223, 255)
+
+    private val bodyFont by lazy {
+        runCatching { Typeface.createFromAsset(assets, "fonts/UltronBody.ttf") }.getOrDefault(Typeface.DEFAULT)
+    }
+    private val displayFont by lazy {
+        runCatching { Typeface.createFromAsset(assets, "fonts/UltronDisplay.ttf") }.getOrDefault(Typeface.DEFAULT_BOLD)
+    }
 
     private fun dp(value: Int) = (resources.displayMetrics.density * value + 0.5f).toInt()
 
@@ -45,13 +52,13 @@ class IncomingCallActivity : Activity() {
         text = label
         setAllCaps(false)
         textSize = 16f
-        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        typeface = Typeface.create(bodyFont, Typeface.BOLD)
         setTextColor(if (primary) Color.BLACK else ink)
         minHeight = dp(56)
         setPadding(dp(16), dp(12), dp(16), dp(12))
         backgroundTintList = null
         background = RippleDrawable(
-            ColorStateList.valueOf(if (primary) 0x26000000 else 0x2450C878),
+            ColorStateList.valueOf(if (primary) 0x26000000 else 0x2421DFFF),
             panel(if (primary) accent else surface, 16, if (primary) null else border),
             null
         )
@@ -100,28 +107,29 @@ class IncomingCallActivity : Activity() {
             background = panel(surface, 28, border)
         }
         val logo = ImageView(this).apply {
-            setImageResource(R.drawable.splashscreen_logo)
+            setImageResource(R.drawable.unvor_logo)
             scaleType = ImageView.ScaleType.FIT_CENTER
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
         val heading = TextView(this).apply {
-            text = "ULTRON"
+            text = "UNVOR"
             textSize = 15f
             letterSpacing = 0.18f
-            typeface = Typeface.DEFAULT_BOLD
+            typeface = displayFont
             setTextColor(accent)
             gravity = Gravity.CENTER
         }
         val title = TextView(this).apply {
             text = if (italian) "Chiamata in arrivo" else "Incoming call"
             textSize = 28f
-            typeface = Typeface.DEFAULT_BOLD
+            typeface = displayFont
             setTextColor(ink)
             gravity = Gravity.CENTER
         }
         val status = TextView(this).apply {
             text = if (italian) "Accedi all’app per rispondere o chiudi l’avviso." else "Open the app to answer, or dismiss this alert."
             textSize = 15f
+            typeface = bodyFont
             setTextColor(muted)
             gravity = Gravity.CENTER
             accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE

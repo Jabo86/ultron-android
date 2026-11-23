@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from "react";
-import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator,
-  KeyboardAvoidingView, Platform, ScrollView, Alert, Image,
-} from "react-native";
-import * as DocumentPicker from "expo-document-picker";
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Alert, Image } from "react-native";
+import { Text, TextInput } from "../components/HudText";
+import * as DocumentPicker from "../lib/documentPicker";
 import * as FileSystem from "expo-file-system/legacy";
 import { KEYFILE_FORMAT, MAX_KEYFILE_BYTES, MAX_KEY_PASSWORD, openProtectedKeyfile } from "../lib/keyfileProtection";
 import { useAuth } from "../context/AuthContext";
@@ -131,8 +129,8 @@ export default function LoginScreen({ navigation }) {
         </View>
 
         <View style={styles.brand}>
-          <Image source={require("../../assets/ultron-logo.png")} style={styles.logo} resizeMode="contain" />
-          <Text style={styles.brandTitle}>ULTRON</Text>
+          <Image source={require("../../assets/unvor/emblem.webp")} style={styles.logo} resizeMode="contain" />
+          <Text style={styles.brandTitle}>UNVOR</Text>
           <Text style={styles.brandSub}>SOVEREIGN MESSAGING</Text>
         </View>
 
@@ -152,7 +150,7 @@ export default function LoginScreen({ navigation }) {
           {showRecovery && <View style={{ width: "100%" }}>
             <TextInput style={styles.serverInput} value={recoveryUser} onChangeText={setRecoveryUser}
               autoCapitalize="none" autoCorrect={false} maxLength={43}
-              placeholder={en ? "ULTRON username" : "Nome utente ULTRON"} placeholderTextColor={theme.textFaint} />
+              placeholder={en ? "UNVOR username" : "Nome utente UNVOR"} placeholderTextColor={theme.textFaint} />
             <RecoveryWordGrid words={recoveryWords} onChange={setRecoveryWords}
               onSubmit={recover} editable={!busy} italian={!en} />
             <TouchableOpacity style={styles.secondaryBtn} onPress={recover} disabled={busy || recoveryWords.some(word => !word)}>
@@ -225,7 +223,7 @@ export default function LoginScreen({ navigation }) {
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>🔒 NIST FIPS 203/204 · Post-Quantum E2EE</Text>
-          <Text style={styles.footerServer} numberOfLines={1}>{server === DEFAULT_SERVER ? "Gateway ULTRON" : server}</Text>
+          <Text style={styles.footerServer} numberOfLines={1}>{server === DEFAULT_SERVER ? "Gateway UNVOR" : server}</Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

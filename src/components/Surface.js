@@ -57,6 +57,7 @@ export function Glass({ tint, base = "#000000", intensity = 0.72, style, childre
           style={{ position: "absolute", top: 0, left: 0, right: 0, height: StyleSheet.hairlineWidth, backgroundColor: alpha(tint, 0.35) }}
         />
       )}
+      {[{top:0,left:0,borderTopWidth:1.5,borderLeftWidth:1.5},{top:0,right:0,borderTopWidth:1.5,borderRightWidth:1.5},{bottom:0,left:0,borderBottomWidth:1.5,borderLeftWidth:1.5},{bottom:0,right:0,borderBottomWidth:1.5,borderRightWidth:1.5}].map((corner,index)=><View key={index} pointerEvents="none" style={[{position:"absolute",width:10,height:10,borderColor:alpha(tint || "#21DFFF",0.7)},corner]} />)}
       {children}
     </View>
   );

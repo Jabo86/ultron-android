@@ -12,7 +12,7 @@ import {
 } from "./ratchetCore";
 import { archivablePayload, historyRecord, hostedSentRecord } from "./ratchetHistory";
 import { claimVerifiedHostedPrekey, hostedPrekeyDevice, parsePools, withHostedPrekeyStorage } from "./hostedPrekeys";
-import { signHostedRatchetInit, verifyHostedRatchetInit } from "./hostedRatchetProof";
+import { signHostedRatchetInitAsync, verifyHostedRatchetInitAsync } from "./hostedRatchetProof";
 import { requireHostedRatchet } from "./hostedChatPolicy";
 import { candidateGens, keysFor } from "./keygen";
 
@@ -234,52 +234,62 @@ function hostedSessionName(user, peer, identityKey, device, peerDevice, sessionI
   return "hosted:" + sha256Hex(JSON.stringify([user.server, user.lns, peer, identityKey, device, peerDevice, sessionId]));
 }
 
+const hostedSendQueues = new Map();
 export function sendHostedRatchet(payload, user, peer, installation, contact, { receiptName } = {}) {
   const check = api.authenticatedScope(user);
-  return withRatchetState(async () => {
+  const device = hostedPrekeyDevice(user, installation);
+  const pendingName = hostedPendingName(user, peer, device);
+  const operation = (hostedSendQueues.get(pendingName) || Promise.resolve()).catch(() => {}).then(async () => {
     check();
-    const device = hostedPrekeyDevice(user, installation);
-    const pendingName = hostedPendingName(user, peer, device);
-    const thread = typeof api.pilotPurgeStatus === "function"
-      ? await api.pilotPurgeStatus(peer).catch(error => {
+    // Network waits must not hold the shared send/receive ratchet state lock.
+    const [thread, pools] = await Promise.all([
+      typeof api.pilotPurgeStatus === "function" ? api.pilotPurgeStatus(peer).catch(error => {
         if (error?.response?.status === 404) return null;
         throw error;
-      })
-      : null;
+      }) : null,
+      api.hostedPrekeyPools(peer),
+    ]);
     check();
     const generation = thread?.generation ?? 0;
     if (!Number.isSafeInteger(generation) || generation < 0) throw new Error("Generazione della chat non valida.");
+    const devices = parsePools(pools);
+    if (devices.length !== 1) throw new Error("La prova ratchet richiede un solo dispositivo per account.");
+    const target = devices[0];
     const payloadHash = sha256Hex(payload);
-    const previous = await getBlob(pendingName);
-
+    const previous = await withRatchetState(async () => {
+      check();
+      const saved = await getBlob(pendingName);
+      if (saved && (saved.wire.generation || 0) !== generation) {
+        await removeBlob(hostedSentRecord(user, peer, saved.wire.send_id));
+        await removeBlob(pendingName);
+        throw new Error("La chat è stata eliminata. Scrivi un nuovo messaggio per riaprirla.");
+      }
+      return saved;
+    });
     const deliver = async (pending) => {
       check();
       const result = await api.sendHostedRatchet(pending.wire);
       check();
-      if (result?.ok !== true || !/^[0-9a-f]{24}$/.test(result.message_id || "") ||
-          !/^[0-9a-f]{64}$/.test(result.conv_id || "")) {
+      if (result?.ok !== true || !/^[0-9a-f]{24}$/.test(result.message_id || "") || !/^[0-9a-f]{64}$/.test(result.conv_id || "")) {
         throw new Error("Il gateway non ha confermato il messaggio ratchet.");
       }
-      await requireHostedRatchet(user, peer);
-      check();
-      if (pending.receiptName) await setBlobsDurably([[pendingName, null], [pending.receiptName, { done: true }]]);
-      else await setBlobDurably(pendingName, null);
+      await withRatchetState(async () => {
+        check();
+        const current = await getBlob(pendingName);
+        if (current?.wire?.send_id !== pending.wire.send_id) throw new Error("La chat è cambiata durante l’invio.");
+        await requireHostedRatchet(user, peer);
+        check();
+        if (pending.receiptName) await setBlobsDurably([[pendingName, null], [pending.receiptName, { done: true }]]);
+        else await setBlobDurably(pendingName, null);
+      });
       return result;
     };
-
-    if (previous && (previous.wire.generation || 0) !== generation) {
-      await removeBlob(hostedSentRecord(user, peer, previous.wire.send_id));
-      await removeBlob(pendingName);
-      throw new Error("La chat è stata eliminata. Scrivi un nuovo messaggio per riaprirla.");
-    }
     if (previous) {
       const result = await deliver(previous);
       if (previous.payloadHash === payloadHash) return result;
     }
-    const devices = parsePools(await api.hostedPrekeyPools(peer));
-    check();
-    if (devices.length !== 1) throw new Error("La prova ratchet richiede un solo dispositivo per account.");
-    const target = devices[0];
+    const pending = await withRatchetState(async () => {
+      check();
     const all = await loadAll();
     check();
     const matches = Object.values(all).filter((entry) =>
@@ -305,19 +315,24 @@ export function sendHostedRatchet(payload, user, peer, installation, contact, { 
     const pending = {
       payloadHash, receiptName,
       wire: { to_lns: [peer], send_id: sendId, ...(thread ? { generation, attachment_ids: (JSON.parse(payload).a || []).map(att => att.id) } : {}),
-        envelope: envelope.h.init ? signHostedRatchetInit(user.lns, envelope, user.sk) : envelope },
+        envelope: envelope.h.init ? await signHostedRatchetInitAsync(user.lns, envelope, user.sk) : envelope },
     };
     all[hostedSessionName(user, peer, contact.identityKey, device, target.device, sessionId)] = encrypted.state;
     const extra = [[pendingName, pending]];
     if (archivablePayload(payload)) extra.push([hostedSentRecord(user, peer, sendId), payload]);
     check();
     await saveAll(all, null, null, extra);
+
+      return pending;
+    });
     return deliver(pending);
   });
+  hostedSendQueues.set(pendingName, operation);
+  return operation.finally(() => { if (hostedSendQueues.get(pendingName) === operation) hostedSendQueues.delete(pendingName); });
 }
 
 // Call with the identity key authenticated by the signed contact-key lookup.
-export function receiveHostedRatchet(message, user, installation, identityKey) {
+export async function receiveHostedRatchet(message, user, installation, identityKey) {
   const checkScope = api.authenticatedScope(user);
   const sender = message.from_lns;
   const env = message.envelope;
@@ -326,7 +341,7 @@ export function receiveHostedRatchet(message, user, installation, identityKey) {
       env.r !== 2 || env.h.v !== 2 || !/^[0-9a-f]{32}$/.test(env.h.sdev) ||
       !/^[0-9a-f]{32}$/.test(env.session_id || "") ||
       !/^[0-9a-f]{3904}$/.test(identityKey)) return null;
-  if (env.h.init && !verifyHostedRatchetInit(sender, user.lns, device, env, identityKey)) return null;
+  if (env.h.init && !(await verifyHostedRatchetInitAsync(sender, user.lns, device, env, identityKey))) return null;
   return withRatchetState(() => withHostedPrekeyStorage(() =>
     tryRatchetDecryptLocked([env], user, sender, message, { device, identityKey, checkScope })
   ));

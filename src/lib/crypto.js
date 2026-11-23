@@ -230,33 +230,67 @@ export function decryptEnvelope(env, kemSecretKey) {
   }
 }
 
+let nativeMessageCrypto=null;
+export function setNativeMessageCrypto(provider){nativeMessageCrypto=provider;}
+export async function signMessageAsync(message,secret){
+  if(!nativeMessageCrypto)return signMessage(message,secret);
+  return nativeMessageCrypto.sign(bytesToBase64(utf8Encode(String(message))),secret);
+}
+export async function verifyMessageAsync(message,signature,publicKey){
+  if(!nativeMessageCrypto)return verifyMessage(message,signature,publicKey);
+  try{return await nativeMessageCrypto.verify(bytesToBase64(utf8Encode(String(message))),signature,publicKey);}catch{return false;}
+}
+export async function signChallengeAsync(nonceHex,secret){
+  if(!nativeMessageCrypto)return signChallenge(nonceHex,secret);
+  return nativeMessageCrypto.sign(bytesToBase64(hexToBytes(nonceHex)),secret);
+}
+
 // ── Base64 (Hermes-safe, no atob/btoa) ──
 const _B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 export function bytesToBase64(bytes) {
-  let s = "";
-  for (let i = 0; i < bytes.length; i += 3) {
-    const b0 = bytes[i], b1 = bytes[i + 1], b2 = bytes[i + 2];
-    s += _B64[b0 >> 2];
-    s += _B64[((b0 & 3) << 4) | ((b1 || 0) >> 4)];
-    s += i + 1 < bytes.length ? _B64[((b1 & 15) << 2) | ((b2 || 0) >> 6)] : "=";
-    s += i + 2 < bytes.length ? _B64[b2 & 63] : "=";
+  const blocks = [];
+  for (let start = 0; start < bytes.length; start += 12288) {
+    let block = "";
+    const end = Math.min(start + 12288, bytes.length);
+    for (let i = start; i < end; i += 3) {
+      const a = bytes[i], b = bytes[i+1] || 0, c = bytes[i+2] || 0;
+      block += _B64[a >> 2] + _B64[((a & 3) << 4) | (b >> 4)] +
+        (i+1 < bytes.length ? _B64[((b & 15) << 2) | (c >> 6)] : "=") +
+        (i+2 < bytes.length ? _B64[c & 63] : "=");
+    }
+    blocks.push(block);
   }
-  return s;
+  return blocks.join("");
 }
+const _B64_VALUES = new Int16Array(128).fill(-1);
+for (let i=0;i<_B64.length;i++) _B64_VALUES[_B64.charCodeAt(i)]=i;
 export function base64ToBytes(b64) {
   const clean = (b64 || "").replace(/\s/g, "");
-  const out = [];
-  let buffer = 0, bits = 0;
-  for (let i = 0; i < clean.length; i++) {
-    const c = clean[i];
-    if (c === "=") break;
-    const v = _B64.indexOf(c);
-    if (v < 0) continue;
-    buffer = (buffer << 6) | v;
-    bits += 6;
-    if (bits >= 8) { bits -= 8; out.push((buffer >> bits) & 0xff); }
+  const out = new Uint8Array(Math.floor(clean.length * 3 / 4));
+  let buffer=0, bits=0, length=0;
+  for (let i=0;i<clean.length;i++) {
+    if (clean[i]==="=") break;
+    const code=clean.charCodeAt(i), v=code<128 ? _B64_VALUES[code] : -1;
+    if (v<0) continue;
+    buffer=(buffer<<6)|v; bits+=6;
+    if (bits>=8) { bits-=8; out[length++]=(buffer>>bits)&255; }
   }
-  return new Uint8Array(out);
+  return out.subarray(0,length);
+}
+
+// The Android provider runs AES on a worker; errors never fall back to unauthenticated data.
+let attachmentCipher = null;
+export function setNativeAttachmentCipher(provider) { attachmentCipher = provider; }
+export async function attachmentAes(bytes, key, iv, encrypt) {
+  if (attachmentCipher) return base64ToBytes(await attachmentCipher(bytesToBase64(bytes), bytesToHex(key), bytesToHex(iv), encrypt));
+  return encrypt ? gcm(key,iv).encrypt(bytes) : gcm(key,iv).decrypt(bytes);
+}
+export async function encryptFileBytesAsync(bytes) {
+  const key=randBytes(32), iv=randBytes(12);
+  return {ciphertext:await attachmentAes(bytes,key,iv,true),key:bytesToHex(key),iv:bytesToHex(iv)};
+}
+export async function decryptFileBytesAsync(bytes,key,iv) {
+  return attachmentAes(bytes,hexToBytes(key),hexToBytes(iv),false);
 }
 
 // ── E2EE attachments (AES-256-GCM, random per-file key; wire-compatible with web) ──

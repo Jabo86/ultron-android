@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { View, Text, Image, TouchableOpacity, Linking, StyleSheet } from "react-native";
+import { View, Image, TouchableOpacity, Linking, StyleSheet } from "react-native";
+import { Text } from "./HudText";
 import { URL_RE, scanUrl } from "../lib/threatEngine";
 import * as api from "../lib/api";
 import { theme } from "../theme";

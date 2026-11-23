@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { AppState,
-  View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
-  ActivityIndicator, Modal, Alert, Image, ScrollView, Pressable, Switch, Linking, Share,
-} from "react-native";
+import { AppState, View, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Modal, Alert, Image, ScrollView, Pressable, Switch, Linking, Share } from "react-native";
+import { Text, TextInput } from "../components/HudText";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -28,7 +26,7 @@ import {
   unwrapGroupKey, encryptWithGroupKey, decryptWithGroupKey, wrapGroupKeyFor,
   packMessage, unpackMessage, base64ToBytes, bytesToBase64, encryptFileBytes, decryptFileBytes,
 } from "../lib/crypto";
-import * as DocumentPicker from "expo-document-picker";
+import * as DocumentPicker from "../lib/documentPicker";
 import * as bigatt from "../lib/bigatt";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
@@ -1384,7 +1382,7 @@ function ManageModal({ detail, user, groupKey, t, lang, onClose, onDeleted, onCh
   const shareGroup = async () => {
     const link = `${api.getServerUrl()}/invito.html?g=${encodeURIComponent(detail.chan_id)}`;
     const doShare = () => Share.share({
-      message: (lang === "en" ? `Join "${name || detail.name}" on ULTRON:\n` : `Entra nel gruppo "${name || detail.name}" su ULTRON:\n`) + link,
+      message: (lang === "en" ? `Join "${name || detail.name}" on UNVOR:\n` : `Entra nel gruppo "${name || detail.name}" su UNVOR:\n`) + link,
       url: link,
     }).catch(() => {});
     if (publicJoin) { doShare(); return; }

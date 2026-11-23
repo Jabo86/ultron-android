@@ -1,3 +1,4 @@
+import { MAX_ATTACHMENT_BYTES, ATTACHMENT_CHUNK_BYTES } from "../src/lib/attachmentLimits.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
@@ -119,7 +120,7 @@ const hostedGroupCredentials=async user => ({
 const source=readFileSync(new URL("../src/lib/pilotGroups.js", import.meta.url),"utf8")
   .replace(/^import .+;$/gm,"").replace(/^export /gm,"").replace(/let dependency;[\s\S]+?(?=function serial)/,"const loadMls=async()=>[mls,{defaultClientConfig}];\n");
 const app=runInNewContext(source+"\n({cachedPilotGroupSummary,listPilotGroups,preparePilotGroupInvites,deliverPilotGroupInvitation,createPilotGroup,finishAcceptedPilotGroupInvites,openPilotGroup,updatePilotGroup,presentPilotGroupHistory,preparePilotQuiz,openPilotQuiz,listPublicPilotGroups,pilotInvitationInbox,pilotInvitationTitle,requestPilotGroupInvitation,decidePilotGroupInvitation})",{
-  ...cryptoLib,api,registerHostedRatchet:async()=>{ if (registrationError) { failedRegistrations++; throw new Error("registration unavailable"); } },
+  ...cryptoLib,MAX_ATTACHMENT_BYTES,ATTACHMENT_CHUNK_BYTES,api,registerHostedRatchet:async()=>{ if (registrationError) { failedRegistrations++; throw new Error("registration unavailable"); } },
   sendPilotMessage:async(payload,user,peer,{receiptName})=>{
     assert.equal(actor,user);
     notices.push({payload,peer});
@@ -319,12 +320,12 @@ const renderGroup = runInNewContext(screen + "\nPilotGroupsScreen", {
   useState: initial => [typeof initial === "function" ? initial() : initial, () => {}],
   useRef: current => ({ current }), useMemo: callback => callback(), useCallback: callback => callback,
   useEffect: () => {}, useLayoutEffect: () => {}, useFocusEffect: () => {}, usePoll: () => {},
-  useAuth: () => ({ user: a }), useI18n: () => ({ lang: "it" }), useSafeAreaInsets: () => ({ top: 24, bottom: 48 }),
+  useAuth: () => ({ user: a }), useI18n: () => ({ lang: "it", t: key => key }), useSafeAreaInsets: () => ({ top: 24, bottom: 48 }),
   presentPilotGroupHistory: app.presentPilotGroupHistory, StyleSheet: { create: value => value }, theme: {},
   Ionicons: view("Ionicons"), Text: view("Text"), TextInput: view("TextInput"), View: view("View"),
   ScrollView: view("ScrollView"), TouchableOpacity: view("TouchableOpacity"), ActivityIndicator: view("ActivityIndicator"),
   KeyboardAvoidingView: view("KeyboardAvoidingView"), FlatList: view("FlatList"),
-  GroupQuiz: view("GroupQuiz"), SafeText: view("SafeText"), ThreatBanner: view("ThreatBanner"), analyzeMessage,
+  AttachmentSheet: view("AttachmentSheet"), EncryptionNotice: view("EncryptionNotice"), GroupQuiz: view("GroupQuiz"), SafeText: view("SafeText"), ThreatBanner: view("ThreatBanner"), analyzeMessage,
   RecordingPresets: { HIGH_QUALITY: {} }, useAudioRecorder: () => ({}), useAudioRecorderState: () => ({}),
   useMessagePreferences: () => ({ hidden: [], pinned: [] }),
 });

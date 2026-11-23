@@ -1,5 +1,12 @@
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, StyleSheet } from "react-native";
+
+// Filigrana di riservatezza: sovrappone in modo tenue l'identità di chi guarda
+// (deterrente contro foto dello schermo con un altro dispositivo). Non intercetta i tocchi.
+import { Text } from "./HudText";
+
+// Filigrana di riservatezza: sovrappone in modo tenue l'identità di chi guarda
+// (deterrente contro foto dello schermo con un altro dispositivo). Non intercetta i tocchi.
 
 // Filigrana di riservatezza: sovrappone in modo tenue l'identità di chi guarda
 // (deterrente contro foto dello schermo con un altro dispositivo). Non intercetta i tocchi.

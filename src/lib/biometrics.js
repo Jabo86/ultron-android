@@ -12,7 +12,7 @@ export async function isDeviceSecure() {
 }
 
 // Prompt biometric (FaceID/Touch/fingerprint) with device PIN/passcode fallback.
-export async function authenticate(reason = "Sblocca ULTRON") {
+export async function authenticate(reason = "Sblocca UNVOR") {
   try {
     const res = await LocalAuthentication.authenticateAsync({
       promptMessage: reason,

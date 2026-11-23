@@ -1,6 +1,7 @@
 import { writeCachedAttachment } from "../lib/attachmentCache";
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { View, Text, Image, TouchableOpacity, ActivityIndicator, Alert, StyleSheet, Modal, Pressable } from "react-native";
+import { View, Image, TouchableOpacity, ActivityIndicator, Alert, StyleSheet, Modal, Pressable } from "react-native";
+import { Text } from "./HudText";
 import * as FileSystem from "expo-file-system/legacy";
 // SDK 57: le funzioni `saveToLibraryAsync`/`createAssetAsync` importate da
 // "expo-media-library" sono deprecate e LANCIANO un errore invece di salvare (è il motivo
@@ -12,7 +13,7 @@ import * as IntentLauncher from "expo-intent-launcher";
 import { withSystemActivity } from "../lib/lockGuard";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as api from "../lib/api";
-import { decryptFileBytes, base64ToBytes, bytesToBase64, sha256Hex } from "../lib/crypto";
+import { decryptFileBytesAsync, base64ToBytes, bytesToBase64, sha256Hex } from "../lib/crypto";
 import * as bigatt from "../lib/bigatt";
 import { analyzeAttachment } from "../lib/threatEngine";
 import ThreatBanner from "./ThreatBanner";
@@ -76,7 +77,7 @@ export default function EncryptedAttachment({ att, inlineData, pilotGroup }) {
         // volta scrivendo direttamente nella cache. La scansione euristica guarda il primo
         // pezzo: riconosce un eseguibile travestito senza tenere in memoria il file intero.
         if (bigatt.isChunked(att)) {
-          const first = await bigatt.decryptToFile(att, path);
+          const first = await bigatt.decryptToFile(att, path, undefined, pilotGroup);
           const scan2 = analyzeAttachment({ name: att.name, mime: att.mime, bytes: first }, lang);
           scans.set(cacheKey, scan2);
           if (!alive.current) return;
@@ -87,7 +88,7 @@ export default function EncryptedAttachment({ att, inlineData, pilotGroup }) {
         }
         const bytes = inlineData
           ? base64ToBytes(inlineData)
-          : decryptFileBytes(await (pilotGroup ? api.mlsDownload(pilotGroup, att.id) : api.blobDownload(att.id)), att.key, att.iv);
+          : await decryptFileBytesAsync(await (pilotGroup ? api.mlsDownload(pilotGroup, att.id) : api.blobDownload(att.id)), att.key, att.iv);
         if (att.size && bytes.length !== att.size) throw new Error("Allegato incompleto.");
         const scan = analyzeAttachment({ name: att.name, mime: att.mime, bytes }, lang);
         scans.set(cacheKey, scan);
@@ -217,7 +218,7 @@ export default function EncryptedAttachment({ att, inlineData, pilotGroup }) {
         data, type, flags: 1,
       }));
     } catch {
-      Alert.alert("ULTRON", en ? "No installed app could open this file." : "Nessuna app installata ha potuto aprire questo file.");
+      Alert.alert("UNVOR", en ? "No installed app could open this file." : "Nessuna app installata ha potuto aprire questo file.");
     }
   });
 

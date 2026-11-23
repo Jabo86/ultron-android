@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput } from "react-native";
+import { View, StyleSheet, Pressable, ScrollView } from "react-native";
+import { Text, TextInput } from "./HudText";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import * as integrity from "../lib/integrity";
@@ -74,7 +75,7 @@ export default function TamperGate() {
         <Ionicons name="warning-outline" size={54} color="#50C878" />
         <Text style={s.h1} testID="tamper-title">{titolo}</Text>
         <Text style={s.p}>
-          Questo telefono e' in una condizione in cui i dati di ULTRON possono essere letti
+          Questo telefono e' in una condizione in cui i dati di UNVOR possono essere letti
           da fuori dall’app. I controlli di integrità segnalano anomalie rilevabili.
         </Text>
 

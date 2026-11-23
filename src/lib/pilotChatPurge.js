@@ -1,3 +1,4 @@
+import { clearDirectPolls } from "./directPollStore";
 import { clearAttachmentCache } from "./attachmentCache";
 import * as api from "./api";
 import * as convCache from "./convCache";
@@ -9,6 +10,7 @@ import { dropPurgedRatchet } from "./ratchet";
 import { hostedSentRecord, receivedHistoryName } from "./ratchetHistory";
 
 const jobs = new Map();
+const checks = new Map();
 const valid = (value) => Number.isSafeInteger(value) && value >= 0;
 const key = (user, peer) => "purge:" + sha256Hex(JSON.stringify([user.server, user.lns, peer]));
 
@@ -45,6 +47,7 @@ async function clearDeleted(user, peer, status, state) {
   await convCache.drop(status.conv_id, user, { strict: true });
   await dropPurgedRatchet(user, peer, await deviceId(), completedGeneration, names);
   await clearAttachmentCache();
+  await clearDirectPolls(user, peer);
   check();
   const updated = { done: completedGeneration };
   await setBlobDurably(key(user, peer), updated);
@@ -59,7 +62,9 @@ function serial(user, peer, operation) {
 }
 
 export function checkPilotChat(user, peer) {
-  return serial(user, peer, async (name) => {
+  const checkKey = key(user, peer);
+  if (checks.has(checkKey)) return checks.get(checkKey);
+  const task = serial(user, peer, async (name) => {
     const check = api.authenticatedScope(user);
     const state = await getBlob(name) || {};
     check();
@@ -72,9 +77,12 @@ export function checkPilotChat(user, peer) {
     await clearDeleted(user, peer, status, state);
     return status;
   });
+  checks.set(checkKey, task);
+  return task.finally(() => { if (checks.get(checkKey) === task) checks.delete(checkKey); });
 }
 
 export function deletePilotChat(user, peer, convId) {
+  checks.delete(key(user, peer));
   return serial(user, peer, async (name) => {
     const check = api.authenticatedScope(user);
     const state = await getBlob(name) || {};

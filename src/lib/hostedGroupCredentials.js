@@ -9,7 +9,7 @@ const recentIdentities = new Map();
 const IDENTITY_TTL = 8000;
 
 export async function hostedGroupCredentials(user) {
-  if (!hostedRatchetPilot(user)) throw new Error("I gruppi MLS richiedono il gateway pilota ULTRON.");
+  if (!hostedRatchetPilot(user)) throw new Error("I gruppi MLS richiedono il gateway pilota UNVOR.");
   const check = api.authenticatedScope(user);
   const installation = hostedPrekeyDevice(user, await deviceId());
   check();

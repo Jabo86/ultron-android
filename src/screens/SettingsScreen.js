@@ -2,9 +2,8 @@ import { callAccessCopy } from "../lib/locales/callAccess";
 import { LEGAL_DOCS, PRIVACY_SUMMARY, CONTACTS_SUMMARY, DATA_PROTECTION } from "../lib/legalDocuments";
 import { isOwner as canaryIsOwner } from "../lib/canary";
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, ActivityIndicator, Alert, Linking, NativeModules, AppState, Platform, Modal, TextInput, Share,
-} from "react-native";
+import { View, StyleSheet, ScrollView, TouchableOpacity, Switch, ActivityIndicator, Alert, Linking, NativeModules, AppState, Platform, Modal, Share } from "react-native";
+import { Text, TextInput } from "../components/HudText";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as appearance from "../lib/appearance";
@@ -101,7 +100,7 @@ export default function SettingsScreen({ navigation }) {
       if (e?.message === "ULTRON_RELEASE_UNAVAILABLE") {
         setUpMsg(en ? "The official release is unavailable." : "Il rilascio ufficiale non è disponibile.");
       } else if (e?.message === "ULTRON_INSTALL_PERMISSION") {
-        setUpMsg(en ? "Allow ULTRON to install updates, then try again." : "Consenti a ULTRON di installare aggiornamenti e riprova.");
+        setUpMsg(en ? "Allow UNVOR to install updates, then try again." : "Consenti a UNVOR di installare aggiornamenti e riprova.");
       } else {
         setUpMsg(String(e?.message || t("sm.007")));
       }
@@ -154,7 +153,7 @@ export default function SettingsScreen({ navigation }) {
   }, [hostedCalls, user?.lns]));
 
   // Notifiche dal nostro server: il servizio nativo tiene aperta una connessione in attesa
-  // usando soltanto il servizio nativo e il nodo ULTRON.
+  // usando soltanto il servizio nativo e il nodo UNVOR.
   const toggleWake = async (v) => {
     setWakeBusy(true);
     try {
@@ -211,8 +210,8 @@ export default function SettingsScreen({ navigation }) {
         : "Server verificato e salvato per il prossimo accesso o registrazione. Salva il file chiave prima di uscire.");
     } catch {
       setServerMessage(en
-        ? "Check the HTTPS address and confirm the ULTRON server is online."
-        : "Controlla l’indirizzo HTTPS e verifica che il server ULTRON sia online.");
+        ? "Check the HTTPS address and confirm the UNVOR server is online."
+        : "Controlla l’indirizzo HTTPS e verifica che il server UNVOR sia online.");
     } finally { setServerBusy(false); }
   };
 
@@ -291,7 +290,7 @@ export default function SettingsScreen({ navigation }) {
     setExporting(true);
     try {
       const data = await api.accountExport();
-      const path = FileSystem.cacheDirectory + `ultron-dati-${Date.now()}.json`;
+      const path = FileSystem.cacheDirectory + `unvor-dati-${Date.now()}.json`;
       await FileSystem.writeAsStringAsync(path, JSON.stringify(data, null, 2), { encoding: FileSystem.EncodingType.UTF8 });
       if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(path, { mimeType: "application/json", dialogTitle: t("settings.export") });
       else Alert.alert(t("settings.export"), t("settings.export.done"));
@@ -315,10 +314,10 @@ export default function SettingsScreen({ navigation }) {
       const it = lang !== "en";
       const now = new Date().toLocaleString(it ? "it-IT" : "en-US");
       const d = new Date();
-      const protocol = `ULTRON-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${Math.random().toString(16).slice(2, 8).toUpperCase()}`;
+      const protocol = `UNVOR-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${Math.random().toString(16).slice(2, 8).toUpperCase()}`;
       let logo = "";
       try {
-        const asset = Asset.fromModule(require("../../assets/ultron-logo.png"));
+        const asset = Asset.fromModule(require("../../assets/unvor/emblem.webp"));
         await asset.downloadAsync();
         if (asset.localUri) {
           const b64 = await FileSystem.readAsStringAsync(asset.localUri, { encoding: FileSystem.EncodingType.Base64 });
@@ -326,7 +325,7 @@ export default function SettingsScreen({ navigation }) {
         }
       } catch {}
       const L = it
-        ? { title: "Ricevuta informativa", sub: "Sicurezza e privacy · ULTRON",
+        ? { title: "Ricevuta informativa", sub: "Sicurezza e privacy · UNVOR",
             issued: "Generata il", proto: "Riferimento", subject: "Identità", controller: "Server configurato",
             secTitle: "Funzioni del client", privTitle: "Limiti e trattamento dati",
             sec: [
@@ -339,8 +338,8 @@ export default function SettingsScreen({ navigation }) {
               "Metadati, log e conservazione dipendono dal servizio e dal gestore.",
               "Lo stato delle funzioni e delle prove disponibili è riportato in Sicurezza e audit.",
             ],
-            footer: "Documento informativo generato dall’app ULTRON. Non costituisce una certificazione di conformità." }
-        : { title: "Informational receipt", sub: "Security and privacy · ULTRON",
+            footer: "Documento informativo generato dall’app UNVOR. Non costituisce una certificazione di conformità." }
+        : { title: "Informational receipt", sub: "Security and privacy · UNVOR",
             issued: "Generated", proto: "Reference", subject: "Identity", controller: "Configured server",
             secTitle: "Client features", privTitle: "Limits and data processing",
             sec: [
@@ -353,7 +352,7 @@ export default function SettingsScreen({ navigation }) {
               "Metadata, logs and retention depend on the service and its operator.",
               "Security and audit describes feature status and available tests.",
             ],
-            footer: "Informational document generated by ULTRON. It is not a compliance certification." };
+            footer: "Informational document generated by UNVOR. It is not a compliance certification." };
       const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ({
         "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
       })[c]);
@@ -372,14 +371,14 @@ export default function SettingsScreen({ navigation }) {
         .badge{display:inline-block;background:#50C878;color:#063;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:bold;letter-spacing:1px}
         .ft{margin-top:28px;font-size:11px;color:#888;border-top:1px solid #eee;padding-top:12px}
       </style></head><body>
-        <div class="hdr">${logo ? `<img src="${logo}"/>` : ""}<div class="brand">ULTRON</div></div>
+        <div class="hdr">${logo ? `<img src="${logo}"/>` : ""}<div class="brand">UNVOR</div></div>
         <h1>${L.title}</h1>
         <div class="sub">${L.sub}</div>
         <div class="meta">
           <div><b>${L.proto}</b> ${protocol}</div>
           <div><b>${L.issued}:</b> ${now}</div>
           <div><b>${L.subject}:</b> ${escapeHtml(user?.lns || "—")}</div>
-          <div><b>${L.controller}:</b> ${escapeHtml(base === DEFAULT_SERVER ? "Gateway ULTRON" : base)}</div>
+          <div><b>${L.controller}:</b> ${escapeHtml(base === DEFAULT_SERVER ? "Gateway UNVOR" : base)}</div>
         </div>
         <h2>${L.secTitle}</h2><ul>${li(L.sec)}</ul>
         <h2>${L.privTitle}</h2><ul>${li(L.priv)}</ul>
@@ -460,14 +459,14 @@ export default function SettingsScreen({ navigation }) {
         <View style={styles.divider} />
         <Row icon="finger-print" label={t("settings.identity")} hint={user?.lns} testID="settings-identity" />
         <View style={styles.divider} />
-        <Row icon="server-outline" label={t("settings.server")} hint={base === DEFAULT_SERVER ? "Gateway ULTRON" : base} testID="settings-server" />
+        <Row icon="server-outline" label={t("settings.server")} hint={base === DEFAULT_SERVER ? "Gateway UNVOR" : base} testID="settings-server" />
         <View style={styles.divider} />
         <Row icon="link-outline" label={en ? "Connect a personal server" : "Collega un server personale"}
           onPress={() => setShowServer((value) => !value)} testID="settings-connect-server" />
         {showServer && <View style={{ padding: 14 }}>
           <Text style={styles.infoText}>{en
-            ? "Enter the HTTPS address of your ULTRON server. Use a key file issued by that server or create an account if it supports registration."
-            : "Inserisci l’indirizzo HTTPS del tuo server ULTRON. Usa un file chiave emesso da quel server o crea un account se la registrazione è disponibile."}</Text>
+            ? "Enter the HTTPS address of your UNVOR server. Use a key file issued by that server or create an account if it supports registration."
+            : "Inserisci l’indirizzo HTTPS del tuo server UNVOR. Usa un file chiave emesso da quel server o crea un account se la registrazione è disponibile."}</Text>
           <TextInput style={styles.serverInput} value={server === DEFAULT_SERVER ? "" : server} onChangeText={setServer} editable={!serverBusy}
             autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://messaggi.example.org"
             placeholderTextColor={theme.textFaint} testID="settings-server-url" />
@@ -581,7 +580,7 @@ export default function SettingsScreen({ navigation }) {
         <View style={styles.divider} />
         {hostedCalls ? (
           <Row icon="git-network-outline"
-            label={en ? "Calls via ULTRON relay" : "Chiamate via relay ULTRON"}
+            label={en ? "Calls via UNVOR relay" : "Chiamate via relay UNVOR"}
             hint={en ? "The other person does not receive your IP address. The relay sees the connection IP."
               : "L’interlocutore non riceve il tuo IP. Il relay vede l’IP della connessione."} />
         ) : (
@@ -768,7 +767,7 @@ export default function SettingsScreen({ navigation }) {
         ))}
         <TouchableOpacity onPress={() => navigation.navigate("Security")} style={styles.legalLink} testID="settings-function-inventory">
           <Ionicons name="list-outline" size={16} color={tint} />
-          <Text style={styles.legalLinkTxt}>{en ? "How ULTRON works" : "Come funziona ULTRON"}</Text>
+          <Text style={styles.legalLinkTxt}>{en ? "How UNVOR works" : "Come funziona UNVOR"}</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => openLegal("privacy")} style={styles.legalLink} testID="settings-open-legal">
           <Ionicons name="document-text-outline" size={16} color={tint} />
@@ -879,7 +878,7 @@ export default function SettingsScreen({ navigation }) {
       <View style={styles.card}>
         <Row icon="shield-outline" label={t("settings.encryption")} hint={t("settings.encryptionVal")} testID="settings-encryption" />
         <View style={styles.divider} />
-        <Row icon="information-circle-outline" label={t("settings.version")} hint={RATCHET_PILOT ? `ULTRON Ratchet Pilota · build ${process.env.EXPO_PUBLIC_ULTRON_VERSION_CODE || "locale"}` : `${Constants.expoConfig?.version || "1.0.0"} · Versione Zero (${Constants.expoConfig?.android?.versionCode || "1"})`} testID="settings-version" />
+        <Row icon="information-circle-outline" label={t("settings.version")} hint={RATCHET_PILOT ? `UNVOR Ratchet Pilota · build ${process.env.EXPO_PUBLIC_ULTRON_VERSION_CODE || "locale"}` : `${Constants.expoConfig?.version || "1.0.0"} · Versione Zero (${Constants.expoConfig?.android?.versionCode || "1"})`} testID="settings-version" />
         <View style={styles.divider} />
         {isOwner && (
           <>

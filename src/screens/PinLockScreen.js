@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image, Modal } from "react-native";
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Image, Modal } from "react-native";
+import { Text } from "../components/HudText";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { theme } from "../theme";
@@ -47,7 +48,7 @@ export default function PinLockScreen() {
 
   return (
     <View style={styles.root} testID="pin-lock-screen">
-      <Image source={require("../../assets/ultron-logo.png")} style={styles.logo} resizeMode="contain" />
+      <Image source={require("../../assets/unvor/emblem.webp")} style={styles.logo} resizeMode="contain" />
       <Text style={styles.title}>Inserisci il PIN</Text>
       <Text style={styles.sub}>I tuoi messaggi e le tue chiavi sono cifrati su questo telefono: senza PIN non sono leggibili.</Text>
 

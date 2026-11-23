@@ -1,4 +1,4 @@
-import { signMessage, verifyMessage } from "./crypto.js";
+import { signMessage, verifyMessage, signMessageAsync, verifyMessageAsync } from "./crypto.js";
 
 function initialProof(sender, envelope) {
   const { for: recipient, dev, session_id, r, h, iv, ct } = envelope;
@@ -14,14 +14,22 @@ export function signHostedRatchetInit(sender, envelope, secret) {
   return { ...envelope, init_sig: signMessage(initialProof(sender, envelope), secret) };
 }
 
-export function verifyHostedRatchetInit(sender, recipient, device, envelope, identityKey) {
+export function verifyHostedRatchetInit(sender, recipient, device, envelope, identityKey, verify=verifyMessage) {
   if (typeof identityKey !== "string" || identityKey.length !== 3904 ||
       typeof envelope?.init_sig !== "string" || envelope.init_sig.length !== 6618 ||
       envelope.for !== recipient || envelope.dev !== device || envelope.r !== 2 || envelope.h?.v !== 2 || envelope.session_id !== envelope.h.init?.pk_id ||
       !/^[0-9a-f]{32}$/.test(envelope.h.sdev) || !/^[0-9a-f]{32}$/.test(envelope.h.init?.pk_id || "")) return false;
   try {
-    return verifyMessage(initialProof(sender, envelope), envelope.init_sig, identityKey);
+    return verify(initialProof(sender, envelope), envelope.init_sig, identityKey);
   } catch {
     return false;
   }
+}
+
+export async function signHostedRatchetInitAsync(sender,envelope,secret){
+ if(!envelope.h?.init?.pk_id||envelope.session_id!==envelope.h.init.pk_id)throw new Error("Inizializzazione ratchet senza prekey.");
+ return{...envelope,init_sig:await signMessageAsync(initialProof(sender,envelope),secret)};
+}
+export async function verifyHostedRatchetInitAsync(sender,recipient,device,envelope,identityKey){
+ return verifyHostedRatchetInit(sender,recipient,device,envelope,identityKey,verifyMessageAsync);
 }

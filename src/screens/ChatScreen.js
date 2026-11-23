@@ -1,15 +1,19 @@
+import DirectPollComposer from "../components/DirectPollComposer";
+import DirectPollCard from "../components/DirectPollCard";
+import {readPollPacket,pollBody,makeDirectPoll} from "../lib/directPolls";
+import {syncDirectPolls,saveDirectPollSecret,quizReveals,forgetDirectPoll} from "../lib/directPollStore";
+import AttachmentSheet from "../components/AttachmentSheet";
+import EncryptionNotice from "../components/EncryptionNotice";
 import React, { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from "react";
-import {
-  View, Text, StyleSheet, FlatList, TextInput, TouchableOpacity,
-  ActivityIndicator, Alert, AppState, Keyboard, InteractionManager,
-} from "react-native";
+import { View, StyleSheet, ScrollView, FlatList, TouchableOpacity, ActivityIndicator, Alert, AppState, Keyboard, InteractionManager } from "react-native";
+import { Text, TextInput } from "../components/HudText";
 import ChatMessageMenu from "../components/ChatMessageMenu";
 import { copyMessageText, shareMessageText, useMessagePreferences } from "../lib/chatMessageActions";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import * as ImagePicker from "expo-image-picker";
 import * as imageOpt from "../lib/imageOpt";
 import * as appearance from "../lib/appearance";
-import * as DocumentPicker from "expo-document-picker";
+import * as DocumentPicker from "../lib/documentPicker";
 import * as bigatt from "../lib/bigatt";
 import * as FileSystem from "expo-file-system/legacy";
 import { useAudioRecorder, useAudioRecorderState, AudioModule, RecordingPresets, setAudioModeAsync } from "expo-audio";
@@ -32,7 +36,7 @@ import { localPrekeyIds, deviceId as myDeviceId } from "../lib/devices";
 import * as mbx from "../lib/mailbox";
 import {
   decryptEnvelope, unpackMessage, encryptForRecipients, packMessage, bytesToHex,
-  encryptFileBytes, base64ToBytes, verifyMessage, decryptFileBytes, sha256Hex,
+  encryptFileBytesAsync, base64ToBytes, verifyMessage, decryptFileBytes, sha256Hex,
 } from "../lib/crypto";
 import EncryptedAttachment from "../components/EncryptedAttachment";
 import ThreatBanner from "../components/ThreatBanner";
@@ -107,9 +111,33 @@ export default function ChatScreen({ route, navigation }) {
   );
   const title = headerTitle;
   const [msgs, setMsgs] = useState([]);
+  const [showPollComposer,setShowPollComposer]=useState(false);
+  const [pollBusy,setPollBusy]=useState(false);
+  const pollPrepared=useRef(null);
+  const pollSubmitBusy=useRef(false);
+  const [pollState,setPollState]=useState({polls:new Map(),secrets:{}});
+  const pollSyncSignature=useRef("");
+  const pollRevealing=useRef(new Set());
+  const pollStateRef=useRef({polls:new Map(),secrets:{}});
+  useEffect(()=>{pollStateRef.current={polls:new Map(),secrets:{}};setPollState(pollStateRef.current);pollSyncSignature.current="";},[convId]);
   const [groupInvites, setGroupInvites] = useState(null);
   const [groupInviteActions, setGroupInviteActions] = useState({});
   const [busyInvite, setBusyInvite] = useState(null);
+  const documentFlow = useRef(false);
+  const [draftDocuments, setDraftDocuments] = useState([]);
+  const documentDraft = useRef([]);
+  const documentUploads = useRef(new Set());
+  const documentPrepared = useRef(null);
+  const discardDocuments = async (files) => {
+    for (const file of files) if (FileSystem.cacheDirectory && file.uri?.startsWith(FileSystem.cacheDirectory)) {
+      await FileSystem.deleteAsync(file.uri, { idempotent: true }).catch(() => {});
+    }
+  };
+  useEffect(() => () => {
+    const files = documentDraft.current;
+    documentDraft.current = [];
+    Promise.allSettled([...documentUploads.current]).then(() => discardDocuments(files));
+  }, [convId]);
   const inviteBusyRef = useRef(false);
   const invitePreparedAt = useRef(0);
   const [invitePrepFailed, setInvitePrepFailed] = useState(false);
@@ -140,6 +168,11 @@ export default function ChatScreen({ route, navigation }) {
   const chatBg = (appearance.BACKGROUNDS.find((b) => b.id === look.bg) || appearance.BACKGROUNDS[0]).color;
   const [text, setText] = useState("");
   const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [emojiOpen,setEmojiOpen]=useState(false);
+  const [keyboardVisible,setKeyboardVisible]=useState(false);
+  const inputRef=useRef(null);
+  const inputSelection=useRef({start:0,end:0});
+  const emojiChoices=['😀','😁','😂','😊','😍','🥰','😘','😉','😎','🤔','😮','😢','😭','😡','👍','👎','🙏','👏','❤️','💙','🎉','🔥','✅','💪','🤝','✨','🌍','📎'];
   const [actionItem, setActionItem] = useState(null);
   const [uploadPct, setUploadPct] = useState(null);
   const [typers, setTypers] = useState([]);
@@ -171,6 +204,11 @@ export default function ChatScreen({ route, navigation }) {
   const mmss = (s) => { s = Math.max(0, Math.round(s || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
   const headerHeight = useHeaderHeight();
   const scrollToEnd = useCallback((animated = false) => { listRef.current?.scrollToEnd({ animated }); }, []);
+  useEffect(()=>{
+    const show=Keyboard.addListener('keyboardDidShow',()=>{setKeyboardVisible(true);if(atBottomRef.current)requestAnimationFrame(()=>scrollToEnd(false));});
+    const hide=Keyboard.addListener('keyboardDidHide',()=>setKeyboardVisible(false));
+    return()=>{show.remove();hide.remove();};
+  },[scrollToEnd]);
 
   // Verifica contatto (anti man-in-the-middle): "none" | "ok" | "changed" | "unknown"
   const [vfy, setVfy] = useState("none");
@@ -262,8 +300,8 @@ export default function ChatScreen({ route, navigation }) {
     if (!convId || deletingChat.current || (pilot && !peer)) return;
     Alert.alert(pilot ? (lang === "en" ? "Delete this chat for both?" : "Eliminare la chat per entrambi?") : t("chat.deleteChat.title"),
       pilot ? (lang === "en"
-        ? "Delete the history and its attachments from the gateway for both participants. A new message starts an empty chat. Copies saved or exported outside ULTRON stay on those devices."
-        : "Elimina la cronologia e gli allegati dal gateway per entrambi. Un nuovo messaggio aprirà una chat vuota. Le copie salvate o esportate fuori da ULTRON restano sui dispositivi.")
+        ? "Delete the history and its attachments from the gateway for both participants. A new message starts an empty chat. Copies saved or exported outside UNVOR stay on those devices."
+        : "Elimina la cronologia e gli allegati dal gateway per entrambi. Un nuovo messaggio aprirà una chat vuota. Le copie salvate o esportate fuori da UNVOR restano sui dispositivi.")
         : t("chat.deleteChat.text"), [
       { text: t("cancel"), style: "cancel" },
       { text: pilot ? (lang === "en" ? "Delete for both" : "Elimina per entrambi") : t("delete"), style: "destructive", onPress: async () => {
@@ -321,6 +359,8 @@ export default function ChatScreen({ route, navigation }) {
           msgsSig.current = "";
           setMsgs(rows => rows.filter(row => row.id !== it.id));
           setReplyTo(reply => reply?.id === it.id ? null : reply);
+          const poll=readPollPacket(it.body);
+          if(poll?.kind==='create'&&peer)await forgetDirectPoll(user,peer,poll.id);
           if (convId) await load(convId);
         } catch (error) { setErr(api.apiErr(error)); }
       } }]);
@@ -336,7 +376,7 @@ export default function ChatScreen({ route, navigation }) {
   };
   const withMessageText = async (item, action) => {
     setActionItem(null);
-    try { await action(item.body); } catch (error) { setErr(api.apiErr(error)); }
+    try { await action(readPollPacket(item.body)?.question || item.body); } catch (error) { setErr(api.apiErr(error)); }
   };
   const blockPeer = () => {
     setActionItem(null);
@@ -346,7 +386,7 @@ export default function ChatScreen({ route, navigation }) {
       { text: lang === "en" ? "Block" : "Blocca", style: "destructive", onPress: async () => {
         try {
           await api.blockContact(peer, true);
-          Alert.alert("ULTRON", lang === "en" ? "Contact blocked." : "Contatto bloccato.");
+          Alert.alert("UNVOR", lang === "en" ? "Contact blocked." : "Contatto bloccato.");
         } catch (error) { setErr(api.apiErr(error)); }
       } },
     ]);
@@ -539,6 +579,20 @@ export default function ChatScreen({ route, navigation }) {
       } catch { /* nessun archivio */ }
       // Messaggi appena inviati e ancora in viaggio: restano visibili.
       if (!active() || (preRaw && netDone.current) || (status && shownGeneration.current?.generation !== status.generation)) return;
+      if (hostedRatchetPilot(user) && peer && (pollStateRef.current.polls.size || out.some(row=>readPollPacket(row.body)))) {
+        const signature=out.map(row=>row.id+':'+(readPollPacket(row.body)?.op||'-')).join('|')+'#'+raw0.filter(row=>row.hidden).map(row=>row.message_id).join('|');
+        if (pollSyncSignature.current!==signature) {
+          const snapshot=await syncDirectPolls(user,peer,out,raw0.filter(row=>row.hidden).map(row=>row.message_id)).catch(error=>{if(active())setErr(api.apiErr(error));return null;});
+          if (!active()) return;
+          if(snapshot){
+          pollSyncSignature.current=signature;
+          pollStateRef.current=snapshot;
+          setPollState(snapshot);
+          }
+        }
+      }
+      const visible = out.filter(row=>{const packet=readPollPacket(row.body);return !packet||packet.kind==='create';});
+      out.splice(0,out.length,...visible);
       if (sendingRef.current.length) out.push(...sendingRef.current);
       pendingRef.current = deferred;
       // Stato del ratchet e chiavi: su disco una volta, non a ogni messaggio.
@@ -624,6 +678,42 @@ export default function ChatScreen({ route, navigation }) {
     return () => { active = false; mounted.current = false; };
   }, [convId, load, others, peer, user, scheduleRepair]);
 
+  const sendPollEvent = async (packet) => {
+    if (!(await maySendToContact())) throw new Error(lang==='en'?'Contact not accepted.':'Contatto non accettato.');
+    try {
+      const result=await sendChatMessage(packMessage(pollBody(packet),[],null,0),others,user);
+      if(result?.conv_id&&result.conv_id!==convId)setConvId(result.conv_id);
+      await load(result?.conv_id||convId);
+    } catch(error){setErr(api.apiErr(error));throw error;}
+  };
+  const createPoll = async (form) => {
+    if(pollSubmitBusy.current)return;
+    pollSubmitBusy.current=true;
+    setPollBusy(true);setErr("");
+    try {
+      const {packet,secret}=pollPrepared.current || makeDirectPoll(form);
+      pollPrepared.current={packet,secret};
+      if(secret)await saveDirectPollSecret(user,peer,packet,secret);
+      await sendPollEvent(packet);
+      setShowPollComposer(false);pollPrepared.current=null;
+    }catch(error){setErr(api.apiErr(error));}
+    finally{pollSubmitBusy.current=false;setPollBusy(false);}
+  };
+  useEffect(()=>{
+    let active=true,retry;
+    const reveal=async()=>{
+      for(const packet of quizReveals(pollState)){
+        if(!active||pollRevealing.current.has(packet.id))continue;
+        pollRevealing.current.add(packet.id);
+        try{await sendChatMessage(packMessage(pollBody(packet),[],null,0),others,user);if(active)await load(convId);}
+        catch{if(active)retry=setTimeout(reveal,4000);}
+        finally{pollRevealing.current.delete(packet.id);}
+      }
+    };
+    if(peer&&hostedRatchetPilot(user))reveal();
+    return()=>{active=false;clearTimeout(retry);};
+  },[pollState,convId,user,peer,load,others]);
+
   // Aggiornamenti: solo con l'app in primo piano e questa chat davanti agli occhi.
   // Passata leggera: i messaggi già decifrati arrivano dalla memoria, i nuovi si decifrano
   // per la loro strada. Niente tentativi a tentoni qui: quelli vanno in sottofondo.
@@ -708,6 +798,7 @@ export default function ChatScreen({ route, navigation }) {
 
   const onSend = async (override) => {
     if (deletingChat.current) return;
+    if (draftDocuments.length) return sendDocumentsDraft();
     atBottomRef.current = true; // dopo un invio è giusto tornare in fondo
     const body = (typeof override === "string" ? override : text).trim();
     if (!body || others.length === 0 || !user?.kem) return;
@@ -723,7 +814,7 @@ export default function ChatScreen({ route, navigation }) {
         const payload = packMessage(body, [], null, ttl, null);
         const envelopes = await buildEnvelopes(payload, others, user);
         await api.editMessage(editing.id, envelopes);
-        setText(""); setEditing(null); Keyboard.dismiss();
+        setText(""); setEditing(null);
         await load(convId);
       } catch (e) { setErr(api.apiErr(e)); }
       finally { setSending(false); }
@@ -739,7 +830,7 @@ export default function ChatScreen({ route, navigation }) {
     };
     sendingRef.current = sendingRef.current.concat([tmp]);
     setMsgs((prev) => prev.concat([tmp]));
-    setText(""); setReplyTo(null); Keyboard.dismiss(); setSending(false);
+    setText(""); setReplyTo(null); setSending(false);
     const done = () => { sendingRef.current = sendingRef.current.filter((x) => x.id !== tmp.id); msgsSig.current = ""; };
     try {
       const payload = packMessage(body, [], myReply, ttl, null);
@@ -769,7 +860,7 @@ export default function ChatScreen({ route, navigation }) {
       // impiegava un'eternità a partire e ad aprirsi; la cifratura non cambia di una virgola.
       const info = isVid ? await FileSystem.getInfoAsync(asset.uri) : null;
       const size = asset.fileSize || info?.size || 0;
-      if (size > bigatt.MAX_ATT) throw new Error("File troppo grande (max 100 MB).");
+      if (size > bigatt.MAX_ATT) throw new Error("File troppo grande (max 50 MB).");
       if (isVid && size > bigatt.ATT_CHUNK) {
         setUploadPct(0);
         const att = await bigatt.uploadFileChunked({
@@ -787,11 +878,11 @@ export default function ChatScreen({ route, navigation }) {
       if (!isVid) {
         const small = await imageOpt.shrinkPhoto(asset.uri, 500 * 1024);
         if (small?.base64) b64 = small.base64;
-        prev = await imageOpt.microPreview(asset.uri);
+        prev = await imageOpt.microPreview(small?.uri || asset.uri);
       }
       if (!b64) b64 = asset.base64 || await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 });
       const bytes = base64ToBytes(b64);
-      const enc = encryptFileBytes(bytes);
+      const enc = await encryptFileBytesAsync(bytes);
       setUploadPct(0);
       const { id } = await api.blobUpload(enc.ciphertext, (p) => { if (mounted.current) setUploadPct(p); }, others);
       const att = {
@@ -836,7 +927,7 @@ export default function ChatScreen({ route, navigation }) {
     try {
       const b64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
       const bytes = base64ToBytes(b64);
-      const enc = encryptFileBytes(bytes);
+      const enc = await encryptFileBytesAsync(bytes);
       setUploadPct(0);
       const { id } = await api.blobUpload(enc.ciphertext, (p) => { if (mounted.current) setUploadPct(p); }, others);
       const att = { id, name: `vocale_${Date.now()}.m4a`, mime: "audio/m4a", size: bytes.length, key: enc.key, iv: enc.iv, kind: "voice", duration: dur };
@@ -865,47 +956,81 @@ export default function ChatScreen({ route, navigation }) {
   };
   const pickMedia = async () => {
     try {
-      const r = await withSystemActivity(() => ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images", "videos"], quality: 0.6 }));
+      const r = await withSystemActivity(() => ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images", "videos"], quality: 1 }));
       if (!r.canceled && r.assets?.[0]) sendAsset(r.assets[0]);
     } catch (e) { setErr(api.apiErr(e)); }
   };
   // File generico (documenti, qualsiasi tipo) via DocumentPicker, cifrato E2EE come gli altri allegati.
   const attachFile = async () => {
-    if (deletingChat.current) return;
-    if (others.length === 0 || !user?.kem) { setErr(t("chat.attach.noconv")); return; }
-    try { if (!(await maySendToContact())) return; }
-    catch (e) { setErr(api.apiErr(e)); return; }
-    suppressLock();
+    if (deletingChat.current || documentFlow.current || sending) return;
+    if (!others.length || !user?.kem) { setErr(t("chat.attach.noconv")); return; }
+    documentFlow.current = true;
     try {
-      const res = await withSystemActivity(() => DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true }));
-      if (res.canceled || !res.assets?.[0]) return;
-      const a = res.assets[0];
-      const size = a.size ?? (await FileSystem.getInfoAsync(a.uri)).size ?? 0;
-      if (size > bigatt.MAX_ATT) { setErr(lang === "en" ? "File too large (max 100MB)" : "File troppo grande (max 100MB)"); return; }
-      setSending(true); setErr("");
-      setUploadPct(0);
-      const name = a.name || `file_${Date.now()}`;
-      const mime = a.mimeType || "application/octet-stream";
-      const onP = (p) => { if (mounted.current) setUploadPct(p); };
-      // Oltre i 4 MB si passa al formato a pezzi: si legge dal disco, si cifra e si
-      // spedisce un pezzo alla volta, senza mai tenere il file intero in memoria.
-      let att;
-      if (size > bigatt.ATT_CHUNK) {
-        att = await bigatt.uploadFileChunked({ uri: a.uri, name, mime, size, allowed: others, onProgress: onP });
-      } else {
-        const b64 = await FileSystem.readAsStringAsync(a.uri, { encoding: FileSystem.EncodingType.Base64 });
-        const bytes = base64ToBytes(b64);
-        const enc = encryptFileBytes(bytes);
-        const { id } = await api.blobUpload(enc.ciphertext, onP, others);
-        att = { id, name, mime, size: bytes.length, key: enc.key, iv: enc.iv };
+      const result = await DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true, multiple: true });
+      if (result.canceled) return;
+      const selected = [...documentDraft.current];
+      for (const asset of result.assets || []) {
+        const size = asset.size ?? (await FileSystem.getInfoAsync(asset.uri)).size ?? 0;
+        if (size < 1 || size > bigatt.MAX_ATT) {
+          await discardDocuments([asset]);
+          setErr(lang === "en" ? "Each file must be between 1 byte and 50 MB." : "Ogni file deve avere una dimensione fra 1 byte e 50 MB.");
+          continue;
+        }
+        if (selected.length >= 10) { await discardDocuments([asset]); setErr(lang === "en" ? "Up to 10 files per message." : "Massimo 10 file per messaggio."); continue; }
+        if (!selected.some(file => file.uri === asset.uri)) selected.push({ ...asset, size });
       }
-      const payload = packMessage(text.trim(), [att], replyTo, ttl);
-      const r2 = await sendChatMessage(payload, others, user);
-      setText(""); setReplyTo(null);
-      if (r2?.conv_id && r2.conv_id !== convId) setConvId(r2.conv_id);
-      await load(r2?.conv_id || convId);
-    } catch (e) { setErr(api.apiErr(e)); }
-    finally { setSending(false); setUploadPct(null); }
+      documentDraft.current = selected;
+      setDraftDocuments(selected);
+    } catch (error) { setErr(api.apiErr(error)); }
+    finally { documentFlow.current = false; }
+  };
+  const removeDraftDocument = (uri) => {
+    if (sending) return;
+    const removed = documentDraft.current.filter(file => file.uri === uri);
+    const kept = documentDraft.current.filter(file => file.uri !== uri);
+    documentDraft.current = kept;
+    setDraftDocuments(kept);
+    discardDocuments(removed);
+  };
+  const sendDocumentsDraft = async () => {
+    if (sending || documentUploads.current.size || !documentDraft.current.length || deletingChat.current) return;
+    const files = [...documentDraft.current], caption = text.trim(), quote = replyTo;
+    const check=api.authenticatedScope(user);
+    const signature=sha256Hex(JSON.stringify([files.map(f=>[f.uri,f.size]),caption,quote,ttl]));
+    setSending(true); setErr(""); setUploadPct(0);
+    const operation = (async () => {
+      if (!(await maySendToContact())) return;
+      check();
+      const attachments = documentPrepared.current?.signature===signature ? documentPrepared.current.attachments : [];
+      for (let i=attachments.length;i<files.length;i++) {
+        check();
+        const asset=files[i], name=asset.name || `file_${Date.now()}`, mime=asset.mimeType || "application/octet-stream";
+        const progress = fraction => { if (mounted.current) setUploadPct((i+fraction)/files.length); };
+        let attachment;
+        if (asset.size > bigatt.ATT_CHUNK) attachment = await bigatt.uploadFileChunked({uri:asset.uri,name,mime,size:asset.size,allowed:others,onProgress:progress});
+        else {
+          const bytes=base64ToBytes(await FileSystem.readAsStringAsync(asset.uri,{encoding:FileSystem.EncodingType.Base64}));
+          const encrypted=await encryptFileBytesAsync(bytes);
+          check();
+          const uploaded=await api.blobUpload(encrypted.ciphertext,progress,others);
+          attachment={id:uploaded.id,name,mime,size:bytes.length,key:encrypted.key,iv:encrypted.iv};
+        }
+        check();
+        attachments.push(attachment);
+        documentPrepared.current={signature,attachments:[...attachments]};
+      }
+      check();
+      const result=await sendChatMessage(packMessage(caption,attachments,quote,ttl),others,user);
+      documentDraft.current=[];documentPrepared.current=null;
+      if (mounted.current) { setDraftDocuments([]); setText(""); setReplyTo(null); }
+      await discardDocuments(files);
+      if (result?.conv_id && result.conv_id !== convId) setConvId(result.conv_id);
+      await load(result?.conv_id || convId);
+    })();
+    documentUploads.current.add(operation);
+    try { await operation; }
+    catch (error) { if (mounted.current) setErr(api.apiErr(error)); }
+    finally { documentUploads.current.delete(operation); if (mounted.current) { setSending(false); setUploadPct(null); } }
   };
   // Apri/chiudi il menu allegati (stile identico ai gruppi).
   const toggleAttachMenu = () => {
@@ -920,7 +1045,7 @@ export default function ChatScreen({ route, navigation }) {
 
   const onChangeText = (t) => {
     const now = Date.now();
-    if (convId && now - typingRef.current > 2500) { typingRef.current = now; api.pulseTyping(convId).catch(() => {}); }
+    if (!hostedChat && convId && now - typingRef.current > 2500) { typingRef.current = now; api.pulseTyping(convId).catch(() => {}); }
     setText(t);
   };
 
@@ -1049,7 +1174,7 @@ export default function ChatScreen({ route, navigation }) {
       onLongPress={() => onMessageActions(item)}
       onLayout={(e) => { const h = e.nativeEvent.layout.height; if (h > 0) rowH.current.set(item.id, h); }}
       style={[styles.bubbleRow, item.mine ? styles.rowMine : styles.rowThem,
-        rowH.current.has(item.id) ? { minHeight: rowH.current.get(item.id) } : null]}
+        !readPollPacket(item.body) && rowH.current.has(item.id) ? { minHeight: rowH.current.get(item.id) } : null]}
     >
       <View style={[styles.bubble, item.mine ? styles.bubbleMe : styles.bubbleThem,
         // Colore d'accento scelto dall'utente, applicato alla bolla dei propri messaggi.
@@ -1061,9 +1186,12 @@ export default function ChatScreen({ route, navigation }) {
             <Text style={styles.quoteText} numberOfLines={2}>{item.reply.text || "📎"}</Text>
           </View>
         )}
-        {!!item.body && <SafeText text={item.body} style={styles.bubbleText} lang={lang} />}
+        {readPollPacket(item.body)?.kind==='create' ? (pollState.polls.get(readPollPacket(item.body).id)
+          ? <DirectPollCard poll={pollState.polls.get(readPollPacket(item.body).id)} onPacket={sendPollEvent} peerName={title} onProfile={()=>navigation.navigate("Profilo",{peer})}/>
+          : <Text style={styles.bubbleText}>{readPollPacket(item.body).question}</Text>)
+          : !!item.body && <SafeText text={item.body} style={styles.bubbleText} lang={lang} />}
         {renderGroupInvite(item)}
-        {!!item.body && <ThreatBanner result={analyzeMessage(item.body, lang)} lang={lang} />}
+        {!!item.body && !readPollPacket(item.body) && <ThreatBanner result={analyzeMessage(item.body, lang)} lang={lang} />}
         {translations[item.id] && (
           <View style={styles.trBox} testID="msg-translated">
             <View style={styles.trRow}>
@@ -1106,14 +1234,11 @@ export default function ChatScreen({ route, navigation }) {
       </View>
     </TouchableOpacity>
     </>
-  ), [styles, onMessageActions, accent, lang, translations, toggleTr, visibleMessages, messagePreferences.pinned, pilot, t, renderGroupInvite]);
+  ), [styles, onMessageActions, accent, lang, translations, toggleTr, visibleMessages, messagePreferences.pinned, pilot, t, renderGroupInvite, pollState, peer, sendPollEvent]);
 
   return (
     <KeyboardAvoidingView behavior="padding" keyboardVerticalOffset={headerHeight} style={styles.root}>
-      <View style={styles.e2eeBadge} testID="chat-e2ee-badge">
-        <Ionicons name="lock-closed-outline" size={11} color={theme.accent} />
-        <Text style={styles.e2eeBadgeText}>{t("chat.e2eeBadge")}</Text>
-      </View>
+      <EncryptionNotice kind="chat" />
       {vfy === "changed" && others.length === 1 && (
         <TouchableOpacity
           style={styles.vfyBar}
@@ -1183,7 +1308,8 @@ export default function ChatScreen({ route, navigation }) {
               ) : null}
             </View>
           }
-          keyboardShouldPersistTaps="handled"
+          keyboardShouldPersistTaps="always"
+          keyboardDismissMode="none"
           ListEmptyComponent={
             <View style={styles.center}>
               <Text style={styles.emptyLock}>🔒</Text>
@@ -1231,27 +1357,25 @@ export default function ChatScreen({ route, navigation }) {
           <Text style={styles.uploadTxt} testID="chat-upload-pct">{Math.round(uploadPct * 100)}%</Text>
         </View>
       )}
-      {showAttachMenu && (
-        <View style={styles.attachMenu} testID="chat-attach-menu">
-          <TouchableOpacity style={styles.attachItem} onPress={() => runAttach(takePhoto)} disabled={sending} testID="chat-attach-photo">
-            <Ionicons name="camera-outline" size={20} color={tint} />
-            <Text style={styles.attachItemText}>{lang === "en" ? "Camera" : "Fotocamera"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.attachItem} onPress={() => runAttach(recordVideo)} disabled={sending} testID="chat-attach-video">
-            <Ionicons name="videocam-outline" size={20} color={tint} />
-            <Text style={styles.attachItemText}>{lang === "en" ? "Video" : "Video"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.attachItem} onPress={() => runAttach(pickMedia)} disabled={sending} testID="chat-attach-gallery">
-            <Ionicons name="image-outline" size={20} color={tint} />
-            <Text style={styles.attachItemText}>{lang === "en" ? "Gallery" : "Galleria"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.attachItem} onPress={() => runAttach(attachFile)} disabled={sending} testID="chat-attach-file">
-            <Ionicons name="document-attach-outline" size={20} color={tint} />
-            <Text style={styles.attachItemText}>{lang === "en" ? "File" : "File"}</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-      <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+      {!!draftDocuments.length && <View style={styles.documentsDraft} testID="chat-document-draft">
+        <Text style={styles.draftTitle}>{lang === "en" ? "Ready to send" : "Pronti per l’invio"} · {draftDocuments.length}/10</Text>
+        <ScrollView horizontal keyboardShouldPersistTaps="always" showsHorizontalScrollIndicator={false}>
+          {draftDocuments.map(file => <View key={file.uri} style={styles.draftFile}>
+            <Ionicons name="document-text-outline" size={23} color={tint} />
+            <View style={{flex:1}}><Text numberOfLines={1} style={styles.draftFileName}>{file.name}</Text><Text style={styles.draftFileSize}>{(file.size/1024/1024).toFixed(2)} MB</Text></View>
+            <TouchableOpacity onPress={()=>removeDraftDocument(file.uri)} disabled={sending} accessibilityLabel={lang === "en" ? "Remove file" : "Rimuovi file"}><Ionicons name="close-circle" size={22} color={theme.textDim}/></TouchableOpacity>
+          </View>)}
+        </ScrollView>
+        <Text style={styles.draftHint}>{lang === "en" ? "Nothing is sent until you press Send." : "Nessun file viene inviato finché non premi Invia."}</Text>
+      </View>}
+      {showAttachMenu && <AttachmentSheet testID="chat-attach-menu" disabled={sending} limitLabel={t("attachment.limit")} items={[
+        {id:"chat-attach-gallery",label:t("attachment.gallery"),icon:"images",color:"#24a9ff",action:()=>runAttach(pickMedia)},
+        {id:"chat-attach-photo",label:t("attachment.camera"),icon:"camera",color:"#fb428b",action:()=>runAttach(takePhoto)},
+        {id:"chat-attach-video",label:t("attachment.video"),icon:"videocam",color:"#22d5d8",action:()=>runAttach(recordVideo)},
+        {id:"chat-attach-file",label:t("attachment.document"),icon:"document-text",color:"#a27aff",action:()=>runAttach(attachFile)},
+        ...(pilot ? [{id:"chat-attach-poll",label:lang==='en'?'Poll':'Sondaggio',icon:"stats-chart",color:"#ffc666",action:()=>{setShowAttachMenu(false);setShowPollComposer(true);}}] : []),
+      ]}/>}
+      <View style={[styles.inputBar, { paddingBottom: keyboardVisible || emojiOpen ? 8 : Math.max(insets.bottom, 10) }]}>
         {recState.isRecording ? (
           <View style={styles.recRow} testID="chat-recording">
             <TouchableOpacity onPress={cancelRec} style={styles.recCancel} testID="rec-cancel"><Ionicons name="trash-outline" size={20} color="#FF6B7A" /></TouchableOpacity>
@@ -1264,32 +1388,31 @@ export default function ChatScreen({ route, navigation }) {
           </View>
         ) : (
           <>
-            <TouchableOpacity style={styles.attachBtn} onPress={toggleAttachMenu} disabled={sending} accessibilityRole="button" accessibilityLabel={lang === "en" ? "Add attachment" : "Aggiungi allegato"} testID="chat-attach">
-              <Ionicons name={showAttachMenu ? "close-circle-outline" : "add-circle-outline"} size={26} color={tint} />
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.ttlBtn, ttl > 0 && styles.ttlBtnOn]} onPress={cycleTtl} testID="chat-ttl">
-              <Ionicons name="timer-outline" size={16} color={ttl > 0 ? "#fff" : theme.textDim} />
-              <Text style={[styles.ttlTxt, ttl > 0 && { color: "#fff" }]}>{ttlLabel(ttl)}</Text>
-            </TouchableOpacity>
+            <View style={styles.inputCapsule}>
+            <TouchableOpacity style={styles.attachBtn} accessibilityLabel="Emoji" onPress={()=>{setShowAttachMenu(false);if(emojiOpen){setEmojiOpen(false);inputRef.current?.focus();}else{Keyboard.dismiss();setEmojiOpen(true);}}}><Ionicons name={emojiOpen?'keypad-outline':'happy-outline'} size={24} color={theme.textDim}/></TouchableOpacity>
             <TextInput
+              ref={inputRef}
               style={styles.input}
               placeholder={t("chat.placeholder")}
               placeholderTextColor={theme.textFaint}
               value={text}
+              editable={!sending}
               onChangeText={onChangeText}
-              onSubmitEditing={() => onSend()}
-              onFocus={() => { setShowAttachMenu(false); setTimeout(() => scrollToEnd(true), 250); setTimeout(() => scrollToEnd(false), 550); }}
+              onFocus={() => {setShowAttachMenu(false);setEmojiOpen(false);}}
+              onSelectionChange={event=>{inputSelection.current=event.nativeEvent.selection;}}
               selectionColor={tint}
               cursorColor={theme.text}
               keyboardAppearance="dark"
-              returnKeyType="send"
-              submitBehavior="submit"
+              returnKeyType="default"
+              submitBehavior="newline"
               multiline
               testID="chat-input"
             />
-            {text.trim() ? (
+            <TouchableOpacity style={styles.attachBtn} onPress={()=>{setEmojiOpen(false);toggleAttachMenu();}} disabled={sending} accessibilityRole="button" accessibilityLabel={lang === 'en'?'Attachments':'Allegati'} testID="chat-attach"><Ionicons name={showAttachMenu?'close-outline':'attach-outline'} size={25} color={showAttachMenu?tint:theme.textDim}/></TouchableOpacity>
+            </View>
+            {(text.trim() || draftDocuments.length) ? (
               <TouchableOpacity style={[styles.sendBtn, sending && { opacity: 0.5 }]} onPress={() => onSend()} disabled={sending} accessibilityRole="button" accessibilityLabel={lang === "en" ? "Send" : "Invia"} testID="chat-send">
-                {sending ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.sendText}>↑</Text>}
+                {sending ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="send" size={22} color={theme.onAccent} />}
               </TouchableOpacity>
             ) : (
               <TouchableOpacity style={[styles.sendBtn, sending && { opacity: 0.5 }]} onPress={startRec} disabled={sending} accessibilityRole="button" accessibilityLabel={lang === "en" ? "Microphone" : "Microfono"} testID="chat-mic">
@@ -1299,12 +1422,14 @@ export default function ChatScreen({ route, navigation }) {
           </>
         )}
       </View>
+      {emojiOpen&&<View style={styles.emojiPanel} testID="chat-emoji-panel"><Text style={styles.draftTitle}>Emoji</Text><View style={styles.emojiGrid}>{emojiChoices.map(emoji=><TouchableOpacity key={emoji} style={styles.emojiChoice} onPress={()=>{const {start,end}=inputSelection.current;const before=text.slice(0,start),after=text.slice(end);setText(before+emoji+after);inputSelection.current={start:start+emoji.length,end:start+emoji.length};}}><Text style={{fontSize:27}}>{emoji}</Text></TouchableOpacity>)}</View></View>}
+      {showPollComposer && <DirectPollComposer busy={pollBusy} prepared={!!pollPrepared.current} error={err} onClose={()=>{setShowPollComposer(false);pollPrepared.current=null;}} onCreate={createPoll} />}
       {actionItem && <ChatMessageMenu onClose={() => setActionItem(null)} actions={[
         { key: "chat-action-reply", label: t("chat.reply"), icon: "arrow-undo-outline", action: () => {
           const item = actionItem;
           setActionItem(null);
           setReplyTo({ id: item.id, name: item.mine ? (user?.lns?.split("@")[0] || "?") : title,
-            text: (item.body || "").slice(0, 140) });
+            text: (readPollPacket(item.body)?.question || item.body || "").slice(0, 140) });
         } },
         actionItem.body && { key: "chat-action-copy", label: lang === "en" ? "Copy" : "Copia", icon: "copy-outline",
           action: () => withMessageText(actionItem, copyMessageText) },
@@ -1316,7 +1441,7 @@ export default function ChatScreen({ route, navigation }) {
           (detectLang(actionItem.body) ? "  " + langFlag(detectLang(actionItem.body)) : ""),
           icon: "language-outline", action: () => { const item = actionItem; setActionItem(null); onTranslate(item); } },
         { key: "chat-action-forward", label: lang === "en" ? "Forward" : "Inoltra", icon: "arrow-redo-outline",
-          action: () => { const item = actionItem; setActionItem(null); navigation.navigate("Forward", { text: item.body || "", atts: item.atts || [] }); } },
+          action: () => { const item = actionItem; setActionItem(null); navigation.navigate("Forward", { text: readPollPacket(item.body)?.question || item.body || "", atts: item.atts || [] }); } },
         !actionItem.sendingLocal && { key: "chat-action-pin", label: isPinned(actionItem)
           ? (lang === "en" ? "Unpin" : "Rimuovi da fissati") : (lang === "en" ? "Pin message" : "Fissa messaggio"),
           icon: isPinned(actionItem) ? "bookmark" : "bookmark-outline", action: () => doPin(actionItem) },
@@ -1370,7 +1495,7 @@ const makeStyles = (tint) => StyleSheet.create({
   replyBarName: { color: tint, fontSize: 12, fontWeight: "800" },
   replyBarText: { color: theme.textDim, fontSize: 13 },
   ticks: { flexDirection: "row", justifyContent: "flex-end", marginTop: 3, marginRight: -2 },
-  attachBtn: { width: 40, height: 44, alignItems: "center", justifyContent: "center" },
+  attachBtn: { width: 42, height: 48, alignItems: "center", justifyContent: "center" },
   attachMenu: { flexDirection: "row", flexWrap: "wrap", gap: 6, padding: 8, backgroundColor: theme.surfaceAlt },
   attachItem: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, paddingHorizontal: 16 },
   attachItemText: { color: theme.text, fontSize: 15, fontWeight: "600" },
@@ -1378,9 +1503,19 @@ const makeStyles = (tint) => StyleSheet.create({
   moreBtn: { alignSelf: "center", paddingVertical: 10, paddingHorizontal: 18, marginBottom: 10, borderRadius: 999, borderWidth: 1, borderColor: "rgba(255,255,255,0.14)", minHeight: 40, justifyContent: "center" },
   moreText: { color: tint, fontSize: 12, fontWeight: "800", letterSpacing: 0.4 },
   err: { color: "#FFB3BD", fontSize: 13, paddingHorizontal: 16, paddingBottom: 6 },
+  documentsDraft: {padding:12,gap:8,backgroundColor:theme.surfaceAlt,borderTopWidth:1,borderTopColor:theme.border},
+  draftTitle: {color:theme.accent,fontSize:13,fontWeight:"700"},
+  draftFile: {width:230,padding:10,marginRight:8,borderWidth:1,borderColor:theme.border,borderRadius:14,flexDirection:"row",alignItems:"center",gap:9},
+  draftFileName: {color:theme.text,fontSize:13},
+  draftFileSize: {color:theme.textDim,fontSize:11,marginTop:3},
+  draftHint: {color:theme.textDim,fontSize:12},
   inputBar: { flexDirection: "row", alignItems: "flex-end", gap: 10, paddingHorizontal: 12, paddingVertical: 10, borderTopWidth: 1, borderTopColor: theme.border, backgroundColor: theme.surface },
-  input: { flex: 1, backgroundColor: theme.surfaceAlt, borderRadius: 14, borderWidth: 1, borderColor: theme.border, color: theme.text, paddingHorizontal: 16, paddingVertical: 10, maxHeight: 120, fontSize: 15 },
-  sendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: tint, alignItems: "center", justifyContent: "center" },
+  inputCapsule: {flex:1,flexDirection:"row",alignItems:"flex-end",minHeight:50,borderRadius:26,backgroundColor:theme.surfaceAlt,borderWidth:1,borderColor:theme.border},
+  input: {flex:1,color:theme.text,paddingHorizontal:3,paddingTop:13,paddingBottom:13,minHeight:48,maxHeight:140,fontSize:16,lineHeight:22},
+  emojiPanel: {padding:12,backgroundColor:theme.surfaceAlt,borderTopWidth:1,borderTopColor:theme.border,gap:10},
+  emojiGrid: {flexDirection:"row",flexWrap:"wrap"},
+  emojiChoice: {width:"14.28%",height:48,alignItems:"center",justifyContent:"center"},
+  sendBtn: { width: 50, height: 50, borderRadius: 25, backgroundColor: tint, alignItems: "center", justifyContent: "center" },
   sendText: { color: theme.onAccent, fontSize: 22, fontWeight: "700" },
   ttlBtn: { flexDirection: "row", alignItems: "center", gap: 3, height: 44, paddingHorizontal: 8, borderRadius: 14 },
   ttlBtnOn: { backgroundColor: tint },

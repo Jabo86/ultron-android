@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {runInNewContext} from 'node:vm';import {gcm} from '@noble/ciphers/aes.js';import {webcrypto} from 'node:crypto';import {hexToBytes,bytesToHex,attachmentAes} from '../src/lib/crypto.js';import {MAX_ATTACHMENT_BYTES,ATTACHMENT_CHUNK_BYTES} from '../src/lib/attachmentLimits.js';
+const source=readFileSync(new URL('../src/lib/bigatt.js',import.meta.url),'utf8').replace(/^import .+;$/gm,'').replace(/^export /gm,'');
+const sent=[];let opened=0;class File{constructor(){this.size=MAX_ATTACHMENT_BYTES;}open(){opened++;return{readBytes:n=>new Uint8Array(Math.min(n,MAX_ATTACHMENT_BYTES-(sent.length%13)*ATTACHMENT_CHUNK_BYTES)).fill((sent.length%13)+1),close(){}};}}
+const api={mlsPutFileChunk:async(group,id,index,parts,size,bytes)=>{assert.equal(size,MAX_ATTACHMENT_BYTES);assert.equal(parts,13);sent.push({index,length:bytes.length,head:bytes.slice(0,64)});assert.equal(bytes.length,Math.min(ATTACHMENT_CHUNK_BYTES,size-index*ATTACHMENT_CHUNK_BYTES)+16);return{id,ready:index===parts-1};}};
+const app=runInNewContext(source+'\n({uploadFileChunked,attNonce})',{File,FileMode:{ReadOnly:1},gcm,attachmentAes,api,crypto:webcrypto,bytesToHex,hexToBytes,MAX_ATTACHMENT_BYTES,ATTACHMENT_CHUNK_BYTES,Uint8Array});
+const material={keyHex:'12'.repeat(32),ivHex:'34'.repeat(12)};const options={uri:'private',name:'test.bin',size:MAX_ATTACHMENT_BYTES,group:'group',fileId:'ab'.repeat(16),...material};
+const manifest=await app.uploadFileChunked(options);assert.equal(manifest.size,MAX_ATTACHMENT_BYTES);assert.equal(manifest.n,13);assert.equal(manifest.key,material.keyHex);assert.equal(manifest.iv,material.ivHex);
+const before=sent.map(x=>Buffer.from(x.head).toString('hex'));await app.uploadFileChunked(options);assert.deepEqual(sent.slice(13).map(x=>Buffer.from(x.head).toString('hex')),before);
+const count=opened;await assert.rejects(app.uploadFileChunked({...options,size:MAX_ATTACHMENT_BYTES+1}),/grande/);assert.equal(opened,count);
+console.log('Mobile: exact 50 MiB boundary, bounded chunks, group metadata and identical encrypted retry with persisted key/nonce verified.');

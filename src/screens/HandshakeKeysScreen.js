@@ -4,7 +4,8 @@
 // si può ricambiare a mano. Il numero di sicurezza e il codice QR NON si toccano: restano
 // sulla generazione 0 per sempre, così nessun contatto che ti ha già verificato vede allarmi.
 import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
+import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
+import { Text } from "../components/HudText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useI18n } from "../lib/i18n";

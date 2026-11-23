@@ -1,3 +1,5 @@
+import { ATTACHMENT_KEYS } from "./locales/attachments";
+import { ENCRYPTION_KEYS } from "./locales/encryption";
 import { ADDRESS_SEARCH_KEYS } from "./locales/addressSearch";
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { I18nManager } from "react-native";
@@ -22,7 +24,7 @@ const TR = {
     "rubrica.addExternal": "Aggiungi {lns}", "rubrica.empty": "Nessun contatto trovato.",
     "rubrica.external": "Esterno",
     "search.placeholder": "Cerca contatti e gruppi…", "search.hint": "Digita per cercare contatti e gruppi", "search.empty": "Nessun risultato", "search.colleagues": "Colleghi", "search.mails": "Mail certificate",
-    "rubrica.invite": "Invita", "rubrica.inviteMsg": "Contattami su ULTRON.",
+    "rubrica.invite": "Invita", "rubrica.inviteMsg": "Contattami su UNVOR.",
     "channels.title": "Gruppo", "channels.new": "Nuovo gruppo",
     "channels.empty": "Nessun canale", "channels.emptyHint": "Crea un canale broadcast per comunicare con molte persone contemporaneamente.",
     "channels.name": "Nome del canale", "channels.desc": "Descrizione (facoltativa)",
@@ -72,7 +74,7 @@ const TR = {
     "att.permText": "Concedi l'accesso alla galleria per salvare.",
     "att.error": "Errore", "att.errorText": "Impossibile salvare il file.",
     // Hub
-    "hub.title": "Hub", "hub.sub": "La rete professionale ULTRON",
+    "hub.title": "Hub", "hub.sub": "La rete professionale UNVOR",
     "hub.compose": "Condividi un aggiornamento…", "hub.publish": "Pubblica",
     "hub.empty": "Ancora nessun post. Sii il primo a condividere!",
     "hub.share": "↗ Condividi", "hub.reply.placeholder": "Scrivi una risposta…",
@@ -89,7 +91,7 @@ const TR = {
     "profile.headline.ph": "Es. Responsabile vendite", "profile.bio": "Bio",
     "profile.bio.ph": "Racconta qualcosa di te…",
     "profile.visible": "👁  Profilo visibile a tutti", "profile.hidden": "🚫  Profilo nascosto",
-    "profile.visible.hint": "Il tuo profilo è visibile a tutti gli utenti di ULTRON.",
+    "profile.visible.hint": "Il tuo profilo è visibile a tutti gli utenti di UNVOR.",
     "profile.hidden.hint": "Solo la tua azienda può vederti.",
     "profile.save": "Salva profilo", "profile.saved": "✓ Salvato",
     "profile.language": "Lingua", "profile.avatar.denied": "Permesso negato",
@@ -105,9 +107,9 @@ const TR = {
     "login.readfail": "Impossibile leggere il file chiave. Prova a incollarne il contenuto.",
     "login.error": "Errore",
     // Lock
-    "lock.title": "ULTRON è bloccato", "lock.sub": "Autenticati per accedere alle tue conversazioni cifrate.",
+    "lock.title": "UNVOR è bloccato", "lock.sub": "Autenticati per accedere alle tue conversazioni cifrate.",
     "lock.unlock": "Sblocca", "lock.retry": "Riprova a sbloccare",
-    "lock.signout": "Esci e usa un altro file chiave", "lock.prompt": "Sblocca ULTRON",
+    "lock.signout": "Esci e usa un altro file chiave", "lock.prompt": "Sblocca UNVOR",
     // Certify
     "tab.certify": "Certify",
     "certify.subtitle": "Posta notorizzata E2EE ancorata su blockchain",
@@ -192,7 +194,7 @@ const TR = {
     "settings.aup": "Uso accettabile (AUP)",
     "settings.sla": "Livelli di servizio (SLA)",
     "settings.controller": "Titolare del trattamento",
-    "settings.controllerName": "ULTRON",
+    "settings.controllerName": "UNVOR",
     "settings.contact": "Contatto privacy",
     "settings.encryption": "Crittografia",
     "settings.encryptionVal": "ML-DSA-65 · ML-KEM-768 · AES-256-GCM (end-to-end, post-quantum)",
@@ -203,13 +205,13 @@ const TR = {
     "settings.dataInfo": "I contenuti di chat, mail certificate e allegati sono cifrati end-to-end sul tuo dispositivo con crittografia post-quantum. La tua chiave privata non lascia mai il telefono: nessuno, nemmeno noi, può leggere i tuoi contenuti.",
     // Consent (first launch)
     "consent.title": "Prima di iniziare",
-    "consent.intro": "Per usare ULTRON devi leggere e accettare i nostri documenti. I tuoi messaggi e allegati sono cifrati end-to-end con crittografia post-quantum: solo tu e i destinatari potete leggerli.",
+    "consent.intro": "Per usare UNVOR devi leggere e accettare i nostri documenti. I tuoi messaggi e allegati sono cifrati end-to-end con crittografia post-quantum: solo tu e i destinatari potete leggerli.",
     "consent.readPrivacy": "Leggi l'Informativa sulla privacy",
     "consent.readTerms": "Leggi i Termini di servizio",
     "consent.acceptPrivacy": "Ho letto e accetto l'Informativa sulla privacy",
     "consent.acceptTerms": "Accetto i Termini di servizio",
     "consent.continue": "Accetta e continua",
-    "consent.controller": "Titolare del trattamento: ULTRON",
+    "consent.controller": "Titolare del trattamento: UNVOR",
     // Strong delete confirmation
     "delete.typeToConfirm": "Per confermare, digita {word} qui sotto.",
     "delete.word": "ELIMINA",
@@ -224,7 +226,7 @@ const TR = {
     "rubrica.addExternal": "Add {lns}", "rubrica.empty": "No contacts found.",
     "rubrica.external": "External",
     "search.placeholder": "Search contacts and groups…", "search.hint": "Type to search contacts and groups", "search.empty": "No results", "search.colleagues": "Colleagues", "search.mails": "Notarised mail",
-    "rubrica.invite": "Invita", "rubrica.inviteMsg": "Contact me on ULTRON.",
+    "rubrica.invite": "Invita", "rubrica.inviteMsg": "Contact me on UNVOR.",
     "tab.channels": "Channels",
     "channels.title": "Group", "channels.new": "New group",
     "channels.empty": "No channels", "channels.emptyHint": "Create a broadcast channel to reach many people at once.",
@@ -272,7 +274,7 @@ const TR = {
     "att.failed": "decryption failed", "att.permDenied": "Permission denied",
     "att.permText": "Grant gallery access to save.",
     "att.error": "Error", "att.errorText": "Could not save the file.",
-    "hub.title": "Hub", "hub.sub": "The ULTRON professional network",
+    "hub.title": "Hub", "hub.sub": "The UNVOR professional network",
     "hub.compose": "Share an update…", "hub.publish": "Post",
     "hub.empty": "No posts yet. Be the first to share!",
     "hub.share": "↗ Share", "hub.reply.placeholder": "Write a reply…",
@@ -287,7 +289,7 @@ const TR = {
     "profile.headline.ph": "e.g. Sales Manager", "profile.bio": "Bio",
     "profile.bio.ph": "Tell something about yourself…",
     "profile.visible": "👁  Profile visible to everyone", "profile.hidden": "🚫  Profile hidden",
-    "profile.visible.hint": "Your profile is visible to all ULTRON users.",
+    "profile.visible.hint": "Your profile is visible to all UNVOR users.",
     "profile.hidden.hint": "Only your company can see you.",
     "profile.save": "Save profile", "profile.saved": "✓ Saved",
     "profile.language": "Language", "profile.avatar.denied": "Permission denied",
@@ -301,9 +303,9 @@ const TR = {
     "login.failed": "Sign-in failed", "login.badjson": "Invalid JSON. Paste the full content of the key file.",
     "login.readfail": "Could not read the key file. Try pasting its content.",
     "login.error": "Error",
-    "lock.title": "ULTRON is locked", "lock.sub": "Authenticate to access your encrypted conversations.",
+    "lock.title": "UNVOR is locked", "lock.sub": "Authenticate to access your encrypted conversations.",
     "lock.unlock": "Unlock", "lock.retry": "Try to unlock again",
-    "lock.signout": "Sign out and use another key file", "lock.prompt": "Unlock ULTRON",
+    "lock.signout": "Sign out and use another key file", "lock.prompt": "Unlock UNVOR",
     // Certify
     "tab.certify": "Certify",
     "certify.subtitle": "E2EE notarised mail anchored on blockchain",
@@ -388,7 +390,7 @@ const TR = {
     "settings.aup": "Acceptable use policy (AUP)",
     "settings.sla": "Service levels (SLA)",
     "settings.controller": "Data controller",
-    "settings.controllerName": "ULTRON",
+    "settings.controllerName": "UNVOR",
     "settings.contact": "Privacy contact",
     "settings.encryption": "Encryption",
     "settings.encryptionVal": "ML-DSA-65 · ML-KEM-768 · AES-256-GCM (end-to-end, post-quantum)",
@@ -399,13 +401,13 @@ const TR = {
     "settings.dataInfo": "Chat, notarised mail and attachment contents are end-to-end encrypted on your device with post-quantum cryptography. Your private key never leaves your phone: nobody, not even us, can read your content.",
     // Consent (first launch)
     "consent.title": "Before you start",
-    "consent.intro": "To use ULTRON you must read and accept our documents. Your messages and attachments are end-to-end encrypted with post-quantum cryptography: only you and the recipients can read them.",
+    "consent.intro": "To use UNVOR you must read and accept our documents. Your messages and attachments are end-to-end encrypted with post-quantum cryptography: only you and the recipients can read them.",
     "consent.readPrivacy": "Read the Privacy Policy",
     "consent.readTerms": "Read the Terms of Service",
     "consent.acceptPrivacy": "I have read and accept the Privacy Policy",
     "consent.acceptTerms": "I accept the Terms of Service",
     "consent.continue": "Accept and continue",
-    "consent.controller": "Data controller: ULTRON",
+    "consent.controller": "Data controller: UNVOR",
     // Strong delete confirmation
     "delete.typeToConfirm": "To confirm, type {word} below.",
     "delete.word": "DELETE",
@@ -417,7 +419,7 @@ const TR = {
 // Le cinque lingue aggiunte nella 2.3.0 vivono in file separati: il dizionario di questo
 // file resta leggibile. Le chiavi mancanti ricadono sull'italiano, non sulla chiave nuda.
 Object.assign(TR, EXTRA_LOCALES);
-for (const pack of [NEW_KEYS, NEW_KEYS_231, CHAT_MAP_KEYS, CANARY_KEYS, FULL_V250, CHAT12_280, SM12_A, SM12_B, SM12_C, UI12, REQ12, REQ12B, ADDRESS_SEARCH_KEYS]) {
+for (const pack of [NEW_KEYS, NEW_KEYS_231, CHAT_MAP_KEYS, CANARY_KEYS, FULL_V250, CHAT12_280, SM12_A, SM12_B, SM12_C, UI12, REQ12, REQ12B, ADDRESS_SEARCH_KEYS, ENCRYPTION_KEYS, ATTACHMENT_KEYS]) {
   for (const code of Object.keys(pack)) {
     TR[code] = Object.assign({}, TR[code] || {}, pack[code]);
   }

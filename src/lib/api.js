@@ -1,9 +1,10 @@
+import { postEncryptedBytes } from "./binaryTransport";
 // Lattice Pulse API client (sidecar session model, mirrors the web client).
 // Node-safe: only depends on axios + crypto.js (no React Native imports here),
 // so the same code path is exercised by the Node E2E test.
 import axios from "axios";
 import { DEFAULT_SERVER, RATCHET_PILOT } from "../config";
-import { signChallenge } from "./crypto";
+import { signChallenge, signChallengeAsync } from "./crypto";
 import { randPad } from "./pad";
 
 export function normalizeServer(url) {
@@ -44,7 +45,7 @@ const makeClient = (base) => attachChaff(axios.create({ baseURL: `${base}/api`, 
 export async function verifyServer(value) {
   const target = personalServerUrl(value);
   const { data } = await makeClient(target).get("/health", { timeout: 8000 });
-  if (data?.ok !== true) throw new Error("Il server non risponde come un gateway ULTRON.");
+  if (data?.ok !== true) throw new Error("Il server non risponde come un gateway UNVOR.");
   return target;
 }
 
@@ -79,7 +80,7 @@ export function setKeyfile(kf) { invalidateSession(); _kf = kf; }
 export function clearAuth() { setKeyfile(null); }
 
 function checkSession(signal) {
-  if (signal.aborted) throw new Error("La sessione ULTRON è cambiata.");
+  if (signal.aborted) throw new Error("La sessione UNVOR è cambiata.");
 }
 
 async function ensureSession() {
@@ -92,7 +93,7 @@ async function ensureSession() {
   const pending = (async () => {
     const { data: c } = await transport.post("/public/sign-challenge", { lns_name: key.lns }, { signal });
     checkSession(signal);
-    const signature_hex = signChallenge(c.nonce_hex, key.sk);
+    const signature_hex = await signChallengeAsync(c.nonce_hex, key.sk);
     const { data: r } = await transport.post("/public/session/verify", {
       lns_name: key.lns, nonce_id: c.nonce_id, signature_hex,
     }, { signal });
@@ -166,7 +167,7 @@ export function authenticatedScope(user) {
   const { signal } = session;
   const check = () => {
     checkSession(signal);
-    if (user?.lns !== _kf?.lns || user?.server !== _base) throw new Error("La sessione ULTRON è cambiata.");
+    if (user?.lns !== _kf?.lns || user?.server !== _base) throw new Error("La sessione UNVOR è cambiata.");
   };
   check();
   return check;
@@ -503,9 +504,14 @@ export const mlsReports = (id) =>
 export const mlsQuiz = (id, payload) =>
   withAuth((a, transport) => transport.post(`${mlsGroup(id)}/quiz`, payload, a).then(r => r.data));
 const mlsFile = (group, id) => `${mlsGroup(group)}/files/${encodeURIComponent(id)}`;
+export const mlsFileUrl = (group, id) => `${getServerUrl()}/api${mlsFile(group,id)}`;
+export const mlsPutFileChunk = (group,id,index,parts,size,bytes) =>
+  withAuth((a,transport)=>postEncryptedBytes(transport,mlsFile(group,id),bytes,{
+    ...a,params:{index,parts,size},headers:{...a.headers,"Content-Type":"application/octet-stream"},timeout:60000,
+  }).then(r=>r.data));
 export const mlsUpload = (group, id, bytes) =>
-  withAuth((a, transport) => transport.post(mlsFile(group, id), bytes.slice().buffer, {
-    ...a, adapter: "xhr", headers: { ...a.headers, "Content-Type": "application/octet-stream" }, timeout: 30000,
+  withAuth((a, transport) => postEncryptedBytes(transport, mlsFile(group, id), bytes, {
+    ...a, headers: { ...a.headers, "Content-Type": "application/octet-stream", "X-Pad": randPad() }, timeout: 30000,
   }).then(r => r.data));
 export const mlsDownload = (group, id) =>
   withAuth(async (a, transport) => {
@@ -653,12 +659,11 @@ async function blobRequest(stage, action) {
 
 export const blobPutChunk = (upload_id, index, bytes, onProgress) =>
   blobRequest("trasferimento", () => withAuth((a, transport) =>
-    transport.post("/public/blob/chunk", bytes.slice().buffer, {
-      // React Native XHR sends ArrayBuffer as an explicit binary request body.
-      adapter: "xhr",
+    postEncryptedBytes(transport, "/public/blob/chunk", bytes, {
+      // The app registers the native binary uploader; Node tests keep their HTTP adapter.
       params: { upload_id, index },
       signal: a.signal,
-      headers: { ...a.headers, "Content-Type": "application/octet-stream" },
+      headers: { ...a.headers, "Content-Type": "application/octet-stream", "X-Pad": randPad() },
       timeout: 120000,
       onUploadProgress: ({ loaded, total }) => {
         if (total > 0) onProgress?.(Math.min(1, loaded / total));

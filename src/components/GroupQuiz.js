@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from "react-native";
+import { Text } from "./HudText";
 import { Ionicons } from "@expo/vector-icons";
 import { apiErr, mlsQuiz } from "../lib/api";
 import { openPilotQuiz } from "../lib/pilotGroups";

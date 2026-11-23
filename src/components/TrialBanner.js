@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { AppState, View, Text, StyleSheet } from "react-native";
+import { AppState, View, StyleSheet } from "react-native";
+import { Text } from "./HudText";
 import * as api from "../lib/api";
 import { theme } from "../theme";
 

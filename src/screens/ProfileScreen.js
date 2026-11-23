@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { withSystemActivity } from "../lib/lockGuard";
-import { ActivityIndicator, Image, Pressable, ScrollView, Share, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, ScrollView, Share, StyleSheet, Switch, View } from "react-native";
+import { Text, TextInput } from "../components/HudText";
 import { pickAvatarDataUrl } from "../lib/avatar";
 import { useAuth } from "../context/AuthContext";
 import { useI18n } from "../lib/i18n";

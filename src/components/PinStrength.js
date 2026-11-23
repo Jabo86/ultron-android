@@ -2,7 +2,8 @@
 // rapporto Red Team: 353 ms per tentativo misurati sulla derivazione vera dell'app.
 // Nessuna stellina: il tempo che serve a indovinarlo, scritto.
 import React, { useMemo } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, StyleSheet } from "react-native";
+import { Text } from "./HudText";
 import { Ionicons } from "@expo/vector-icons";
 import { useLook } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";

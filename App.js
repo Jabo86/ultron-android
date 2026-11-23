@@ -1,3 +1,9 @@
+import { NativeModules as AttachmentNativeModules } from "react-native";
+import { setNativeAttachmentCipher, setNativeMessageCrypto } from "./src/lib/crypto";
+import UnvorHomeScreen from "./src/screens/UnvorHomeScreen";
+import { setNativeBinaryUploader } from "./src/lib/binaryTransport";
+import { uploadEncryptedBytes } from "./src/lib/nativeBinaryUpload";
+import HudBackdrop from "./src/components/hud/HudBackdrop";
 import PilotGroupsScreen from "./src/screens/PilotGroupsScreen";
 import { hostedRatchetPilot, verifiedContact } from "./src/lib/hostedRatchetChat";
 import { setNativeExportKdf } from "./src/lib/exportKdf";
@@ -95,6 +101,7 @@ const Tab = createBottomTabNavigator();
 export const navRef = createNavigationContainerRef();
 
 const TAB_ICONS = {
+  Home: "planet",
   Conversazioni: "chatbubbles",
   Stato: "aperture",
   Rubrica: "book",
@@ -127,21 +134,23 @@ function MainTabs() {
         tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: tint,
         tabBarInactiveTintColor: theme.textFaint,
-        tabBarLabel: t(TAB_KEY[route.name]),
+        tabBarLabel: route.name === "Home" ? "UNVOR" : t(TAB_KEY[route.name]),
         tabBarBadgeStyle: { backgroundColor: theme.danger, color: "#fff", fontSize: 10, fontWeight: "800" },
         tabBarStyle: {
+          display: route.name === "Home" ? "none" : "flex",
           backgroundColor: glassBg,
           borderTopColor: glassEdge,
           height: 58 + insets.bottom,
           paddingBottom: 6 + insets.bottom,
           paddingTop: 6,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: "700" },
+        tabBarLabelStyle: { fontFamily: Platform.OS === "android" ? "UltronBody" : undefined, fontSize: 11, fontWeight: "700" },
         tabBarIcon: ({ color, size, focused }) => (
           <Ionicons name={focused ? TAB_ICONS[route.name] : `${TAB_ICONS[route.name]}-outline`} size={size} color={color} />
         ),
       })}
     >
+      <Tab.Screen name="Home" component={UnvorHomeScreen} />
       <Tab.Screen name="Conversazioni" component={ConversationsScreen} options={{ tabBarBadge: chatUnread > 0 ? (chatUnread > 99 ? "99+" : chatUnread) : undefined }} />
       <Tab.Screen name="Stato" component={StatusScreen} />
       <Tab.Screen name="Rubrica" component={AddressBookScreen} options={{ tabBarBadge: bookRequests > 0 ? (bookRequests > 99 ? "99+" : bookRequests) : undefined }} />
@@ -151,12 +160,15 @@ function MainTabs() {
 }
 
 setNativeExportKdf(NativeModules.LatticeKdf);
+setNativeBinaryUploader(uploadEncryptedBytes);
+if (AttachmentNativeModules.AttachmentCrypto?.crypt) setNativeAttachmentCipher((...args) => AttachmentNativeModules.AttachmentCrypto.crypt(...args));
+if (AttachmentNativeModules.AttachmentCrypto?.signMLDSA && AttachmentNativeModules.AttachmentCrypto?.verifyMLDSA) setNativeMessageCrypto({sign:(...args)=>AttachmentNativeModules.AttachmentCrypto.signMLDSA(...args),verify:(...args)=>AttachmentNativeModules.AttachmentCrypto.verifyMLDSA(...args)});
 
 const navTheme = {
   ...DarkTheme,
   colors: {
     ...DarkTheme.colors,
-    background: theme.bg,
+    background: "transparent",
     card: theme.surface,
     text: theme.text,
     border: theme.border,
@@ -175,7 +187,7 @@ function Root() {
   }, []);
   const userRef = useRef(null);
   useEffect(() => { userRef.current = user; }, [user]);
-  // ULTRON: solo permessi notifiche locali e connessione diretta WakeService.
+  // UNVOR: solo permessi notifiche locali e connessione diretta WakeService.
   useEffect(() => {
     if (!user?.lns || locked) return;
     wake.refresh(RNAppState.currentState === "active").catch(() => {});
@@ -189,7 +201,7 @@ function Root() {
     if (!data) return null;
     if (data.type === "group_invite") return { name: "PilotGroups", params: { inviteCode: data.code } };
     if (data.type === "lead") return { name: "Leads", params: { focusId: data.lead_id || null } };
-    // I dati della push server ULTRON sono stringhe: "false" sarebbe truthy con !!.
+    // I dati della push server UNVOR sono stringhe: "false" sarebbe truthy con !!.
     const flag = (v) => v === true || v === "true" || v === "1";
     if (data.type === "call") return { name: "Call", params: { incoming: true, fromPush: true, from: data.from, video: flag(data.video), call_id: data.call_id, autoAnswer: flag(data.autoAnswer), decline: flag(data.decline) } };
     if (data.type === "gcall") return { name: "GroupCall", params: { room_id: data.room_id, video: flag(data.video), chan_name: null } };
@@ -228,7 +240,7 @@ function Root() {
   useEffect(() => {
     let mounted = true;
     const receive = (url) => {
-      const match = /^ultron:\/\/group-invite\/([a-f0-9]{64}\.[a-f0-9]{64})$/.exec(url || "");
+      const match = /^(?:unvor|ultron):\/\/group-invite\/([a-f0-9]{64}\.[a-f0-9]{64})$/.exec(url || "");
       if (mounted && match) handleNotif({ type: "group_invite", code: match[1] });
     };
     Linking.getInitialURL().then(receive).catch(() => {});
@@ -437,9 +449,9 @@ function Root() {
       screenOptions={{
         headerStyle: { backgroundColor: theme.surface },
         headerTintColor: theme.text,
-        headerTitleStyle: { fontWeight: "800" },
+        headerTitleStyle: { fontFamily: Platform.OS === "android" ? "UltronDisplay" : undefined, fontWeight: "700", fontSize: 18 },
         headerShadowVisible: false,
-        contentStyle: { backgroundColor: theme.bg },
+        contentStyle: { backgroundColor: "transparent" },
         freezeOnBlur: true,
         animation: "slide_from_right",
       }}
@@ -470,13 +482,13 @@ function Root() {
           <Stack.Screen name="Forward" component={ForwardScreen} options={{ headerShown: false }} />
           <Stack.Screen name="WhatsNew" component={WhatsNewScreen} options={{ headerShown: false }} />
           <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ headerShown: false }} />
-          <Stack.Screen name="PilotGroups" component={PilotGroupsScreen} options={{ title: "ULTRON" }} />
+          <Stack.Screen name="PilotGroups" component={PilotGroupsScreen} options={{ title: "UNVOR" }} />
           <Stack.Screen name="Chat" component={ChatScreen} options={{ title: "Chat" }} />
           <Stack.Screen name="ChannelDetail" component={ChannelDetailScreen} options={{ title: "Gruppo" }} />
           <Stack.Screen name="Call" component={CallScreen} options={{ headerShown: false, presentation: "fullScreenModal", animation: "fade" }} />
           <Stack.Screen name="CallLog" component={CallLogScreen} options={{ headerShown: false }} />
           <Stack.Screen name="GroupCall" component={GroupCallScreen} options={{ headerShown: false, presentation: "fullScreenModal", animation: "fade" }} />
-          <Stack.Screen name="Legal" component={LegalScreen} options={{ title: "ULTRON" }} />
+          <Stack.Screen name="Legal" component={LegalScreen} options={{ title: "UNVOR" }} />
         </>
       )}
     </Stack.Navigator>
@@ -494,6 +506,7 @@ function Shell({ children }) {
   // di ricostruire gli stili di quaranta file.
   return (
     <View style={{ flex: 1, direction: rtl ? "rtl" : "ltr", backgroundColor: look.color }}>
+      <HudBackdrop />
       {children}
     </View>
   );

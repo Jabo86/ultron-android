@@ -1,3 +1,4 @@
+import { MAX_ATTACHMENT_BYTES, ATTACHMENT_CHUNK_BYTES } from "./attachmentLimits";
 import * as api from "./api";
 import { bytesToHex, decryptEnvelope, decryptFileBytes, encryptFileBytes, encryptForRecipients, hexToBytes, packMessage, randomHex, sha256Hex, signMessage, utf8Decode, utf8Encode, verifyMessage } from "./crypto";
 import { registerHostedRatchet, sendPilotMessage, verifiedContact } from "./hostedRatchetChat";
@@ -13,7 +14,7 @@ const PACKAGE_BATCH = 8;
 const MAX_LOCAL_HISTORY = 200;
 export const PILOT_GROUP_AVATAR_LIMIT = 32 * 1024;
 export const PILOT_GROUP_FILE_LIMIT = 96 * 1024;
-export const PILOT_GROUP_UPLOAD_LIMIT = 1024 * 1024;
+export const PILOT_GROUP_UPLOAD_LIMIT = MAX_ATTACHMENT_BYTES;
 const LOCAL_FILE_BUDGET = 384 * 1024;
 const attachmentScope = (id, epoch, op, author, attachment) =>
   JSON.stringify(["ultron-mls-attachment-v1", id, epoch, op, author, attachment]);
@@ -23,7 +24,8 @@ function validAttachment(attachment) {
       !/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(attachment.mime) || !Number.isSafeInteger(attachment.size) ||
       attachment.size < 1) return false;
   if ("id" in attachment) {
-    return attachment.size <= PILOT_GROUP_UPLOAD_LIMIT && /^[a-f0-9]{32}$/.test(attachment.id || "") &&
+    return attachment.size <= PILOT_GROUP_UPLOAD_LIMIT &&
+      (!("cs" in attachment || "n" in attachment) || (attachment.cs === ATTACHMENT_CHUNK_BYTES && attachment.n === Math.ceil(attachment.size / ATTACHMENT_CHUNK_BYTES))) && /^[a-f0-9]{32}$/.test(attachment.id || "") &&
       /^[a-f0-9]{64}$/.test(attachment.key || "") && /^[a-f0-9]{24}$/.test(attachment.iv || "") && !attachment.data;
   }
   if (attachment.size > PILOT_GROUP_FILE_LIMIT || typeof attachment.data !== "string" ||
@@ -246,7 +248,7 @@ export async function pilotGroupInvitations(user, group) {
 export async function requestPilotGroupInvitation(user, group, target) {
   const check = api.authenticatedScope(user);
   const credentials = await hostedGroupCredentials(user);
-  if (!await credentials.identityFor(target)) throw new Error("Verifica il QR ULTRON del contatto.");
+  if (!await credentials.identityFor(target)) throw new Error("Verifica il QR UNVOR del contatto.");
   check();
   const id = randomHex(16);
   const title = group.admin === user.lns ? await cachedPilotGroupTitle(user, group) : null;
@@ -277,7 +279,7 @@ export async function deliverPilotGroupInvitation(user, group, invitation) {
     check();
     if (saved?.done) return;
     const title = group.title || await cachedPilotGroupTitle(user, group);
-    const text = title ? `Invito al gruppo «${title}»` : "Invito a un gruppo ULTRON";
+    const text = title ? `Invito al gruppo «${title}»` : "Invito a un gruppo UNVOR";
     const payload = saved?.payload || packMessage(text, [], null, 0, { id: invitation.id, group: group.id });
     if (!saved) await setBlobDurably(key, { payload });
     check();
@@ -691,7 +693,7 @@ async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx,
       const members = engine.members(record.state, id, record.epoch);
       if (members.includes(body.target)) return detailsFor(engine, id, record);
       const identity = await credentials.identityFor(body.target);
-      if (!identity) throw new Error("Per questo contatto manca l’impronta della firma nel QR ULTRON.");
+      if (!identity) throw new Error("Per questo contatto manca l’impronta della firma nel QR UNVOR.");
       if (invitation) {
         expectInvitation(invitation);
         const consent = consentScope(user.server, id, invitation.id, user.lns, body.target, "accepted");

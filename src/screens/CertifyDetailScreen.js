@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
-import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert,
-} from "react-native";
+import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert } from "react-native";
+import { Text } from "../components/HudText";
 import { Ionicons } from "@expo/vector-icons";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";

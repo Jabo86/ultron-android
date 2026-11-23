@@ -21,7 +21,7 @@ export function parsePools(reply) {
 }
 
 export function hostedPrekeyDevice(user, installation) {
-  if (typeof installation !== "string" || !installation) throw new Error("Dispositivo ULTRON non identificato.");
+  if (typeof installation !== "string" || !installation) throw new Error("Dispositivo UNVOR non identificato.");
   return sha256Hex(JSON.stringify([user.server, user.lns, installation])).slice(0, 32);
 }
 
@@ -60,14 +60,16 @@ export function publishHostedPrekeys(user, installation) {
         throw new Error("Troppe prekey in attesa dei relativi messaggi.");
       }
       const next = state.generation + 1;
-      const keys = Array.from({ length: BATCH_SIZE }, () => {
+      const keys = [];
+      for (let index=0; index<BATCH_SIZE; index++) {
+        await new Promise(resolve => setTimeout(resolve, 0));
         const pair = ml_kem768.keygen(hexToBytes(randomHex(64)));
         const id = randomHex(16);
         const kem = bytesToHex(pair.publicKey);
         privateKeys[id] = { pub: kem, sec: bytesToHex(pair.secretKey) };
         pair.secretKey.fill(0);
-        return signPrekey(user.lns, device, next, id, kem, user.sk);
-      });
+        keys.push(signPrekey(user.lns, device, next, id, kem, user.sk));
+      }
       pending = { device, generation: next, keys };
       checkScope();
       await setBlobDurably(name, { generation: next, privateKeys, pending });

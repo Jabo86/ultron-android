@@ -1,7 +1,7 @@
-name: ULTRON Ratchet Pilot APK
+name: UNVOR Chat Pilot APK
 on:
   push:
-    branches: [ratchet-integration]
+    branches: [ratchet-integration, fix/chat-hud-attachments]
   workflow_dispatch:
 permissions:
   contents: write
@@ -9,6 +9,73 @@ concurrency:
   group: ultron-ratchet-pilot
   cancel-in-progress: true
 jobs:
+  gateway_attachments:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      mongo:
+        image: mongo:8.0
+        ports: ['27017:27017']
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'quit(db.adminCommand({ping:1}).ok ? 0 : 1)'" --health-interval 10s --health-timeout 5s --health-retries 10
+    env:
+      MONGO_URL: mongodb://127.0.0.1:27017/unvor_attachment_test
+      DB_NAME: unvor_attachment_test
+      ULTRON_JWT_SECRET: synthetic-attachment-test-only-0000000000000000
+      ULTRON_EXPERIMENTAL_RATCHET: '1'
+      ULTRON_CHAT_PURGE: '1'
+      ULTRON_MLS_PILOT: '1'
+      ULTRON_MLS_CONSENT: '1'
+      ULTRON_MLS_CONTROL: '1'
+      ULTRON_MLS_ORIGIN: https://49.12.242.0/ratchet-pilot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare gateway fixture
+        run: |
+          mkdir -p "$RUNNER_TEMP/unvor-gateway"
+          tar -xzf tools/gateway-attachments/source.tar.gz -C "$RUNNER_TEMP/unvor-gateway"
+          npm ci --legacy-peer-deps --no-fund
+          rustup toolchain install stable --profile minimal
+      - uses: actions/cache/restore@v4
+        id: gateway_cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ runner.temp }}/unvor-gateway/target
+          key: ${{ runner.os }}-unvor-gateway-v1-${{ hashFiles('tools/gateway-attachments/source.tar.gz') }}
+          restore-keys: ${{ runner.os }}-unvor-gateway-v1-
+      - name: Compile and test gateway limits
+        env:
+          CARGO_INCREMENTAL: '0'
+          CARGO_PROFILE_DEV_DEBUG: '0'
+        run: |
+          cd "$RUNNER_TEMP/unvor-gateway"
+          cargo +stable test --locked --bin lattice-gateway mobile_chat::
+          cargo +stable build --locked --bin lattice-gateway
+      - uses: actions/cache/save@v4
+        if: always() && steps.gateway_cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ runner.temp }}/unvor-gateway/target
+          key: ${{ steps.gateway_cache.outputs.cache-primary-key }}
+      - name: HTTP integration at 50 MiB
+        env:
+          UNVOR_TEST_MONGO_CONTAINER: ${{ job.services.mongo.id }}
+        run: |
+          "$RUNNER_TEMP/unvor-gateway/target/debug/lattice-gateway" > "$RUNNER_TEMP/unvor-gateway.log" 2>&1 &
+          gateway_pid=$!
+          trap 'kill "$gateway_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..60}; do
+            if curl -fsS http://127.0.0.1:8002/api/health >/dev/null; then break; fi
+            sleep 1
+          done
+          node tools/verify-unvor-group-files-http.mjs || { tail -n 60 "$RUNNER_TEMP/unvor-gateway.log"; exit 1; }
   pilot:
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -23,6 +90,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+          cache: gradle
       - uses: android-actions/setup-android@v3
         with:
           packages: "platform-tools platforms;android-36 build-tools;36.0.0 ndk;27.1.12297006"
@@ -34,6 +102,16 @@ jobs:
           npm audit --audit-level=low --json > "$audit_report" || status=$?
           if (( status > 1 )); then exit "$status"; fi
           node tools/verify-ultron-pilot-dependencies.mjs audit "$audit_report"
+          node tools/verify-unvor-brand.cjs
+          node tools/verify-unvor-composer.cjs
+          node tools/verify-unvor-direct-polls.mjs
+          curl -fsSL https://repo.maven.apache.org/maven2/org/bouncycastle/bcprov-jdk15to18/1.87/bcprov-jdk15to18-1.87.jar -o "$RUNNER_TEMP/unvor-bcprov.jar"
+          UNVOR_BCPROV_JAR="$RUNNER_TEMP/unvor-bcprov.jar" node tools/verify-unvor-native-signatures.mjs
+          node tools/verify-unvor-search.cjs
+          node tools/verify-unvor-attachment-speed.mjs
+          node tools/verify-unvor-attachment-chunks.mjs
+          node tools/verify-ultron-document-picker.mjs
+          node tools/verify-ultron-binary-upload.mjs
           node tools/verify-ultron-contact-badge.cjs
           node tools/verify-ultron-hosted-ratchet-receive.mjs
           node tools/verify-ultron-hosted-prekeys.mjs
@@ -73,9 +151,9 @@ jobs:
             android/app/build/generated/sourcemaps/react/release/index.android.bundle.map
           "$tools/apksigner" verify "$apk"
           mkdir -p dist
-          asset="dist/ULTRON-Ratchet-Pilota-${EXPO_PUBLIC_ULTRON_VERSION_CODE}.apk"
+          asset="dist/UNVOR-Chat-Pilota-${EXPO_PUBLIC_ULTRON_VERSION_CODE}.apk"
           cp "$apk" "$asset"
           sha256sum "$asset"
           gh release create "ratchet-pilot-${GITHUB_RUN_NUMBER}" "$asset" \
-            --target "$GITHUB_SHA" --prerelease --latest=false --title "ULTRON Ratchet Pilota ${GITHUB_RUN_NUMBER}" \
+            --target "$GITHUB_SHA" --prerelease --latest=false --title "UNVOR Chat Pilota ${GITHUB_RUN_NUMBER}" \
             --notes "App separata per account di prova. Gateway HTTPS /ratchet-pilot."

@@ -2,10 +2,8 @@ import { cachedPilotGroupSummary, finishAcceptedPilotGroupInvites, listPilotGrou
 import { hostedRatchetPilot } from "../lib/hostedRatchetChat";
 import { contactAddress, matchesContact } from "../lib/contactAddress";
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl,
-  Modal, TextInput, ActivityIndicator, Alert, Image,
-} from "react-native";
+import { View, StyleSheet, FlatList, TouchableOpacity, RefreshControl, Modal, ActivityIndicator, Alert, Image } from "react-native";
+import { Text, TextInput } from "../components/HudText";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -31,19 +29,6 @@ export default function ConversationsScreen({ navigation }) {
   const tint = useTint();
   const styles = useMemo(() => makeStyles(tint), [tint]);
   const { user, signOut } = useAuth();
-  const [pilotGroupsAvailable, setPilotGroupsAvailable] = useState(false);
-  useEffect(() => {
-    let valid = true;
-    const check = () => {
-      if (!hostedRatchetPilot(user)) { setPilotGroupsAvailable(false); return; }
-      api.mlsGroups().then(rows => { if (valid) setPilotGroupsAvailable(Array.isArray(rows)); })
-        .catch(() => { if (valid) setPilotGroupsAvailable(false); });
-    };
-    check();
-    const unsubscribe = navigation.addListener("focus", check);
-    return () => { valid = false; unsubscribe(); };
-  }, [navigation, user]);
-
   const { t, lang } = useI18n();
   const insets = useSafeAreaInsets();
   const [convs, setConvs] = useState([]);
@@ -358,10 +343,10 @@ export default function ConversationsScreen({ navigation }) {
       <CanaryReminder user={user} t={t} />
       <View style={styles.header}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          <Image source={require("../../assets/icon.png")} style={styles.logo} resizeMode="contain" />
+          <Image source={require("../../assets/unvor/emblem.webp")} style={styles.logo} resizeMode="contain" />
           <View>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Text style={styles.hTitle}>ULTRON</Text>
+              <Text style={styles.hTitle}>UNVOR</Text>
               {totalUnread > 0 && (
                 <View style={styles.totalBadge} testID="conv-total-unread"><Text style={styles.totalBadgeTxt}>{totalUnread}</Text></View>
               )}
@@ -415,21 +400,8 @@ export default function ConversationsScreen({ navigation }) {
             </View>
           )
         }
-        contentContainerStyle={convs.length === 0 && booted ? { flex: 1 } : { paddingBottom: 100 }}
+        contentContainerStyle={convs.length === 0 && booted ? { flex: 1 } : { paddingBottom: 24 }}
       />
-
-      {hostedRatchetPilot(user) && pilotGroupsAvailable && (
-        <TouchableOpacity style={styles.fabGroup} onPress={() => navigation.navigate("PilotGroups")}
-          accessibilityRole="button" accessibilityLabel={lang === "en" ? "Groups" : "Gruppi"} testID="pilot-groups-fab">
-          <Ionicons name="people-outline" size={22} color={tint} />
-        </TouchableOpacity>
-      )}
-      {!hostedRatchetPilot(user) && <TouchableOpacity style={styles.fabGroup} onPress={openGroup} testID="new-group-fab">
-        <Ionicons name="people-outline" size={24} color="#fff" />
-      </TouchableOpacity>}
-      <TouchableOpacity style={styles.fab} onPress={openNew} testID="new-chat-fab">
-        <Text style={styles.fabText}>+</Text>
-      </TouchableOpacity>
 
       <Modal visible={showNew} transparent animationType="slide" onRequestClose={() => setShowNew(false)}>
         <KeyboardAvoidingView style={styles.modalWrap} behavior="padding">
@@ -563,9 +535,6 @@ const makeStyles = (tint) => StyleSheet.create({
   empty: { flex: 1, alignItems: "center", justifyContent: "center", padding: 40 },
   emptyTitle: { color: theme.text, fontSize: 18, fontWeight: "700", marginBottom: 8 },
   emptyText: { color: theme.textDim, fontSize: 14, textAlign: "center", lineHeight: 20 },
-  fab: { position: "absolute", right: 22, bottom: 30, width: 58, height: 58, borderRadius: 29, backgroundColor: tint, alignItems: "center", justifyContent: "center", shadowColor: tint, shadowOpacity: 0.5, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
-  fabGroup: { position: "absolute", right: 22, bottom: 98, width: 52, height: 52, borderRadius: 26, backgroundColor: theme.surfaceAlt, borderWidth: 1, borderColor: tint, alignItems: "center", justifyContent: "center", elevation: 6 },
-  fabText: { color: theme.onAccent, fontSize: 32, fontWeight: "300", marginTop: -2 },
   groupAvatar: { width: 46, height: 46, borderRadius: 23, backgroundColor: theme.accentWash, alignItems: "center", justifyContent: "center" },
   groupAvatarImg: { width: 46, height: 46, borderRadius: 23, backgroundColor: theme.surfaceAlt },
   gAvatarBtn: { alignSelf: "center", width: 84, height: 84, borderRadius: 42, overflow: "hidden", backgroundColor: theme.accentWash, borderWidth: 1, borderColor: theme.border, alignItems: "center", justifyContent: "center", marginBottom: 6 },

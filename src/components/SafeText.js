@@ -1,5 +1,6 @@
 import React from "react";
-import { Text, Alert, Linking, StyleSheet } from "react-native";
+import { Alert, Linking, StyleSheet } from "react-native";
+import { Text } from "./HudText";
 import { URL_RE, scanUrl } from "../lib/threatEngine";
 import { theme } from "../theme";
 

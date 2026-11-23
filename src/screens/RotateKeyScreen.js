@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Alert } from "react-native";
+import { View, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Alert } from "react-native";
+import { Text } from "../components/HudText";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import KeyfileExport from "../components/KeyfileExport";

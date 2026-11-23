@@ -4,9 +4,8 @@ import { groupIdentityFingerprint } from "../lib/groupMemberProof";
 // aggiunge il contatto e lo segna verificato quando l'impronta combacia.
 // La foto la scatta la fotocamera di sistema e viene letta e buttata qui sul telefono.
 import React, { useEffect, useState } from "react";
-import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, InteractionManager,
-} from "react-native";
+import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, InteractionManager } from "react-native";
+import { Text, TextInput } from "../components/HudText";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";

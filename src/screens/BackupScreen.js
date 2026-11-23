@@ -1,10 +1,8 @@
 // Backup cifrato LOCALE: creazione, salvataggio dove vuole l'utente e ripristino.
 // Nessun byte passa dal server: il file esce dal telefono solo con la condivisione di sistema.
 import React, { useCallback, useEffect, useState } from "react";
-import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Switch,
-  ActivityIndicator, Alert,
-} from "react-native";
+import { View, StyleSheet, ScrollView, TouchableOpacity, Switch, ActivityIndicator, Alert } from "react-native";
+import { Text, TextInput } from "../components/HudText";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";

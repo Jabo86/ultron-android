@@ -1,5 +1,7 @@
+import EncryptionNotice from "../components/EncryptionNotice";
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { View, StyleSheet, TouchableOpacity } from "react-native";
+import { Text } from "../components/HudText";
 import { Ionicons } from "@expo/vector-icons";
 import { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription, mediaDevices, RTCView } from "react-native-webrtc";
 import { useAuth } from "../context/AuthContext";
@@ -173,6 +175,7 @@ export default function GroupCallScreen({ route, navigation }) {
 
       <View style={styles.topBar}>
         <Text style={styles.peer}>{chanName}</Text>
+        <EncryptionNotice kind="group-call" />
         <Text style={styles.status} testID="gcall-count">{count} {lang === "en" ? "in call" : "in chiamata"}{remotes.length ? (allVerified ? " · " + (lang === "en" ? "all verified ML-DSA-65" : "tutti verificati ML-DSA-65") : "") : " · " + (lang === "en" ? "waiting…" : "in attesa…")}</Text>
       </View>
 

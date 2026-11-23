@@ -91,7 +91,7 @@ android {
     defaultConfig {
         def ratchetPilot = System.getenv("EXPO_PUBLIC_ULTRON_RATCHET_PILOT") == "1"
         applicationId(ratchetPilot ? 'com.ultron.messenger.pilot' : 'com.ultron.messenger')
-        resValue "string", "ultron_display_name", ratchetPilot ? "ULTRON Ratchet Pilota" : "ULTRON"
+        resValue "string", "ultron_display_name", ratchetPilot ? "UNVOR Chat · Pilota" : "UNVOR Chat"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         def buildNumber = Integer.parseInt(System.getenv("EXPO_PUBLIC_ULTRON_VERSION_CODE") ?: "187")

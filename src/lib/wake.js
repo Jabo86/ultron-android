@@ -1,4 +1,4 @@
-// ULTRON: sveglia tramite connessione diretta al proprio nodo.
+// UNVOR: sveglia tramite connessione diretta al proprio nodo.
 // Scrive la configurazione in files/wake.json: il servizio nativo (WakeService.kt) la legge
 // e tiene aperta una connessione in attesa verso il nostro server. Il gettone (rid) è
 // casuale e non contiene la tua identità; il servizio non ha bisogno della chiave privata.
@@ -43,7 +43,7 @@ export async function isOn() {
 
 async function writeConfig(on, rid) {
   const base = api.getServerUrl().replace(/\/+$/, "");
-  if (on && !base.startsWith("https://")) throw new Error("ULTRON richiede HTTPS per le notifiche.");
+  if (on && !base.startsWith("https://")) throw new Error("UNVOR richiede HTTPS per le notifiche.");
   // Il rumore in background (letto dal WakeService nativo) è acceso di default.
   const chaff = (await AsyncStorage.getItem("lat.chaff.v1")) !== "0";
   await FileSystem.writeAsStringAsync(FILE, JSON.stringify({ on: !!on, rid: rid || "", base, chaff }));
@@ -60,8 +60,8 @@ async function writeChaff() {
 
 async function register() {
   if (RATCHET_PILOT && !profile) throw new Error("Accedi prima di attivare le notifiche.");
-  if (!api.getServerUrl().startsWith("https://")) throw new Error("ULTRON richiede HTTPS per le notifiche.");
-  if (!NativeModules.WakeControl?.start) throw new Error("Servizio notifiche ULTRON non disponibile.");
+  if (!api.getServerUrl().startsWith("https://")) throw new Error("UNVOR richiede HTTPS per le notifiche.");
+  if (!NativeModules.WakeControl?.start) throw new Error("Servizio notifiche UNVOR non disponibile.");
   let rid = await getPreference(RID_KEY);
   if (!rid || rid.length < 32) {
     rid = randomHex(24); // 48 caratteri esadecimali
@@ -70,7 +70,7 @@ async function register() {
   await api.wakeRegister(rid);
   await writeConfig(true, rid);
   try {
-    if (!(await NativeModules.WakeControl.start())) throw new Error("Android non ha avviato il servizio ULTRON.");
+    if (!(await NativeModules.WakeControl.start())) throw new Error("Android non ha avviato il servizio UNVOR.");
     await setPreference(ON_KEY, "1");
   } catch (error) {
     await writeConfig(false, rid);

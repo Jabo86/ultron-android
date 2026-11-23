@@ -1,11 +1,15 @@
+import * as bigatt from "../lib/bigatt";
+import AttachmentSheet from "../components/AttachmentSheet";
+import EncryptionNotice from "../components/EncryptionNotice";
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, Image, Keyboard, ScrollView, Share, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Image, Keyboard, ScrollView, Share, StyleSheet, Switch, TouchableOpacity, View } from "react-native";
+import { Text, TextInput } from "../components/HudText";
 import * as ImagePicker from "expo-image-picker";
 import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio";
 import GroupQuiz from "../components/GroupQuiz";
 import ChatMessageMenu from "../components/ChatMessageMenu";
 import { copyMessageText, shareMessageText, useMessagePreferences } from "../lib/chatMessageActions";
-import * as DocumentPicker from "expo-document-picker";
+import * as DocumentPicker from "../lib/documentPicker";
 import * as FileSystem from "expo-file-system/legacy";
 import EncryptedAttachment from "../components/EncryptedAttachment";
 import SafeText from "../components/SafeText";
@@ -20,7 +24,8 @@ import { apiErr, blockContact, contacts, mlsAction, mlsDeleteGroup, mlsRedeem, m
   mlsUpload } from "../lib/api";
 import { contactAddress, matchesContact } from "../lib/contactAddress";
 import { pickAvatarDataUrl } from "../lib/avatar";
-import { base64ToBytes, encryptFileBytes, randomHex } from "../lib/crypto";
+import { shrinkPhoto } from "../lib/imageOpt";
+import { base64ToBytes, encryptFileBytesAsync, randomHex } from "../lib/crypto";
 import { withSystemActivity } from "../lib/lockGuard";
 import { analyzeMessage } from "../lib/threatEngine";
 import { usePoll } from "../lib/usePoll";
@@ -36,7 +41,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   useLayoutEffect(() => { navigation.setOptions({ headerShown: false }); }, [navigation]);
-  const { lang } = useI18n();
+  const { lang, t } = useI18n();
   const en = lang === "en";
   const say = (it, english) => en ? english : it;
   const [groups, setGroups] = useState([]);
@@ -55,9 +60,14 @@ export default function PilotGroupsScreen({ navigation, route }) {
   ), []);
   const [name, setName] = useState("");
   const [initialAvatar, setInitialAvatar] = useState(null);
+  const [fileProgress, setFileProgress] = useState(null);
   const [composerMenu, setComposerMenu] = useState(false);
   const [pendingFile, setFileDraft] = useState(null);
   const fileDraft = pendingFile?.groupId === group?.id ? pendingFile : null;
+  useEffect(()=>()=>{
+    const uri=pendingFile?.uri;
+    if (uri && FileSystem.cacheDirectory && uri.startsWith(FileSystem.cacheDirectory)) FileSystem.deleteAsync(uri,{idempotent:true}).catch(()=>{});
+  },[pendingFile?.uri,group?.id,user?.lns]);
   const [policy, setPolicy] = useState(null);
   const [inviteCode, setInviteCode] = useState("");
   const [joiningLink, setJoiningLink] = useState(route?.params?.inviteCode || "");
@@ -308,13 +318,21 @@ export default function PilotGroupsScreen({ navigation, route }) {
   });
   const prepareFile = async (asset, removeCopy, forQuiz = false) => {
     if (!group || !asset?.uri) return;
+    let retained = false;
     try {
       const info = await FileSystem.getInfoAsync(asset.uri, { size: true });
       const size = info.size;
-      const limit = policy ? PILOT_GROUP_UPLOAD_LIMIT : PILOT_GROUP_FILE_LIMIT;
+      const limit = forQuiz ? PILOT_GROUP_FILE_LIMIT : policy ? PILOT_GROUP_UPLOAD_LIMIT : PILOT_GROUP_FILE_LIMIT;
       if (!info.exists || !Number.isSafeInteger(size) || size < 1 || size > limit) {
-        throw new Error(policy ? say("Scegli un file fino a 1 MiB.", "Choose a file up to 1 MiB.") :
+        throw new Error(policy && !forQuiz ? say("Scegli un file fino a 50 MB.", "Choose a file up to 50 MB.") :
           say("Scegli un file fino a 96 KB.", "Choose a file up to 96 KB."));
+      }
+      if (!forQuiz && size > bigatt.ATT_CHUNK) {
+        const mime = /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(asset.mimeType || "") ? asset.mimeType : "application/octet-stream";
+        const name = asset.name?.replace(/[\x00-\x1f\x7f]/g, "").trim().slice(0,160) || "Allegato";
+        setFileDraft({id:randomHex(16),groupId:group.id,uri:asset.uri,attachment:{name,mime,size}});
+        retained = true;
+        return;
       }
       const data = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64,
         position: 0, length: limit + 1 });
@@ -326,18 +344,18 @@ export default function PilotGroupsScreen({ navigation, route }) {
         setQuizFile(file);
       } else setFileDraft(file);
     } finally {
-      if (removeCopy && FileSystem.cacheDirectory && asset.uri.startsWith(FileSystem.cacheDirectory)) {
+      if (!retained && removeCopy && FileSystem.cacheDirectory && asset.uri.startsWith(FileSystem.cacheDirectory)) {
         await FileSystem.deleteAsync(asset.uri, { idempotent: true }).catch(() => {});
       }
     }
   };
   const pickFile = () => run(async () => {
     setComposerMenu(false);
-    const result = await withSystemActivity(() => DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true }));
+    const result = await DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true });
     if (!result.canceled) await prepareFile(result.assets?.[0], true);
   });
   const pickQuizFile = () => run(async () => {
-    const result = await withSystemActivity(() => DocumentPicker.getDocumentAsync({ type: ["image/*", "audio/*"], copyToCacheDirectory: true }));
+    const result = await DocumentPicker.getDocumentAsync({ type: ["image/*", "audio/*"], copyToCacheDirectory: true });
     if (!result.canceled) await prepareFile(result.assets?.[0], true, true);
   });
   const pickMedia = (source) => run(async () => {
@@ -352,8 +370,22 @@ export default function PilotGroupsScreen({ navigation, route }) {
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
     const video = asset.type === "video";
-    await prepareFile({ ...asset, name: asset.fileName || (video ? "video.mp4" : "foto.jpg"),
-      mimeType: asset.mimeType || (video ? "video/mp4" : "image/jpeg") }, true);
+    // Camera images need the same bounded preprocessing as individual chats.
+    // Documents and videos retain their original bytes and the gateway's size limit.
+    let selectedAsset = { ...asset, name: asset.fileName || (video ? "video.mp4" : "foto.jpg"),
+      mimeType: asset.mimeType || (video ? "video/mp4" : "image/jpeg") };
+    try {
+      if (!video) {
+        const limit = policy ? PILOT_GROUP_UPLOAD_LIMIT : PILOT_GROUP_FILE_LIMIT;
+        const resized = await shrinkPhoto(asset.uri, Math.min(limit - 2048, 1024 * 1024), 1600);
+        if (resized?.uri) selectedAsset = { uri: resized.uri, name: "foto.jpg", mimeType: "image/jpeg" };
+      }
+      await prepareFile(selectedAsset, true);
+    } finally {
+      if (selectedAsset.uri !== asset.uri && FileSystem.cacheDirectory && asset.uri.startsWith(FileSystem.cacheDirectory)) {
+        await FileSystem.deleteAsync(asset.uri, { idempotent: true }).catch(() => {});
+      }
+    }
   });
   const startVoice = () => run(async () => {
     setComposerMenu(false);
@@ -376,11 +408,21 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const sendFile = () => run(async () => {
     if (!fileDraft) return;
     let attachment = fileDraft.attachment;
+    if (!attachment.id && fileDraft.uri) {
+      const secret=fileDraft.secret || {keyHex:randomHex(32),ivHex:randomHex(12)};
+      if (!fileDraft.secret) setFileDraft({...fileDraft,secret});
+      setFileProgress(0);
+      let uploaded;
+      try { uploaded = await bigatt.uploadFileChunked({uri:fileDraft.uri,...attachment,...secret,group:group.id,fileId:fileDraft.id,onProgress:setFileProgress}); }
+      finally {setFileProgress(null);}
+      attachment = uploaded;
+      setFileDraft({...fileDraft,attachment});
+    }
     if (!attachment.id && attachment.size > PILOT_GROUP_FILE_LIMIT) {
       const { data, ...metadata } = attachment;
       const bytes = base64ToBytes(data);
       if (bytes.length !== metadata.size) throw new Error(say("File incompleto.", "Incomplete file."));
-      const sealed = fileDraft.sealed || encryptFileBytes(bytes);
+      const sealed = fileDraft.sealed || await encryptFileBytesAsync(bytes);
       if (!fileDraft.sealed) setFileDraft({ ...fileDraft, sealed });
       const { ciphertext, key, iv } = sealed;
       const result = await mlsUpload(group.id, fileDraft.id, ciphertext);
@@ -406,7 +448,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
           const { data, ...metadata } = selectedFile.attachment;
           const bytes = base64ToBytes(data);
           if (bytes.length !== metadata.size) throw new Error(say("File incompleto.", "Incomplete file."));
-          const sealed = encryptFileBytes(bytes);
+          const sealed = await encryptFileBytesAsync(bytes);
           ciphertext = sealed.ciphertext;
           file = { ...metadata, id: randomHex(16), key: sealed.key, iv: sealed.iv };
         }
@@ -460,7 +502,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
   });
   const redeem = () => run(async () => {
     const code = joiningLink.trim().replace(/^ultron:\/\/group-invite\//i, "");
-    if (!/^[a-f0-9]{64}\.[a-f0-9]{64}$/.test(code)) throw new Error(say("Link ULTRON non valido.", "Invalid ULTRON link."));
+    if (!/^[a-f0-9]{64}\.[a-f0-9]{64}$/.test(code)) throw new Error(say("Link UNVOR non valido.", "Invalid UNVOR link."));
     await mlsRedeem(code);
     setJoiningLink(""); setRedeemOpen(false);
     await refresh(null);
@@ -474,7 +516,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const renewLink = () => run(async () => {
     const result = await mlsAction(group.id, { action: "link" });
     if (!/^[a-f0-9]{64}\.[a-f0-9]{64}$/.test(result?.code || "")) throw new Error(say("Link non confermato.", "Link not confirmed."));
-    setInviteCode(`ultron://group-invite/${result.code}`);
+    setInviteCode(`unvor://group-invite/${result.code}`);
   });
   const exitGroup = async (deleting, block = false) => {
     if (deleting) await mlsDeleteGroup(group.id);
@@ -553,7 +595,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
         "Only the sender and message reference will be sent to moderators."),
       [{ text: say("Annulla", "Cancel"), style: "cancel" }, { text: say("Segnala", "Report"), onPress: () => run(async () => {
         await mlsReport(group.id, { target: item.sender, reason: "Messaggio MLS #" + item.seq });
-        Alert.alert("ULTRON", say("Segnalazione inviata.", "Report sent."));
+        Alert.alert("UNVOR", say("Segnalazione inviata.", "Report sent."));
       }) }]);
   };
   const blockGroupPeer = item => {
@@ -623,7 +665,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
     <ScrollView style={[styles.root, topStyle]} contentContainerStyle={pageStyle}>
       {iconButton("arrow-back", backLabel, () => setDiscover(false))}
       <Text style={styles.title}>{say("Gruppi pubblici", "Public groups")}</Text>
-      <Text style={styles.dim}>{say("Per entrare serve un invito e il QR ULTRON verificato.", "Entry requires an invitation and a verified ULTRON QR.")}</Text>
+      <Text style={styles.dim}>{say("Per entrare serve un invito e il QR UNVOR verificato.", "Entry requires an invitation and a verified UNVOR QR.")}</Text>
       {publicGroups.map(item => (
         <TouchableOpacity key={item.id} style={styles.row} onPress={() => openProfile(item.admin)} accessibilityRole="button">
           <View style={{ flex: 1 }}><Text style={styles.text}>{item.name}</Text><Text style={styles.dim}>{item.admin}</Text></View>
@@ -642,7 +684,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
         {redeemOpen && <View style={styles.card}>
           <TextInput {...inputProps} style={styles.input} value={joiningLink} onChangeText={setJoiningLink}
             autoCapitalize="none" autoCorrect={false} maxLength={200}
-            placeholder={say("Incolla il link ULTRON", "Paste the ULTRON link")} />
+            placeholder={say("Incolla il link UNVOR", "Paste the UNVOR link")} />
           {button(say("Apri invito", "Open invitation"), redeem, { primary: true, disabled: busy || !joiningLink.trim() })}
         </View>}
         {inbox.map(invitation => (
@@ -733,6 +775,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
       <View style={styles.signalTrack} accessibilityElementsHidden importantForAccessibility="no">
         <View style={styles.signalLead} /><View style={styles.signalTail} />
       </View>
+      {!manage && <EncryptionNotice kind="group" />}
       {warning}
       {!!err && !details && button(say("Riprova a sincronizzare", "Retry sync"), () => run(() => refresh(group)))}
       {manage ? <ScrollView contentContainerStyle={pageStyle} keyboardShouldPersistTaps="handled">
@@ -940,19 +983,20 @@ export default function PilotGroupsScreen({ navigation, route }) {
                 new Set(choices.map(choice => choice.trim())).size !== choices.length })}
           </View>
         </ScrollView>}
-        {composerMenu && <View style={[styles.menu, styles.attachments]} testID="mls-attach-menu">
-          {button(say("Fotocamera", "Camera"), () => pickMedia("photo"))}
-          {button(say("Video", "Video"), () => pickMedia("video"))}
-          {button(say("Galleria", "Gallery"), () => pickMedia("gallery"))}
-          {button(say("File", "File"), pickFile)}
-          {button(say("Sondaggio", "Poll"), () => { setComposerMenu(false); setPollEditor(value => !value); })}
-        </View>}
+        {composerMenu && <AttachmentSheet testID="mls-attach-menu" disabled={busy} limitLabel={t("attachment.limit")} items={[
+          {id:"mls-attach-gallery",label:t("attachment.gallery"),icon:"images",color:"#24a9ff",action:()=>pickMedia("gallery")},
+          {id:"mls-attach-photo",label:t("attachment.camera"),icon:"camera",color:"#fb428b",action:()=>pickMedia("photo")},
+          {id:"mls-attach-video",label:t("attachment.video"),icon:"videocam",color:"#22d5d8",action:()=>pickMedia("video")},
+          {id:"mls-attach-file",label:t("attachment.document"),icon:"document-text",color:"#a27aff",action:pickFile},
+          {id:"mls-attach-poll",label:t("attachment.poll"),icon:"stats-chart",color:"#f4c05b",action:()=>{setComposerMenu(false);setPollEditor(value=>!value);}},
+          {id:"mls-attach-audio",label:t("attachment.audio"),icon:"mic",color:"#29d3b2",action:startVoice},
+        ]}/>}
         {replyTo && <View style={styles.menu}>
           <Text style={[styles.dim, { flex: 1 }]} numberOfLines={2}>{say("Risposta a ", "Reply to ") + replyTo.sender + " · " + replyTo.body}</Text>
           {iconButton("close", say("Annulla risposta", "Cancel reply"), () => setReplyTarget(null))}
         </View>}
         {fileDraft && <View style={styles.menu}>
-          <Text numberOfLines={1} style={[styles.text, styles.fileName]}>{fileDraft.attachment.name}</Text>
+          <Text numberOfLines={1} style={[styles.text, styles.fileName]}>{fileDraft.attachment.name}{fileProgress != null ? ` · ${Math.round(fileProgress*100)}%` : ""}</Text>
           {button(say("Annulla", "Cancel"), () => setFileDraft(null))}
           {button(say("Invia file", "Send file"), sendFile, { primary: true, disabled: busy || !hasRecipients })}
         </View>}
@@ -971,17 +1015,17 @@ export default function PilotGroupsScreen({ navigation, route }) {
                   accessibilityLabel={say("Allegati e sondaggi", "Attachments and polls")}
                   disabled={busy || !hasRecipients || !!fileDraft}
                   onPress={() => { Keyboard.dismiss(); setPollEditor(false); setComposerMenu(value => !value); }}>
-                  <Ionicons name={composerMenu ? "close-circle-outline" : "add-circle-outline"} size={26} color={theme.primary} />
+                  <Ionicons name={composerMenu ? "close-circle-outline" : "attach-outline"} size={26} color={theme.primary} />
                 </TouchableOpacity>
                 <TextInput {...inputProps} style={[styles.input, styles.composeInput]} placeholder={say("Scrivi un messaggio", "Write a message")}
                   editable={!busy && hasRecipients} accessibilityLabel={say("Scrivi un messaggio", "Write a message")}
                   maxLength={2000} multiline value={message} onChangeText={setMessage} onFocus={() => setComposerMenu(false)}
-                  onSubmitEditing={send} submitBehavior="submit" returnKeyType="send" />
+                  submitBehavior="newline" returnKeyType="default" />
                 <TouchableOpacity accessibilityRole="button" style={styles.sendButton}
                   accessibilityLabel={message.trim() ? say("Invia", "Send") : say("Microfono", "Microphone")}
                   testID={message.trim() ? "mls-send" : "mls-mic"} disabled={busy || !hasRecipients || !!fileDraft}
                   onPress={message.trim() ? send : startVoice}>
-                  <Ionicons name={message.trim() ? "arrow-up" : "mic-outline"} size={20} color={theme.onAccent} />
+                  <Ionicons name={message.trim() ? "send" : "mic-outline"} size={20} color={theme.onAccent} />
                 </TouchableOpacity>
               </>}
             </View>}

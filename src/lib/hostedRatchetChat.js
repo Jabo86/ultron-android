@@ -31,13 +31,12 @@ export async function sendPilotMessage(payload, user, peer, options) {
   if (!archivablePayload(payload)) throw new Error("La prova ratchet supporta i messaggi senza scadenza.");
   const check = api.authenticatedScope(user);
   const device = await deviceId();
-  const active = await publishHostedPrekeys(user, device);
+  const [active, keys] = await Promise.all([publishHostedPrekeys(user, device), verifiedContact(user, peer)]);
   check();
   const mine = parsePools(await api.hostedPrekeyPools(user.lns));
   if (mine.length !== 1 || mine[0].device !== active) {
     throw new Error("La prova ratchet richiede un solo dispositivo per account.");
   }
-  const keys = await verifiedContact(user, peer);
   check();
   return sendHostedRatchet(payload, user, peer, device, keys, options);
 }

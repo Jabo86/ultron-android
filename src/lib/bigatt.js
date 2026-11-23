@@ -1,3 +1,4 @@
+import { MAX_ATTACHMENT_BYTES, ATTACHMENT_CHUNK_BYTES } from "./attachmentLimits";
 // ALLEGATI GRANDI SUL TELEFONO — cifratura e decifratura a pezzi da 4 MB.
 //
 // Prima un allegato passava per una stringa base64 dell'INTERO file: con 8 MB si stava
@@ -12,10 +13,10 @@
 import { File, FileMode } from "expo-file-system";
 import { gcm } from "@noble/ciphers/aes.js";
 import * as api from "./api";
-import { bytesToHex, hexToBytes } from "./crypto";
+import { bytesToHex, hexToBytes, attachmentAes } from "./crypto";
 
-export const ATT_CHUNK = 4 * 1024 * 1024;   // 4 MB in chiaro per pezzo
-export const MAX_ATT = 100 * 1024 * 1024;   // tetto per allegato, come sul web
+export const ATT_CHUNK = ATTACHMENT_CHUNK_BYTES;   // 4 MB in chiaro per pezzo
+export const MAX_ATT = MAX_ATTACHMENT_BYTES;   // tetto per allegato, come sul web
 const TAG = 16;                             // tag di autenticazione GCM
 
 function rand(n) {
@@ -39,27 +40,32 @@ export const isChunked = (att) => !!(att && att.n && att.cs);
 
 // Cifra e spedisce un file dal disco, un pezzo alla volta. Restituisce la voce di
 // manifest da infilare nel messaggio cifrato (la chiave viaggia lì dentro, non al server).
-export async function uploadFileChunked({ uri, name, mime, size, allowed, onProgress }) {
+export async function uploadFileChunked({ uri, name, mime, size, allowed, onProgress, group, fileId, keyHex, ivHex }) {
   const src = new File(uri);
   const total = size || src.size || 0;
   if (!total) throw new Error("File vuoto o non leggibile");
   if (total > MAX_ATT) throw new Error("File troppo grande");
 
-  const key = rand(32);
-  const iv = rand(12);
+  if ((keyHex || ivHex) && (!/^[a-f0-9]{64}$/.test(keyHex || "") || !/^[a-f0-9]{24}$/.test(ivHex || ""))) throw new Error("Chiave del trasferimento non valida.");
+  const key = keyHex ? hexToBytes(keyHex) : rand(32);
+  const iv = ivHex ? hexToBytes(ivHex) : rand(12);
   const n = Math.max(1, Math.ceil(total / ATT_CHUNK));
-  const generation = await api.pilotAttachmentGeneration(allowed);
-  const { upload_id } = await api.blobInit();
+  const generation = group ? null : await api.pilotAttachmentGeneration(allowed);
+  const upload_id = group ? fileId : (await api.blobInit()).upload_id;
+  let last;
   const h = src.open(FileMode.ReadOnly);
   try {
     for (let i = 0; i < n; i++) {
       const plain = h.readBytes(ATT_CHUNK);
       if (plain?.length !== Math.min(ATT_CHUNK, total - i * ATT_CHUNK)) throw new Error("Il file è incompleto o è cambiato durante la lettura.");
-      await api.blobPutChunk(upload_id, i, gcm(key, attNonce(iv, i)).encrypt(plain));
+      const encrypted = await attachmentAes(plain, key, attNonce(iv, i), true);
+      if (group) last = await api.mlsPutFileChunk(group, upload_id, i, n, total, encrypted);
+      else await api.blobPutChunk(upload_id, i, encrypted);
       onProgress?.((i + 1) / n);
     }
   } finally { try { h.close(); } catch { /* niente */ } }
-  const { id } = await api.blobFinalize(upload_id, allowed, generation);
+  if (group && (last?.id !== upload_id || last?.ready !== true)) throw new Error("Caricamento del gruppo non confermato.");
+  const { id } = group ? last : await api.blobFinalize(upload_id, allowed, generation);
   return {
     id, name, mime: mime || "application/octet-stream", size: total,
     key: bytesToHex(key), iv: bytesToHex(iv), cs: ATT_CHUNK, n,
@@ -69,17 +75,17 @@ export async function uploadFileChunked({ uri, name, mime, size, allowed, onProg
 // Scarica il cifrato in un file temporaneo e lo decifra pezzo per pezzo dentro `destUri`.
 // Restituisce il primo pezzo in chiaro: serve alla scansione euristica, che guarda
 // l'inizio del file e non ha bisogno di tenerne in memoria cento megabyte.
-export async function decryptToFile(att, destUri, onProgress) {
+export async function decryptToFile(att, destUri, onProgress, group) {
   const tmp = new File(destUri + ".ct");
   try { if (tmp.exists) tmp.delete(); } catch { /* niente */ }
   const out = new File(destUri + ".part");
   let first = null;
   try {
-    await File.downloadFileAsync(api.blobUrl(att.id), tmp, {
+    await File.downloadFileAsync(group ? api.mlsFileUrl(group, att.id) : api.blobUrl(att.id), tmp, {
       headers: await api.authHeaders(),
       idempotent: true,
     });
-    if (!Number.isSafeInteger(att.size) || att.size < 1 || att.size > MAX_ATT ||
+    if (!Number.isSafeInteger(att.size) || att.size < 1 || att.size > 100 * 1024 * 1024 ||
         att.cs !== ATT_CHUNK || att.n !== Math.ceil(att.size / att.cs) ||
         tmp.size !== att.size + att.n * TAG) throw new Error("Allegato cifrato incompleto.");
     out.create({ overwrite: true });
@@ -93,7 +99,7 @@ export async function decryptToFile(att, destUri, onProgress) {
           const size = Math.min(att.cs, att.size - i * att.cs) + TAG;
           const ct = rh.readBytes(size);
           if (ct.length !== size) throw new Error("Allegato cifrato incompleto.");
-          const plain = gcm(key, attNonce(iv, i)).decrypt(ct);
+          const plain = await attachmentAes(ct, key, attNonce(iv, i), false);
           if (i === 0) first = plain;
           wh.writeBytes(plain);
           onProgress?.((i + 1) / att.n);

@@ -1,7 +1,6 @@
 import React, { useState, useCallback } from "react";
-import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, ScrollView,
-} from "react-native";
+import { View, StyleSheet, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator, ScrollView } from "react-native";
+import { Text } from "../components/HudText";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";

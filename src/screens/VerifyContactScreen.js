@@ -15,10 +15,8 @@ import { RATCHET_PILOT } from "../config";
 // Nessuna verifica indebolita: il numero appare solo con impronte davvero disponibili, e
 // un cambio di chiavi viene segnalato con l'avviso rosso.
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Modal,
-  Share, TextInput, InteractionManager,
-} from "react-native";
+import { View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Modal, Share, InteractionManager } from "react-native";
+import { Text, TextInput } from "../components/HudText";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -117,7 +115,7 @@ export default function VerifyContactScreen({ route, navigation }) {
     const parsed = parseQr(raw);
     if (!parsed) {
       Alert.alert(en ? "Unknown code" : "Codice non riconosciuto",
-        en ? "This is not a ULTRON verification code." : "Questo non è un codice di verifica ULTRON.");
+        en ? "This is not a UNVOR verification code." : "Questo non è un codice di verifica UNVOR.");
       return;
     }
     if ((parsed.lns || "").toLowerCase() !== String(peer).toLowerCase()) {
@@ -160,7 +158,7 @@ export default function VerifyContactScreen({ route, navigation }) {
 
   const shareNumber = () => {
     Share.share({
-      message: (en ? "ULTRON safety number with " : "Numero di sicurezza ULTRON con ") + peerName + ":\n" + digitGroups(sas).join(" "),
+      message: (en ? "UNVOR safety number with " : "Numero di sicurezza UNVOR con ") + peerName + ":\n" + digitGroups(sas).join(" "),
     }).catch(() => {});
   };
   const shareMyCode = () => {

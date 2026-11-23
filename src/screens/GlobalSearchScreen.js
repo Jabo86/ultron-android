@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, ActivityIndicator, Keyboard, Alert,
-} from "react-native";
+import { View, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator, Keyboard, Alert } from "react-native";
+import { Text, TextInput } from "../components/HudText";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useI18n } from "../lib/i18n";
@@ -9,8 +8,13 @@ import * as api from "../lib/api";
 import { theme } from "../theme";
 import Avatar from "../components/Avatar";
 import { useAuth } from "../context/AuthContext";
-import { decryptEnvelope, unpackMessage } from "../lib/crypto";
+import { unpackMessage } from "../lib/crypto";
 import { decryptAny } from "../lib/devices";
+
+import { hostedRatchetPilot, readPilotMessage } from "../lib/hostedRatchetChat";
+import { hiddenMessageIds } from "../lib/chatMessageActions";
+import { matchSearchContent } from "../lib/searchContent";
+import { cachedPilotGroupDetails, cachedPilotGroupTitle, listPilotGroups, pilotGroupPolicy, presentPilotGroupHistory } from "../lib/pilotGroups";
 
 export default function GlobalSearchScreen({ navigation }) {
   const { t, lang } = useI18n();
@@ -25,36 +29,50 @@ export default function GlobalSearchScreen({ navigation }) {
   const [joining, setJoining] = useState("");
   const [loading, setLoading] = useState(true);
   const inputRef = useRef(null);
+  const searchVersion = useRef(0);
+  useEffect(() => () => { searchVersion.current++; }, [user]);
+  const changeQuery = value => { searchVersion.current++; setQ(value); setMsgBusy(false); setMsgHits([]); setMsgDone(""); };
 
   useEffect(() => { const id = setTimeout(() => setDq(q), 120); return () => clearTimeout(id); }, [q]);
 
   useEffect(() => {
     let alive = true;
     (async () => {
+      const check = api.authenticatedScope(user);
       const c = await api.contacts().catch(() => []);
+      check();
       if (!alive) return;
-      setContacts(Array.isArray(c) ? c : []);
+      setContacts(Array.isArray(c) ? c.map(row => typeof row === "string" ? { lns: row } : row).filter(row => row?.lns) : []);
       setLoading(false);
     })();
     const to = setTimeout(() => inputRef.current?.focus(), 350);
     return () => { alive = false; clearTimeout(to); };
-  }, []);
+  }, [user]);
 
   const sq = dq.trim().toLowerCase();
   const foundContacts = useMemo(() => (sq
-    ? contacts.filter((c) => c.lns.includes(sq) || (c.display_name || "").toLowerCase().includes(sq) || (c.department || "").toLowerCase().includes(sq))
+    ? contacts.filter((c) => (c.lns || "").toLowerCase().includes(sq) || (c.display_name || "").toLowerCase().includes(sq) || (c.department || "").toLowerCase().includes(sq))
     : []), [contacts, sq]);
 
   const openChat = useCallback((c) => { Keyboard.dismiss(); navigation.replace("Chat", { conv_id: null, others: [c.lns], title: c.display_name || c.lns.split("@")[0], title_lns: c.lns }); }, [navigation]);
 
-  // Ricerca gruppi pubblici (ingresso su richiesta, approvata dagli admin del gruppo).
+  // Group names are matched locally: the query never leaves the phone.
   useEffect(() => {
     let alive = true;
-    const term = dq.trim();
-    if (term.length < 2) { setGroups([]); return; }
-    api.groupsSearch(term).then((r) => { if (alive) setGroups(Array.isArray(r?.results) ? r.results : []); }).catch(() => { if (alive) setGroups([]); });
+    if (!user || !hostedRatchetPilot(user)) { setGroups([]); return; }
+    const check = api.authenticatedScope(user);
+    listPilotGroups().then(async rows => {
+      const result = [];
+      for (const row of rows) {
+        const name = await cachedPilotGroupTitle(user, row);
+        check();
+        result.push({ ...row, name: name || "Gruppo", chan_id: row.id, my_state: "member", pilot: true });
+      }
+      if (alive) setGroups(result);
+    }).catch(() => { if (alive) setGroups([]); });
     return () => { alive = false; };
-  }, [dq]);
+  }, [user]);
+  const foundGroups = useMemo(() => sq ? groups.filter(g => (g.name || "").toLowerCase().includes(sq)) : [], [groups, sq]);
 
   const askJoin = useCallback((g) => {
     Alert.alert("Chiedi di entrare", `Inviare la richiesta di ingresso a «${g.name}»?\n\nGli amministratori del gruppo la vedranno e potranno accettarla.`, [
@@ -74,62 +92,90 @@ export default function GlobalSearchScreen({ navigation }) {
     ]);
   }, []);
 
-  const openGroup = useCallback((g) => { Keyboard.dismiss(); navigation.replace("ChannelDetail", { chan_id: g.chan_id }); }, [navigation]);
+  const openGroup = useCallback((g) => { Keyboard.dismiss(); g.pilot ? navigation.replace("PilotGroups", { group: g }) : navigation.replace("ChannelDetail", { chan_id: g.chan_id }); }, [navigation]);
 
-  // Ricerca dentro le chat: i messaggi sono E2EE, quindi vengono scaricati e
-  // decifrati qui sul telefono (nessun testo in chiaro lascia il dispositivo).
+  // Explicit search keeps typing fluid. Ratchet records are read in offline
+  // mode: inspecting history cannot consume keys or initiate a new session.
   const searchMessages = useCallback(async () => {
-    const term = dq.trim().toLowerCase();
+    const term = q.trim();
     if (term.length < 2 || !user?.kem) return;
+    const version = ++searchVersion.current;
+    const scope = api.authenticatedScope(user);
+    const active = () => { scope(); return version === searchVersion.current; };
     setMsgBusy(true); setMsgHits([]); setMsgDone("");
+    const hits = [];
+    let incomplete = false;
     try {
       const convs = await api.convs();
-      const hits = [];
-      for (const c of (convs || []).slice(0, 25)) {
-        let raw = [];
-        try { raw = await api.messages(c.conv_id); } catch { continue; }
-        for (const m of raw || []) {
-          if (!m.envelope) continue;
-          let text = "";
-          try {
-            const pt = await decryptAny(m, user);
+      for (const c of (convs || [])) {
+        if (!active()) return;
+        try {
+          const hidden = new Set((await hiddenMessageIds(user, "direct:" + c.conv_id)).map(String));
+          const raw = await api.messages(c.conv_id);
+          if (!active()) return;
+          for (const m of raw || []) {
+            if (!active()) return;
+            if (m.hidden || hidden.has(String(m.message_id)) || (!m.envelope && !m.ratchet)) continue;
+            let pt;
+            try { pt = m.ratchet ? await readPilotMessage(m, user, { offline: true }) : await decryptAny(m, user); }
+            catch { continue; }
+            if (!active()) return;
             if (pt == null) continue;
-            text = unpackMessage(pt).text || "";
-          } catch { continue; }
-          if (text.toLowerCase().indexOf(term) >= 0) {
-            hits.push({
-              id: m.message_id, conv_id: c.conv_id,
-              title: c.title || (c.title_lns || "Chat").split("@")[0],
-              others: c.others || (c.title_lns ? [c.title_lns] : []),
-              text, at: m.sent_at || m.created_at, mine: !!m.mine,
-            });
+            const decoded = unpackMessage(pt);
+            if (decoded.ttl > 0 || decoded.text?.charCodeAt(0) === 1) continue;
+            const match = matchSearchContent(decoded.text, decoded.atts, term);
+            if (match) hits.push({ id: c.conv_id + ":" + m.message_id, conv_id: c.conv_id,
+              title: c.title || (c.title_lns || c.others?.[0] || "Chat").split("@")[0],
+              others: c.others || (c.title_lns ? [c.title_lns] : []), ...match, mine: !!m.mine });
+            if (hits.length >= 200) { incomplete = true; break; }
+            await new Promise(resolve => setTimeout(resolve, 0));
           }
-          if (hits.length >= 60) break;
-        }
-        if (hits.length >= 60) break;
+        } catch { incomplete = true; }
+        if (hits.length >= 200) break;
       }
+      for (const g of groups) {
+        if (!active()) return;
+        if (hits.length >= 200) { incomplete = true; break; }
+        try {
+          const policy = await pilotGroupPolicy(g);
+          if (!policy) { incomplete = true; continue; }
+          const details = await cachedPilotGroupDetails(user, g);
+          if (!active()) return;
+          if (!details?.members?.includes(user.lns)) continue;
+          const hidden = new Set([...(policy?.hidden || []), ...await hiddenMessageIds(user, "group:" + g.id)].map(String));
+          for (const item of presentPilotGroupHistory(details.history || [], user.lns)) {
+            if (hidden.has(String(item.seq))) continue;
+            const match = matchSearchContent(item.body, item.attachment ? [item.attachment] : [], term);
+            if (match) hits.push({ id: g.id + ":" + item.seq, group: g, title: details.title || g.name, ...match, mine: item.sender === user.lns });
+            if (hits.length >= 200) { incomplete = true; break; }
+          }
+        } catch { incomplete = true; }
+      }
+      if (!active()) return;
       setMsgHits(hits);
-      setMsgDone(hits.length ? "" : (lang === "en" ? "No message found." : "Nessun messaggio trovato."));
-    } catch (e) {
-      setMsgDone(lang === "en" ? "Search failed." : "Ricerca non riuscita.");
-    } finally { setMsgBusy(false); }
-  }, [dq, user, lang]);
+      setMsgDone(incomplete ? (lang === "en" ? "Partial search: some chats were unavailable or the 200-result limit was reached." : "Ricerca parziale: alcune chat non erano disponibili oppure sono stati raggiunti 200 risultati.") :
+        hits.length ? "" : (lang === "en" ? "No result in the available history." : "Nessun risultato nella cronologia disponibile."));
+    } catch {
+      if (version === searchVersion.current) setMsgDone(lang === "en" ? "Search failed." : "Ricerca non riuscita.");
+    } finally { if (version === searchVersion.current) setMsgBusy(false); }
+  }, [q, user, lang, groups]);
 
   useEffect(() => { setMsgHits([]); setMsgDone(""); }, [dq]);
 
   const openMsg = useCallback((h) => {
     Keyboard.dismiss();
+    if (h.group) { navigation.replace("PilotGroups", { group: h.group }); return; }
     navigation.replace("Chat", { conv_id: h.conv_id, others: h.others, title: h.title, title_lns: h.others[0] });
   }, [navigation]);
 
   const sections = [];
   if (foundContacts.length) sections.push({ type: "header", key: "h-c", label: t("search.colleagues") });
   foundContacts.forEach((c) => sections.push({ type: "contact", key: "c-" + c.lns, c }));
-  if (groups.length) sections.push({ type: "header", key: "h-g", label: "GRUPPI PUBBLICI" });
-  groups.forEach((g) => sections.push({ type: "group", key: "g-" + g.chan_id, g }));
+  if (foundGroups.length) sections.push({ type: "header", key: "h-g", label: lang === "en" ? "YOUR GROUPS" : "I TUOI GRUPPI" });
+  foundGroups.forEach((g) => sections.push({ type: "group", key: "g-" + g.chan_id, g }));
   if (dq.trim().length >= 2) {
     sections.push({ type: "header", key: "h-msg", label: lang === "en" ? "MESSAGES" : "MESSAGGI" });
-    if (!msgHits.length) sections.push({ type: "msgcta", key: "msg-cta" });
+    sections.push({ type: "msgcta", key: "msg-cta" });
     msgHits.forEach((h) => sections.push({ type: "msg", key: "mh-" + h.id, h }));
   }
 
@@ -158,10 +204,10 @@ export default function GlobalSearchScreen({ navigation }) {
           </View>
           <View style={styles.info}>
             <Text style={styles.name}>
-              {msgBusy ? (lang === "en" ? "Searching in chats…" : "Cerco nelle chat…") : (lang === "en" ? "Search inside chats" : "Cerca dentro le chat")}
+              {msgBusy ? (lang === "en" ? "Searching in chats…" : "Cerco nelle chat…") : (lang === "en" ? "Search messages and files" : "Cerca messaggi e file")}
             </Text>
             <Text style={styles.sub} numberOfLines={2}>
-              {msgDone || (lang === "en" ? "Messages are encrypted: they are decrypted here on your phone." : "I messaggi sono cifrati: vengono decifrati qui sul telefono.")}
+              {msgDone || (lang === "en" ? "Searches available chat and group history and filenames on this phone." : "Cerca nella cronologia disponibile di chat e gruppi e nei nomi dei file, sul telefono.")}
             </Text>
           </View>
         </TouchableOpacity>
@@ -174,7 +220,7 @@ export default function GlobalSearchScreen({ navigation }) {
           <View style={styles.resultIcon}><Ionicons name="chatbubble-ellipses-outline" size={18} color={theme.accent} /></View>
           <View style={styles.info}>
             <Text style={styles.name} numberOfLines={1}>{h.title}</Text>
-            <Text style={styles.sub} numberOfLines={2}>{(h.mine ? (lang === "en" ? "You: " : "Tu: ") : "") + h.text}</Text>
+            <Text style={styles.sub} numberOfLines={2}>{(h.mine ? (lang === "en" ? "You: " : "Tu: ") : "") + h.text + (h.files?.length ? "\n📎 " + h.files.join(", ") : "")}</Text>
           </View>
         </TouchableOpacity>
       );
@@ -188,7 +234,7 @@ export default function GlobalSearchScreen({ navigation }) {
           <View style={styles.info}>
             <Text style={styles.name} numberOfLines={1}>{g.name}</Text>
             <Text style={styles.sub} numberOfLines={1}>
-              {g.member_count} membri  ·  admin {g.owner_name || g.owner_lns}
+              {g.pilot ? (lang === "en" ? "Your group" : "Il tuo gruppo") : `${g.member_count} membri · admin ${g.owner_name || g.owner_lns}`}
             </Text>
           </View>
           {state === "member" ? (
@@ -219,8 +265,8 @@ export default function GlobalSearchScreen({ navigation }) {
           ref={inputRef}
           style={styles.input}
           value={q}
-          onChangeText={setQ}
-          placeholder={t("search.placeholder")}
+          onChangeText={changeQuery}
+          placeholder={lang === "en" ? "Messages, files, contacts, groups…" : "Messaggi, file, contatti, gruppi…"}
           placeholderTextColor={theme.textFaint}
           selectionColor={theme.primary}
           cursorColor={theme.text}
@@ -230,7 +276,7 @@ export default function GlobalSearchScreen({ navigation }) {
           autoCorrect={false}
           testID="global-search-input"
         />
-        {q ? <TouchableOpacity onPress={() => setQ("")} hitSlop={10}><Ionicons name="close-outline" size={18} color={theme.textFaint} /></TouchableOpacity> : null}
+        {q ? <TouchableOpacity onPress={() => changeQuery("")} hitSlop={10}><Ionicons name="close-outline" size={18} color={theme.textFaint} /></TouchableOpacity> : null}
       </View>
 
       {loading ? (

@@ -1,4 +1,4 @@
-// Notifiche ULTRON: niente FCM, Firebase o Expo Push.
+// Notifiche UNVOR: niente FCM, Firebase o Expo Push.
 // Le notifiche remote sono intercettate da WakeService.kt direttamente via HTTPS.
 // react-native-notify-kit fornisce soltanto i canali locali di Android.
 import { Platform, PermissionsAndroid } from "react-native";
@@ -8,7 +8,7 @@ import * as api from "./api";
 import { GHOST_CHANNEL } from "./ghost";
 
 export function initNotificationHandler() {
-  // La notifica viene generata dal servizio Android locale dopo long-poll ULTRON.
+  // La notifica viene generata dal servizio Android locale dopo long-poll UNVOR.
 }
 function normTime(t) {
   if (t == null) return null;
@@ -45,7 +45,7 @@ export async function cancelDailyQuizReminder() {
 }
 export async function requestNotificationPermission({ askPermission = true } = {}) {
   if (Platform.OS !== "android") return false;
-  await notifee.createChannel({id:"messages",name:"Messaggi ULTRON",importance:AndroidImportance.HIGH});
+  await notifee.createChannel({id:"messages",name:"Messaggi UNVOR",importance:AndroidImportance.HIGH});
   await notifee.createChannel({id:GHOST_CHANNEL,name:"Silenzioso",importance:AndroidImportance.MIN});
   await notifee.createChannel({id:"calls",name:"Chiamate",importance:AndroidImportance.HIGH});
   const apiLevel = Number(Platform.Version);
