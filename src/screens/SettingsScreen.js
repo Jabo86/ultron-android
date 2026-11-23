@@ -133,6 +133,7 @@ export default function SettingsScreen({ navigation }) {
   const [exporting, setExporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
+  const [showNodeGuide, setShowNodeGuide] = useState(false);
   const [delText, setDelText] = useState("");
   const [genPdf, setGenPdf] = useState(false);
   const [reminderTimes, setReminderTimes] = useState([{ hour: 19, minute: 0 }]);
@@ -410,6 +411,34 @@ export default function SettingsScreen({ navigation }) {
   return (
     <ScrollView style={styles.root} contentContainerStyle={{ paddingTop: insets.top + 14, paddingBottom: 60 }}>
       <Text style={styles.title}>{t("settings.title")}</Text>
+
+      <Text style={styles.section}>{en ? "UNVOR global network" : "Rete mondiale UNVOR"}</Text>
+      <View style={[styles.card, { borderColor: tint + "55" }]} testID="settings-global-node-guide">
+        <View style={{ padding: 14 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <Ionicons name="globe-outline" size={22} color={tint} />
+            <Text style={{ color: theme.text, fontSize: 15, fontWeight: "800", flex: 1 }}>
+              {en ? "Independent world nodes" : "Nodi mondiali indipendenti"}
+            </Text>
+            <View style={{ borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: "rgba(255,190,80,0.12)", borderWidth: 1, borderColor: "rgba(255,190,80,0.35)" }}>
+              <Text style={{ color: "#FFC766", fontSize: 9, fontWeight: "900" }}>{en ? "IN PREPARATION" : "IN PREPARAZIONE"}</Text>
+            </View>
+          </View>
+          <Text style={{ color: theme.textDim, fontSize: 12.5, lineHeight: 18, marginTop: 9 }}>
+            {en
+              ? "UNVOR is preparing a network of independent servers. Normal users will connect automatically and will not need to run a server."
+              : "UNVOR sta preparando una rete di server indipendenti. Chi usa l'app si collegherà automaticamente e non dovrà avviare un server."}
+          </Text>
+          <TouchableOpacity onPress={() => setShowNodeGuide(true)} accessibilityRole="button"
+            testID="settings-global-node-guide-open"
+            style={{ alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 6, marginTop: 12, paddingVertical: 6 }}>
+            <Text style={{ color: tint, fontSize: 12.5, fontWeight: "800" }}>
+              {en ? "How to contribute a node" : "Come contribuire con un nodo"}
+            </Text>
+            <Ionicons name="arrow-forward" size={15} color={tint} />
+          </TouchableOpacity>
+        </View>
+      </View>
 
       {/* ASPETTO DELLA CHAT — colore d'accento e sfondo, scelti dall'utente */}
       <Text style={styles.section}>{t("sm.025")}</Text>
@@ -915,6 +944,58 @@ export default function SettingsScreen({ navigation }) {
 
       {exportingKeyfile && <KeyfileExport keyfile={exportingKeyfile} english={en}
         onClose={() => setExportingKeyfile(null)} onShared={() => setExportingKeyfile(null)} />}
+      <Modal visible={showNodeGuide} transparent animationType="slide" onRequestClose={() => setShowNodeGuide(false)}>
+        <View style={styles.legalWrap}>
+          <View style={[styles.legalCard, { maxHeight: "88%" }]}>
+            <View style={styles.legalHead}>
+              <Text style={styles.legalTitle}>{en ? "Contribute to UNVOR nodes" : "Contribuire ai nodi UNVOR"}</Text>
+              <TouchableOpacity onPress={() => setShowNodeGuide(false)} accessibilityRole="button" accessibilityLabel={en ? "Close" : "Chiudi"} hitSlop={10}>
+                <Ionicons name="close" size={24} color={theme.textDim} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView>
+              <Text style={{ color: "#FFC766", fontSize: 12, fontWeight: "800", marginBottom: 8 }}>
+                {en ? "The worldwide node network is not active yet." : "La rete mondiale dei nodi non è ancora attiva."}
+              </Text>
+              <Text style={{ color: theme.textDim, fontSize: 12.5, lineHeight: 19 }}>
+                {en
+                  ? "This page explains the planned contribution flow. Do not install a node package yet: the server federation and routing must be completed first."
+                  : "Questa pagina anticipa come funzionerà la partecipazione. Non installare ancora pacchetti nodo: prima vanno completati la federazione tra server e l'instradamento."}
+              </Text>
+              <Text style={{ color: theme.text, fontSize: 14, fontWeight: "800", marginTop: 18 }}>
+                {en ? "If you only use UNVOR" : "Se usi soltanto UNVOR"}
+              </Text>
+              <Text style={{ color: theme.textDim, fontSize: 12.5, lineHeight: 19, marginTop: 5 }}>
+                {en
+                  ? "Nothing to configure. Keep Automatic network selected; the app will choose available independent nodes and switch when one is unreachable."
+                  : "Non devi configurare nulla. Lascia selezionata Rete automatica: l'app sceglierà nodi indipendenti disponibili e cambierà percorso se uno non risponde."}
+              </Text>
+              <Text style={{ color: theme.text, fontSize: 14, fontWeight: "800", marginTop: 18 }}>
+                {en ? "If you want to operate a node" : "Se vuoi gestire un nodo"}
+              </Text>
+              <Text style={{ color: theme.textDim, fontSize: 12.5, lineHeight: 19, marginTop: 5 }}>
+                {en
+                  ? "You will need an always-on Linux server or VPS, a stable Internet connection, a DNS name with HTTPS, and agreed storage and bandwidth limits. The guided installer will generate the node key locally, verify the server, let you choose relay and mailbox roles, and connect it to several independent peers. You will be able to inspect health and queued data and stop the node safely."
+                  : "Servirà un server Linux o una VPS sempre accesa, una connessione Internet stabile, un nome DNS con HTTPS e limiti di spazio e banda scelti da te. La procedura guidata genererà localmente la chiave del nodo, controllerà il server, ti farà scegliere se offrire relay e cassette postali e lo collegherà a più peer indipendenti. Potrai controllare lo stato e le code e arrestare il nodo in sicurezza."}
+              </Text>
+              <Text style={{ color: theme.text, fontSize: 14, fontWeight: "800", marginTop: 18 }}>
+                {en ? "Privacy and availability" : "Privacy e disponibilità"}
+              </Text>
+              <Text style={{ color: theme.textDim, fontSize: 12.5, lineHeight: 19, marginTop: 5 }}>
+                {en
+                  ? "Node operators can see limited routing and service metadata and may temporarily store encrypted message envelopes; end-to-end encryption keeps message contents unreadable to them. More independent nodes improve resilience, but no network can deliver while the recipient and all usable routes are offline. A phone is not treated as an always-on node."
+                  : "Chi gestisce un nodo può vedere alcuni metadati di instradamento e servizio e può conservare temporaneamente buste cifrate; la cifratura end-to-end impedisce di leggere il contenuto dei messaggi. Più nodi indipendenti migliorano la resilienza, ma nessuna rete consegna se il destinatario e tutti i percorsi disponibili sono offline. Un telefono non sarà considerato un nodo sempre attivo."}
+              </Text>
+              <Text style={{ color: theme.textFaint, fontSize: 11.5, lineHeight: 17, marginTop: 14, marginBottom: 10 }}>
+                {en
+                  ? "Local mesh is a separate future project. This worldwide federation does not use a blockchain."
+                  : "La mesh locale resta un progetto separato da sviluppare bene. Questa federazione mondiale non usa blockchain."}
+              </Text>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={showDelete} transparent animationType="fade" onRequestClose={() => setShowDelete(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
