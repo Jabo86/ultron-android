@@ -16,7 +16,8 @@ jobs:
       mongo:
         image: mongo:8.0
         ports: ['27017:27017']
-        options: --health-cmd "mongosh --quiet --eval 'quit(db.adminCommand({ping:1}).ok ? 0 : 1)'" --health-interval 10s --health-timeout 5s --health-retries 10
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'quit(db.adminCommand({ping:1}).ok ? 0 : 1)'" --health-interval 10s --health-timeout 5s --health-retries 10
     env:
       MONGO_URL: mongodb://127.0.0.1:27017/unvor_attachment_test
       DB_NAME: unvor_attachment_test
