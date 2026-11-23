@@ -45,7 +45,7 @@ const attach=vm.runInNewContext(`(${generate(handlers.attachFile).code})`,contex
 await attach();assert.equal(pickerOptions.multiple,true);assert.equal(selectedDraftFiles.length,2);assert.equal(uploads,0);assert.equal(sends,0);assert.equal(checks,0,'selection must not wait for network');
 const chosenDraft=[...selectedDraftFiles];
 const confirm=vm.runInNewContext(`(${generate(handlers.sendDocumentsDraft).code})`,context);
-await confirm();assert.equal(uploads,2);assert.equal(sends,1);assert.equal(context.documentDraft.current.length,0);
+await Promise.all([confirm(),confirm()]);assert.equal(uploads,2);assert.equal(sends,1);assert.equal(context.documentDraft.current.length,0);
 context.documentDraft.current=chosenDraft;context.maySendToContact=async()=>false;await confirm();assert.equal(sends,1,'denied contact must not send files');
 
 context.maySendToContact=async()=>true;let lose=true;

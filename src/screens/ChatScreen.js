@@ -114,6 +114,7 @@ export default function ChatScreen({ route, navigation }) {
   const [showPollComposer,setShowPollComposer]=useState(false);
   const [pollBusy,setPollBusy]=useState(false);
   const pollPrepared=useRef(null);
+  const pollSubmitBusy=useRef(false);
   const [pollState,setPollState]=useState({polls:new Map(),secrets:{}});
   const pollSyncSignature=useRef("");
   const pollRevealing=useRef(new Set());
@@ -686,7 +687,8 @@ export default function ChatScreen({ route, navigation }) {
     } catch(error){setErr(api.apiErr(error));throw error;}
   };
   const createPoll = async (form) => {
-    if(pollBusy)return;
+    if(pollSubmitBusy.current)return;
+    pollSubmitBusy.current=true;
     setPollBusy(true);setErr("");
     try {
       const {packet,secret}=pollPrepared.current || makeDirectPoll(form);
@@ -695,7 +697,7 @@ export default function ChatScreen({ route, navigation }) {
       await sendPollEvent(packet);
       setShowPollComposer(false);pollPrepared.current=null;
     }catch(error){setErr(api.apiErr(error));}
-    finally{setPollBusy(false);}
+    finally{pollSubmitBusy.current=false;setPollBusy(false);}
   };
   useEffect(()=>{
     let active=true,retry;
@@ -991,7 +993,7 @@ export default function ChatScreen({ route, navigation }) {
     discardDocuments(removed);
   };
   const sendDocumentsDraft = async () => {
-    if (sending || !documentDraft.current.length || deletingChat.current) return;
+    if (sending || documentUploads.current.size || !documentDraft.current.length || deletingChat.current) return;
     const files = [...documentDraft.current], caption = text.trim(), quote = replyTo;
     const check=api.authenticatedScope(user);
     const signature=sha256Hex(JSON.stringify([files.map(f=>[f.uri,f.size]),caption,quote,ttl]));

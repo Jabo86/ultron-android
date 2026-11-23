@@ -1,4 +1,4 @@
-import React,{useEffect,useState} from 'react';
+import React,{useEffect,useState,useRef} from 'react';
 import {View,TouchableOpacity,StyleSheet,ActivityIndicator} from 'react-native';
 import {Ionicons} from '@expo/vector-icons';
 import {Text,TextInput} from './HudText';
@@ -7,6 +7,7 @@ import {useI18n} from '../lib/i18n';
 import {orderedPollOptions,pollPacket} from '../lib/directPolls';
 import {randomHex} from '../lib/crypto';
 export default function DirectPollCard({poll,onPacket,peerName,onProfile}){
+ const actionBusy=useRef(false);
  const {lang}=useI18n(),say=(it,en)=>lang==='it'?it:en;
  const [selection,setSelection]=useState(poll.votes.me||[]),[busy,setBusy]=useState(false),[newOption,setNewOption]=useState(''),[adding,setAdding]=useState(false),[explain,setExplain]=useState(false),[now,setNow]=useState(Date.now());
  useEffect(()=>{setSelection(poll.votes.me||[]);},[JSON.stringify(poll.votes.me)]);
@@ -14,7 +15,7 @@ export default function DirectPollCard({poll,onPacket,peerName,onProfile}){
  const locked=closed||busy||(poll.settings.quiz&&own)||(voted&&!poll.settings.canChange);
  useEffect(()=>{if(!poll.closesAt||closed)return;const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[poll.closesAt,closed]);
  const total=Object.values(poll.votes).filter(v=>v.length).length,results=!poll.settings.quiz||voted||own;
- const action=async(kind,fields)=>{setBusy(true);try{await onPacket(pollPacket(poll.id,kind,fields));if(kind==='option'){setAdding(false);setNewOption('');}}catch{/* The conversation displays the error. */}finally{setBusy(false);}};
+ const action=async(kind,fields)=>{if(actionBusy.current)return;actionBusy.current=true;setBusy(true);try{await onPacket(pollPacket(poll.id,kind,fields));if(kind==='option'){setAdding(false);setNewOption('');}}catch{/* The conversation displays the error. */}finally{actionBusy.current=false;setBusy(false);}};
  const options=orderedPollOptions(poll);
  return <View style={s.root} testID="direct-poll-card">
   <View style={s.heading}><Ionicons name={poll.settings.quiz?'school-outline':'stats-chart-outline'} color={theme.accent} size={21}/><Text style={s.type}>{poll.settings.quiz?'QUIZ':say('SONDAGGIO','POLL')}{closed?' · '+say('CHIUSO','CLOSED'):''}</Text>{busy&&<ActivityIndicator size="small" color={theme.accent}/>}</View>
