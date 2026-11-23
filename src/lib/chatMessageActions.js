@@ -10,6 +10,12 @@ export const shareMessageText = text => withSystemActivity(() => Share.share({ m
 const empty = Object.freeze([]);
 let writes = Promise.resolve();
 
+export async function hiddenMessageIds(user, conversation) {
+  if (!user?.lns || !user?.server || !conversation) return [];
+  const data = await getBlob("message-actions:" + sha256Hex(JSON.stringify([user.server, user.lns, conversation])));
+  return data?.hidden || [];
+}
+
 export function useMessagePreferences(user, conversation) {
   const scope = user?.lns && user?.server && conversation
     ? "message-actions:" + sha256Hex(JSON.stringify([user.server, user.lns, conversation])) : null;

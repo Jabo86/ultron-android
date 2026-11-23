@@ -36,6 +36,7 @@ jobs:
           if (( status > 1 )); then exit "$status"; fi
           node tools/verify-ultron-pilot-dependencies.mjs audit "$audit_report"
           node tools/verify-unvor-brand.cjs
+          node tools/verify-unvor-search.cjs
           node tools/verify-ultron-document-picker.mjs
           node tools/verify-ultron-binary-upload.mjs
           node tools/verify-ultron-contact-badge.cjs
