@@ -45,7 +45,7 @@ const receipt = raw.slice(raw.indexOf("function hostedPendingName"), raw.indexOf
 const save = raw.slice(raw.indexOf("async function saveAll"), raw.indexOf("let stateQueue"));
 let fail = false, writes = 0;
 const open = () => runInNewContext(save + receipt + "\nreceiveHostedRatchet", {
-  archivablePayload, historyRecord, ratchetDecrypt, initReceiver2Gens, initReceiver, verifyHostedRatchetInit, sha256Hex,
+  archivablePayload, historyRecord, ratchetDecrypt, initReceiver2Gens, initReceiver, verifyHostedRatchetInitAsync:async(...args)=>verifyHostedRatchetInit(...args), sha256Hex,
   requireHostedRatchet: async () => {},
   api: { authenticatedScope: () => () => {} }, hostedPrekeyDevice: () => myDev, bytesToHex, sessionKey,
   withRatchetState: async (fn) => fn(), withHostedPrekeyStorage: async (fn) => fn(),
@@ -92,20 +92,21 @@ const saveReads = (disk) => ({
     for (const [name, value] of entries) disk.set(name, structuredClone(value));
   },
 });
-function app(user, dev, partnerDev, disk) {
+function app(user, dev, partnerDev, disk, options={}) {
   return runInNewContext(save + receipt + "\n({ receiveHostedRatchet, sendHostedRatchet })", {
     ...saveReads(disk), archivablePayload, historyRecord, hostedSentRecord, sha256Hex, randomHex, bytesToHex,
     initReceiver2Gens, initReceiver, initSender2, sessionKey, ratchetEncrypt, ratchetDecrypt,
-    signHostedRatchetInit, verifyHostedRatchetInit, BLOB: "rat", MAX_SESSIONS: 200,
+    signHostedRatchetInitAsync:async(...args)=>signHostedRatchetInit(...args), verifyHostedRatchetInitAsync:async(...args)=>verifyHostedRatchetInit(...args), BLOB: "rat", MAX_SESSIONS: 200,
     hostedPrekeyDevice: () => dev, parsePools: ({ devices }) => devices,
     requireHostedRatchet: async (u, peer) => { migrated.add(u.lns + peer); },
-    withRatchetState: async (fn) => fn(), withHostedPrekeyStorage: async (fn) => fn(),
+    withRatchetState: options.stateLock || (async (fn) => fn()), withHostedPrekeyStorage: async (fn) => fn(),
     claimVerifiedHostedPrekey: async () => { claims++; return { id: claims === 1 ? pkId : randomHex(16), kem: bytesToHex(prekey.publicKey) }; },
     api: {
       authenticatedScope: () => () => {},
       pilotPurgeStatus: async () => generation === null ? null : { generation },
       hostedPrekeyPools: async () => ({ devices: [{ device: partnerDev }] }),
       sendHostedRatchet: async (wire) => {
+        await options.networkGate?.();
         attempts++;
         const previous = rows.get(wire.send_id);
         if (previous) assert.deepEqual(structuredClone(wire), previous.wire);
@@ -157,3 +158,16 @@ assert.equal(fresh.wire.generation, 1);
 assert.notEqual(fresh.envelope.session_id, old.envelope.session_id);
 assert.ok(fresh.envelope.h.init);
 console.log("ULTRON pilot: retired outbox cannot replay and a new generation starts a new session.");
+
+let releaseNetwork, reachedNetwork, callsToNetwork=0, stateChain=Promise.resolve();
+const networkGate=new Promise(resolve=>releaseNetwork=resolve), reached=new Promise(resolve=>reachedNetwork=resolve);
+const stateLock=fn=>{const task=stateChain.then(fn);stateChain=task.catch(()=>{});return task;};
+const concurrent=app(alice,theirDev,myDev,aliceDisk,{stateLock,networkGate:async()=>{callsToNetwork++;reachedNetwork();await networkGate;}});
+const inFlight=concurrent.sendHostedRatchet(packMessage('slow transport'),alice,bob.lns,'',contact(bob));
+await reached;
+assert.ok([...aliceDisk.values()].some(value=>value?.wire?.send_id),'outbox must be durable before network starts');
+await Promise.race([stateLock(async()=>{}),new Promise((_,reject)=>setTimeout(()=>reject(new Error('network held the receive lock')),300))]);
+const queued=concurrent.sendHostedRatchet(packMessage('next message'),alice,bob.lns,'',contact(bob));
+await new Promise(resolve=>setImmediate(resolve));assert.equal(callsToNetwork,1,'same-peer sends remain ordered');
+releaseNetwork();await Promise.all([inFlight,queued]);assert.equal(callsToNetwork,2);
+console.log('Slow send transport does not hold the shared receive lock; durable reservation and same-peer send ordering preserved.');

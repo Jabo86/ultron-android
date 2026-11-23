@@ -230,6 +230,21 @@ export function decryptEnvelope(env, kemSecretKey) {
   }
 }
 
+let nativeMessageCrypto=null;
+export function setNativeMessageCrypto(provider){nativeMessageCrypto=provider;}
+export async function signMessageAsync(message,secret){
+  if(!nativeMessageCrypto)return signMessage(message,secret);
+  return nativeMessageCrypto.sign(bytesToBase64(utf8Encode(String(message))),secret);
+}
+export async function verifyMessageAsync(message,signature,publicKey){
+  if(!nativeMessageCrypto)return verifyMessage(message,signature,publicKey);
+  try{return await nativeMessageCrypto.verify(bytesToBase64(utf8Encode(String(message))),signature,publicKey);}catch{return false;}
+}
+export async function signChallengeAsync(nonceHex,secret){
+  if(!nativeMessageCrypto)return signChallenge(nonceHex,secret);
+  return nativeMessageCrypto.sign(bytesToBase64(hexToBytes(nonceHex)),secret);
+}
+
 // ── Base64 (Hermes-safe, no atob/btoa) ──
 const _B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 export function bytesToBase64(bytes) {

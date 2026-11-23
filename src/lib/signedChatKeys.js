@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { DEFAULT_SERVER } from "../config";
 import * as api from "./api";
 import { sha256Hex } from "./crypto";
-import { signChatKeys, verifyChatKeys } from "./signedKeyProof";
+import { signChatKeys, verifyChatKeysAsync } from "./signedKeyProof";
 
 export async function publishSignedChatKeys(owner, secret, kem, dh) {
   if (api.getServerUrl() !== DEFAULT_SERVER || !owner.endsWith("@ultron.uns")) return;
@@ -25,7 +25,7 @@ export function hostedSignedChatKeys(owner, peer, validateKeys) {
       if (pinned) throw new Error("Le chiavi firmate del contatto non sono più disponibili. Invio interrotto.");
       return null;
     }
-    if (bundle.signed !== true || !verifyChatKeys(peer, bundle)) {
+    if (bundle.signed !== true || !(await verifyChatKeysAsync(peer, bundle))) {
       throw new Error("Firma delle chiavi del contatto non valida. Invio interrotto.");
     }
     const identity = sha256Hex(bundle.identity_pk_hex);

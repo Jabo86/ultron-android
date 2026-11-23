@@ -34,5 +34,42 @@ class AttachmentCryptoModule(ctx: ReactApplicationContext) : ReactContextBaseJav
       finally { secret?.fill(0) }
     }
   }
+  private fun encodedHex(bytes: ByteArray): String {
+    val alphabet = "0123456789abcdef"
+    val result = CharArray(bytes.size*2)
+    for (i in bytes.indices) { val value = bytes[i].toInt() and 255; result[i*2]=alphabet[value ushr 4]; result[i*2+1]=alphabet[value and 15] }
+    return String(result)
+  }
+  @ReactMethod
+  fun signMLDSA(data: String, key: String, promise: Promise) {
+    worker.execute {
+      var secret: ByteArray? = null
+      var parameters: org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters? = null
+      try {
+        require(data.length <= 1500000)
+        secret = hex(key,4032)
+        parameters = org.bouncycastle.crypto.params.MLDSAPrivateKeyParameters(org.bouncycastle.crypto.params.MLDSAParameters.ml_dsa_65,secret)
+        val signer = org.bouncycastle.crypto.signers.MLDSASigner()
+        signer.init(true,org.bouncycastle.crypto.params.ParametersWithRandom(parameters,java.security.SecureRandom()))
+        val bytes = Base64.decode(data,Base64.NO_WRAP)
+        signer.update(bytes,0,bytes.size)
+        promise.resolve(encodedHex(signer.generateSignature()))
+      } catch(e: Exception) { promise.reject("MESSAGE_SIGN", "Firma del messaggio non riuscita.", e) }
+      finally { parameters?.destroy(); secret?.fill(0) }
+    }
+  }
+  @ReactMethod
+  fun verifyMLDSA(data: String, signature: String, publicKey: String, promise: Promise) {
+    worker.execute {
+      try {
+        require(data.length <= 1500000)
+        val signer = org.bouncycastle.crypto.signers.MLDSASigner()
+        signer.init(false,org.bouncycastle.crypto.params.MLDSAPublicKeyParameters(org.bouncycastle.crypto.params.MLDSAParameters.ml_dsa_65,hex(publicKey,1952)))
+        val bytes = Base64.decode(data,Base64.NO_WRAP)
+        signer.update(bytes,0,bytes.size)
+        promise.resolve(signer.verifySignature(hex(signature,3309)))
+      } catch(e: Exception) { promise.resolve(false) }
+    }
+  }
   override fun invalidate() { worker.shutdown(); super.invalidate() }
 }

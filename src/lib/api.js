@@ -4,7 +4,7 @@ import { postEncryptedBytes } from "./binaryTransport";
 // so the same code path is exercised by the Node E2E test.
 import axios from "axios";
 import { DEFAULT_SERVER, RATCHET_PILOT } from "../config";
-import { signChallenge } from "./crypto";
+import { signChallenge, signChallengeAsync } from "./crypto";
 import { randPad } from "./pad";
 
 export function normalizeServer(url) {
@@ -93,7 +93,7 @@ async function ensureSession() {
   const pending = (async () => {
     const { data: c } = await transport.post("/public/sign-challenge", { lns_name: key.lns }, { signal });
     checkSession(signal);
-    const signature_hex = signChallenge(c.nonce_hex, key.sk);
+    const signature_hex = await signChallengeAsync(c.nonce_hex, key.sk);
     const { data: r } = await transport.post("/public/session/verify", {
       lns_name: key.lns, nonce_id: c.nonce_id, signature_hex,
     }, { signal });
