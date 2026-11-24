@@ -1,0 +1,27 @@
+name: Feature proposal
+description: Propose an improvement
+title: "[Feature]: "
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options: [Chat, Launcher, Network, Documentation, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution and alternatives
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria and privacy implications

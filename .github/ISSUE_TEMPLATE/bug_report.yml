@@ -1,0 +1,37 @@
+name: Bug report
+description: Report a reproducible non-security problem
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: "Do not disclose vulnerabilities, private chats, identifiers or credentials here. Use the private process in SECURITY.md for vulnerabilities."
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options: [Chat, Launcher, Network, Documentation, Other]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit / device and Android version
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior and expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Use test accounts and sanitized data.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence or logs
