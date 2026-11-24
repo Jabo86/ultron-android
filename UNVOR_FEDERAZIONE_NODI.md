@@ -15,6 +15,9 @@ Oggi il client chat usa un gateway predefinito e la federazione mondiale non è 
 - **Anonimato:** identità di nodo pseudonime; mai pubblicare nome del gestore o coordinate precise. Un percorso breve riduce i ritardi ma il relay vede i peer adiacenti; nascondere anche gli IP richiede un overlay multi-hop/onion che può aggiungere latenza. Il protocollo deve ridurre hop e dati osservabili senza promettere anonimato assoluto.
 - **Sicurezza:** cifratura end-to-end invariata; autenticazione reciproca dei nodi, certificati/chiavi verificati, replay protection volatile, limiti di connessione e nessuna persistenza di payload o metadati per utente.
 - La selezione del percorso misura separatamente latenza e livello di esposizione; non invia contenuti di chat nei probe di prestazione.
+- **Modalità rapida predefinita:** il telefono mantiene una connessione autenticata al relay d'ingresso; i relay inoltrano il ciphertext sul percorso breve selezionato in base a RTT, perdita e carico. L'identità UNVOR e il contenuto leggibili dal destinatario restano nella busta E2EE. Il destinatario non riceve l'IP di rete del mittente né l'ID del relay d'ingresso.
+- **Limite esplicito:** il relay d'ingresso vede l'IP del peer collegato e il prossimo hop; il relay di consegna vede il peer precedente. Tempi e dimensioni possono restare osservabili dai relay/provider. Questi dati si usano solo per inoltro volatile e non si salvano in log, database o statistiche persistenti. Questa modalità non promette di nascondere l'IP al relay o al provider.
+- Una modalità opzionale multi-hop/onion può ridurre ciò che ciascun relay sa sull'origine, con latenza misurata separatamente.
 
 ## 2. Regola di conservazione: zero persistenza per i messaggi
 
