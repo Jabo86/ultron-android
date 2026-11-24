@@ -1,0 +1,33 @@
+name: UNVOR Launcher UI
+on:
+  push:
+    branches: [fix/unvor-launcher]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install browser test
+        run: |
+          npm ci --prefix unvor-launcher/test-tools --no-audit --no-fund
+          cd unvor-launcher/test-tools
+          npx playwright install --with-deps chromium
+      - name: Check home controls and layout
+        run: |
+          python3 -m http.server 8933 --bind 127.0.0.1 --directory unvor-launcher/UNVORLauncher/app/src/main/assets/hud >/tmp/unvor-ui-server.log 2>&1 &
+          NODE_PATH="$PWD/unvor-launcher/test-tools/node_modules" node unvor-launcher/browser-test.cjs
+      - name: Keep UI check results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unvor-launcher-ui
+          path: |
+            unvor-launcher/test-*.png
+            unvor-launcher/UI-VERIFICHE.json
