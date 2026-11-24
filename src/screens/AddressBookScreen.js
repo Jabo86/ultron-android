@@ -42,6 +42,7 @@ export default function AddressBookScreen({ navigation, route }) {
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const contactInput = useRef(null);
   const [q, setQ] = useState("");
   const [adding, setAdding] = useState(false);
   const [menuFor, setMenuFor] = useState(null);
@@ -351,10 +352,11 @@ export default function AddressBookScreen({ navigation, route }) {
       <View style={styles.searchBox}>
         <Ionicons name="search-outline" size={18} color={theme.textFaint} />
         <TextInput
+          ref={contactInput}
           style={styles.searchInput}
           value={q}
           onChangeText={setQ}
-          placeholder={t("rubrica.searchPlaceholder")}
+          placeholder={lang === "en" ? "Name or ID, e.g. name@ultron.uns" : "Nome o ID, es. nome@ultron.uns"}
           placeholderTextColor={theme.textFaint}
           selectionColor={tint}
           cursorColor={theme.text}
@@ -366,6 +368,12 @@ export default function AddressBookScreen({ navigation, route }) {
         {q ? <TouchableOpacity onPress={() => setQ("")}><Ionicons name="close-outline" size={18} color={theme.textFaint} /></TouchableOpacity> : null}
       </View>
 
+      {!q.trim() && (
+        <TouchableOpacity style={styles.addExt} accessibilityRole="button" onPress={() => contactInput.current?.focus()} testID="rubrica-new-contact">
+          <Ionicons name="person-add-outline" size={18} color={theme.accent} />
+          <Text style={styles.addExtTxt}>{lang === "en" ? "Add contact" : "Aggiungi contatto"}</Text>
+        </TouchableOpacity>
+      )}
       {canAdd && (
         <TouchableOpacity style={styles.addExt} onPress={addExternal} disabled={adding} testID="rubrica-add-external">
           {adding ? <ActivityIndicator color={theme.accent} /> : <Ionicons name="add-outline" size={18} color={theme.accent} />}
