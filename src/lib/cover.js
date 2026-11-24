@@ -1,15 +1,7 @@
-// TRAFFICO DI RUMORE (chaffing) — la seconda metà del "protocollo invisibile".
-//
-// Il padding (pad.js) nasconde QUANTO è grande ogni pacchetto. Questo modulo nasconde
-// QUANDO agisci: se il telefono parlasse col server solo mentre scrivi o chiami, chi osserva
-// la rete capirebbe i momenti esatti in cui comunichi, anche senza leggere nulla. Qui l'app
-// invia richieste finte (`api.coverPing`, cioè un innocuo /api/health con lo stesso padding
-// delle richieste vere) a intervalli CASUALI e continui finché l'app è in primo piano. Un
-// messaggio vero si perde in mezzo a questo rumore: dall'esterno non si distingue un momento
-// di silenzio da un momento di conversazione.
-//
-// Distribuzione esponenziale (processo di Poisson): gli intervalli sono davvero casuali, non
-// a cadenza fissa — una cadenza fissa sarebbe a sua volta un'impronta riconoscibile.
+// TRAFFICO DI COPERTURA LEGACY. Questo invia richieste GET /api/health casuali; non usa
+// lo stesso endpoint né lo stesso formato dei messaggi e quindi NON rende i messaggi
+// indistinguibili. Serve solo come rumore di fondo limitato. La copertura reale richiede
+// frame cifrati, di lunghezza fissa, inviati sullo stesso percorso dei messaggi.
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState } from "react-native";
 import * as api from "./api";
@@ -48,13 +40,13 @@ export async function setEnabled(v) {
   return enabled;
 }
 
-// v2.5.0 — IL RUMORE NON GIRA PIU SUL THREAD DELL'INTERFACCIA.
+// v2.5.0 — IL PING DI COPERTURA NON GIRA PIU SUL THREAD DELL'INTERFACCIA.
 // Prima questo modulo teneva un timer in JS e, a ogni scatto, faceva partire una fetch
 // dal thread che disegna lo schermo: una richiesta ogni ~17 s non e' molta, ma cadeva a
 // caso, quindi ogni tanto atterrava proprio mentre stavi scorrendo una lista — ed e' cosi
 // che nasce un fotogramma perso senza una causa apparente.
-// Adesso il rumore lo produce il servizio nativo (`WakeService`, thread `chaffLoop`
-// dedicato, processo separato): continua anche a schermo spento e non tocca l'interfaccia.
+// Il ping di copertura lo produce il servizio nativo (`WakeService`, thread `chaffLoop`
+// dedicato, processo separato), se Android mantiene attivo il servizio.
 // Il timer JS resta solo se il servizio nativo non c'e' (`opts.ping` nei test).
 let nativeOnly = true;
 
