@@ -42,6 +42,20 @@ public final class MainActivity extends Activity {
     private int queuedSpeechGeneration;
     private int speechGeneration;
     private String voicePhase="idle";
+    private boolean homeCovered, wakeFault;
+    private final Runnable armWake = () -> {
+        if(visible && ready && !homeCovered && !wakeFault && offline!=null && prefs.getBoolean("wake_on_home",false)
+                && "idle".equals(voicePhase) && !ttsInitializing && queuedSpeech==null
+                && checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED) offline.listenForWake();
+    };
+    private void scheduleWake(){main.removeCallbacks(armWake);if(visible)main.postDelayed(armWake,650);}
+    private void configureWake(boolean enabled){
+        if(enabled && checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){
+            pendingPermission="wake";requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},45);return;
+        }
+        prefs.edit().putBoolean("wake_on_home",enabled).apply();wakeFault=false;stopVoice();
+        emit("state",state());scheduleWake();
+    }
     private boolean agendaSpeaking;
     private static final String ORIGIN = "https://ultron.launcher.local/";
     private final Runnable refresh = new Runnable() {
@@ -49,7 +63,8 @@ public final class MainActivity extends Activity {
     };
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        offline=new OfflineVoice(this,new OfflineVoice.Callback(){public void state(String phase){voiceState(phase);}public void text(String text){if(visible)command(text);}public void error(String text){if(visible)message(text);}});
+        offline=new OfflineVoice(this,new OfflineVoice.Callback(){public void state(String phase){voiceState(phase);}public void text(String text){if(visible)command(text);}public void error(String text){wakeFault=true;if(visible)message(text);}
+        public void wake(String text){if(!visible||homeCovered)return;if(text.isEmpty())voice();else command(text);}});
         prefs = getSharedPreferences("ultron_launcher_layout_v1", MODE_PRIVATE);
         getWindow().setStatusBarColor(Color.BLACK);
         getWindow().setNavigationBarColor(Color.BLACK);
@@ -91,8 +106,8 @@ public final class MainActivity extends Activity {
         offline.warm();
     }
     private WebResourceResponse blocked(){return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));}
-    @Override protected void onResume(){super.onResume();visible=true;if(web!=null){web.onResume();web.resumeTimers();}main.removeCallbacks(refresh);main.post(refresh);if(ready&&getIntent().getBooleanExtra("openAgenda",false)){getIntent().removeExtra("openAgenda");planner();}io.execute(()->{try{AgendaStore.reschedule(this);}catch(Exception ignored){}});}
-    @Override protected void onPause(){visible=false;main.removeCallbacks(refresh);stopVoice();stopSpeaking();if(web!=null){web.onPause();web.pauseTimers();}super.onPause();}
+    @Override protected void onResume(){super.onResume();visible=true;wakeFault=false;scheduleWake();if(web!=null){web.onResume();web.resumeTimers();}main.removeCallbacks(refresh);main.post(refresh);if(ready&&getIntent().getBooleanExtra("openAgenda",false)){getIntent().removeExtra("openAgenda");planner();}io.execute(()->{try{AgendaStore.reschedule(this);}catch(Exception ignored){}});}
+    @Override protected void onPause(){visible=false;main.removeCallbacks(armWake);main.removeCallbacks(refresh);stopVoice();stopSpeaking();if(web!=null){web.onPause();web.pauseTimers();}super.onPause();}
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(visible&&ready&&intent.getBooleanExtra("openAgenda",false))planner();else if(web!=null&&ready)web.evaluateJavascript("window.UltronBack&&window.UltronBack()",null);}
     @Override public void onBackPressed(){if(web!=null&&ready)web.evaluateJavascript("window.UltronBack&&window.UltronBack()",null);}
     @Override protected void onDestroy(){visible=false;main.removeCallbacksAndMessages(null);stopVoice();if(offline!=null){offline.close();offline=null;}stopSpeaking();ttsInitToken++;if(tts!=null){tts.shutdown();tts=null;}io.shutdownNow();if(web!=null){web.removeJavascriptInterface("UltronNative");root.removeView(web);web.destroy();web=null;}super.onDestroy();}
@@ -117,7 +132,7 @@ public final class MainActivity extends Activity {
             if(memory.totalMem>0)data.put("ram",Math.round(100.0*(memory.totalMem-memory.availMem)/memory.totalMem));
             StatFs disk=new StatFs(Environment.getDataDirectory().getAbsolutePath());if(disk.getTotalBytes()>0)data.put("disk",Math.round(100.0*(disk.getTotalBytes()-disk.getAvailableBytes())/disk.getTotalBytes()));
             BatteryManager battery=(BatteryManager)getSystemService(BATTERY_SERVICE);int level=battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);if(level>=0&&level<=100)data.put("battery",level);
-            data.put("voicePhase",voicePhase);data.put("device",Build.MODEL.toUpperCase(Locale.ITALIAN));data.put("motion",prefs.getBoolean("hud_animations",true));
+            data.put("wakeEnabled",prefs.getBoolean("wake_on_home",false));data.put("voicePhase",voicePhase);data.put("device",Build.MODEL.toUpperCase(Locale.ITALIAN));data.put("motion",prefs.getBoolean("hud_animations",true));
             String weather=prefs.getString("app_weather",null);
             if(weather!=null){try{data.put("weatherApp",getPackageManager().getApplicationLabel(getPackageManager().getApplicationInfo(weather,0)).toString());}catch(Exception ignored){}}
             AlarmManager.AlarmClockInfo next=((AlarmManager)getSystemService(ALARM_SERVICE)).getNextAlarmClock();
@@ -144,7 +159,13 @@ public final class MainActivity extends Activity {
     }
     private void handle(String action,JSONObject data){
         switch(action){
-            case "ready":emit("state",state());break;
+            case "ready":emit("state",state());scheduleWake();break;
+            case "contacts":open(new Intent(Intent.ACTION_VIEW,ContactsContract.Contacts.CONTENT_URI),new Intent(Intent.ACTION_DIAL));break;
+            case "wakeMode":configureWake(data.optBoolean("enabled",false));break;
+            case "panel":
+                homeCovered=data.optBoolean("open",false);
+                if(homeCovered)stopVoice();else scheduleWake();
+                break;
             case "apps":listApps();break;
             case "choose":case "launch":launchChoice(data,action.equals("choose"));break;
             case "weather":if(!selected("weather"))emit("pick","weather");break;
@@ -202,7 +223,7 @@ public final class MainActivity extends Activity {
     private void profile(){io.execute(()->{JSONObject result=new JSONObject();try(Cursor cursor=getContentResolver().query(Uri.parse("content://com.ultron.messenger.pilot.launcherprofile/current"),null,null,null,null)){
         if(cursor!=null&&cursor.moveToFirst()){int col=cursor.getColumnIndex("lns");if(col>=0)result.put("lns",cursor.getString(col));}
     }catch(Exception ignored){}emit("profile",result);});}
-    private void voiceState(String phase){voicePhase=phase;emit("voice",phase);}
+    private void voiceState(String phase){voicePhase=phase;emit("voice",phase);if("idle".equals(phase))scheduleWake();}
     private void stopSpeaking(){speechGeneration++;queuedSpeech=null;if(tts!=null)tts.stop();voiceState("idle");}
     private List<String> voiceEngines(){
         List<String> result=new ArrayList<>();
@@ -214,6 +235,7 @@ public final class MainActivity extends Activity {
     private void configureVoice(String pkg){if(!voiceEngines().contains(pkg)){message("Motore non disponibile");return;}Intent launch=getPackageManager().getLaunchIntentForPackage(pkg);if(launch!=null){open(launch);return;}open(new Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA).setPackage(pkg),new Intent("com.android.settings.TTS_SETTINGS"),new Intent(Settings.ACTION_SETTINGS));}
     private void say(String text){
         if(!visible)return;
+        if(offline!=null)offline.stop();
         emit("answer",text);queuedSpeech=text;queuedSpeechGeneration=++speechGeneration;
         if(ttsReady&&tts!=null){speakQueued();return;}
         if(ttsInitializing)return;
@@ -221,7 +243,7 @@ public final class MainActivity extends Activity {
     }
     private void initVoice(List<String> engines,int index,int token){
         if(isDestroyed()||token!=ttsInitToken)return;
-        if(index>=engines.size()){ttsInitializing=false;ttsReady=false;tts=null;voiceState("idle");message("Nessuna voce italiana offline pronta. Apri Strumenti → Voce italiana offline per configurarla.");return;}
+        if(index>=engines.size()){ttsInitializing=false;ttsReady=false;tts=null;queuedSpeech=null;voiceState("idle");message("Nessuna voce italiana offline pronta. Apri Strumenti → Voce italiana offline per configurarla.");return;}
         String engine=engines.get(index);final TextToSpeech[] holder=new TextToSpeech[1];
         holder[0]=new TextToSpeech(this,status->main.post(()->{
             TextToSpeech candidate=holder[0];
@@ -232,6 +254,9 @@ public final class MainActivity extends Activity {
             ttsReady=true;ttsInitializing=false;
             candidate.setOnUtteranceProgressListener(new UtteranceProgressListener(){
                 public void onStart(String id){main.post(()->{if(id.equals("ultron-"+speechGeneration)&&visible)voiceState("speaking");});}
+                public void onRangeStart(String id,int start,int end,int frame){
+                    main.post(()->{if(visible && id.equals("ultron-"+speechGeneration) && "speaking".equals(voicePhase))emit("voiceBeat",1);});
+                }
                 public void onDone(String id){main.post(()->{if(id.equals("ultron-"+speechGeneration))voiceState("idle");});}
                 public void onError(String id){main.post(()->{if(id.equals("ultron-"+speechGeneration)){voiceState("idle");message("Lettura vocale non riuscita. La risposta è disponibile per iscritto.");}});}
             });
@@ -278,5 +303,5 @@ public final class MainActivity extends Activity {
             catch(Exception error){message("Calendario non disponibile");}
         });
     }
-    @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){super.onRequestPermissionsResult(request,permissions,results);String action=pendingPermission;pendingPermission=null;if(results.length==0||results[0]!=PackageManager.PERMISSION_GRANTED){message("Permesso non concesso");return;}if("voice".equals(action))voice();else if("agenda".equals(action))agenda();else if("contacts".equals(action)&&pendingContactName!=null)callContact(pendingContactName);else if("call".equals(action)&&pendingPhone!=null)call(pendingPhone);else if("reminders".equals(action))reminderPermissions();}
+    @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){super.onRequestPermissionsResult(request,permissions,results);String action=pendingPermission;pendingPermission=null;if(results.length==0||results[0]!=PackageManager.PERMISSION_GRANTED){message("Permesso non concesso");return;}if("wake".equals(action))configureWake(true);else if("voice".equals(action))voice();else if("agenda".equals(action))agenda();else if("contacts".equals(action)&&pendingContactName!=null)callContact(pendingContactName);else if("call".equals(action)&&pendingPhone!=null)call(pendingPhone);else if("reminders".equals(action))reminderPermissions();}
 }

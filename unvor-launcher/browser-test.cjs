@@ -1,7 +1,7 @@
 const {chromium}=require('playwright');
 const fs=require('node:fs'),assert=require('node:assert/strict');
 (async()=>{
- const browser=await chromium.launch({headless:true,args:['--no-sandbox']});
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH || undefined,args:['--no-sandbox']});
  const errors=[],results=[];
  for(const viewport of [{width:393,height:852},{width:360,height:740},{width:412,height:915}]){
   const page=await browser.newPage({viewport,deviceScaleFactor:1});page.on('pageerror',e=>errors.push(e.message));
@@ -13,10 +13,18 @@ const fs=require('node:fs'),assert=require('node:assert/strict');
   const overlap=[];
   for(let i=0;i<bounds.length;i++)for(let j=i+1;j<bounds.length;j++){const a=bounds[i],b=bounds[j];if(a.x<b.x+b.w-1&&b.x<a.x+a.w-1&&a.y<b.y+b.h-1&&b.y<a.y+a.h-1)overlap.push([a.action,b.action]);}
   assert.deepEqual(overlap,[],`Overlapping controls at ${viewport.width}`);
-  for(const selector of ['[data-action="alarms"]','[data-action="files"]','[data-action="settings"]','[data-action="network"]','[data-action="calls"]','[data-action="sms"]','[data-action="ultron"]','[data-action="browser"]'])await page.locator(selector).first().click();
+  for(const selector of ['[data-action="alarms"]','[data-action="files"]','[data-action="settings"]','[data-action="network"]','[data-action="contacts"]','[data-action="ultron"]','[data-action="browser"]'])await page.locator(selector).first().click();
   await page.locator('[data-action="tools"]').click();assert.ok(await page.locator('#dialog-content').innerText().then(t=>t.includes('Agenda UNVOR')));await page.locator('#close').click();
   await page.locator('[data-action="privacy"]').click();assert.ok((await page.locator('#dialog-content').innerText()).includes('Non invia'));await page.locator('#close').click();
-  await page.locator('#query').fill('prova & sicurezza');await page.locator('#query').press('Enter');
+  await page.locator('#toggle-search').click();await page.locator('#query').fill('prova & sicurezza');await page.locator('#query').press('Enter');
+  await page.locator('#globe-voice-button').click();
+  assert.equal(await page.locator('#voice-label').innerText(),'IN ASCOLTO');
+  await page.evaluate(()=>{window.UltronReceive('voice','speaking');window.UltronReceive('voiceBeat',1);});
+  assert.equal(await page.locator('#voice-label').innerText(),'UNVOR PARLA');
+  await page.waitForTimeout(650);
+  await page.screenshot({path:`unvor-launcher/active-${viewport.width}.png`});
+  await page.evaluate(()=>window.UltronReceive('voice','idle'));
+  assert.equal(await page.locator('body').evaluate(el=>el.classList.contains('voice-active')),false);
   const actions=await page.evaluate(()=>window.testActions);assert.ok(actions.some(x=>x.action==='search'&&x.payload.query==='prova & sicurezza'));
   assert.equal((await page.locator('#home').innerText()).includes('ULTRON'),false);
   results.push({viewport,controls:bounds.length,overlap:false});await page.close();

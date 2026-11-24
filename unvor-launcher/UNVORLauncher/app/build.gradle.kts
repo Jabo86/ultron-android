@@ -6,8 +6,8 @@ android {
   applicationId = "com.ultron.launcher"
   minSdk = 29
   targetSdk = 35
-  versionCode = 104
-  versionName = "0.7.0-unvor"
+  versionCode = 105
+  versionName = "0.8.0-ciano"
  }
  compileOptions { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
 }
