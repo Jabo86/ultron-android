@@ -9,6 +9,13 @@ La mesh locale resta un progetto separato da sviluppare bene. Questa fase riguar
 
 Oggi il client chat usa un gateway predefinito e la federazione mondiale non è attiva. Per passare al modello “solo postino” non basta aggiungere nodi: occorre definire e provare il percorso messaggi, la consegna live e la gestione offline solo sul dispositivo mittente. L'app non deve mostrare la rete come attiva finché due server indipendenti non comunicano davvero.
 
+### Priorità guida: velocità, anonimato e sicurezza
+
+- **Velocità:** mantenere connessioni autenticate riutilizzabili, evitare handshake TLS per ogni messaggio, preferire percorsi brevi e scegliere i peer usando RTT, perdita e carico misurati. La prova deve misurare p50/p95 con entrambi i telefoni online, su tratte vicine e intercontinentali, prima di fissare una promessa di consegna.
+- **Anonimato:** identità di nodo pseudonime; mai pubblicare nome del gestore o coordinate precise. Un percorso breve riduce i ritardi ma il relay vede i peer adiacenti; nascondere anche gli IP richiede un overlay multi-hop/onion che può aggiungere latenza. Il protocollo deve ridurre hop e dati osservabili senza promettere anonimato assoluto.
+- **Sicurezza:** cifratura end-to-end invariata; autenticazione reciproca dei nodi, certificati/chiavi verificati, replay protection volatile, limiti di connessione e nessuna persistenza di payload o metadati per utente.
+- La selezione del percorso misura separatamente latenza e livello di esposizione; non invia contenuti di chat nei probe di prestazione.
+
 ## 2. Regola di conservazione: zero persistenza per i messaggi
 
 Un nodo mondiale:
@@ -78,6 +85,7 @@ La configurazione tecnica e la chiave del nodo restano sul server; il relay non 
 - Avviso chiaro: i nodi non archiviano; mittente e destinatario devono essere connessi per la consegna; la coda resta sul dispositivo mittente.
 - Nota privacy: i relay non salvano contenuti o log, ma IP, tempi e dimensioni dei pacchetti sono visibili durante il transito a livello di rete; le opzioni onion/padding attenuano questa esposizione a costo di latenza.
 - Opzione per disabilitare relay specifici, vedere le chiavi/impronte e passare a **Solo rete privata**.
+- **Mappa Home:** mostrare il totale come stima basata su annunci/heartbeat firmati con scadenza breve e deduplicazione per identità di nodo; il riepilogo resta volatile e non contiene utenti o messaggi. Disegnare puntini casuali come visualizzazione astratta, dichiarando chiaramente che non rappresentano posizioni reali. Non mostrare IP, identità stabile del nodo o nome del gestore. Partizioni, nodi offline e identità multiple possono rendere il totale impreciso; non usare la mappa come fonte di routing o prova di affidabilità.
 - Dichiarazione sulla dipendenza dal push provider se si vuole ricevere notifiche a app chiusa.
 
 La schermata informativa attualmente in bozza deve riflettere queste regole e restare etichettata **in preparazione**.
@@ -103,7 +111,7 @@ Non fare una sostituzione automatica delle stringhe interne. I prefissi usati pe
 2. **Inoltro live:** mantenere A collegato al nodo 1 e B al nodo 2; trasmettere un envelope cifrato Milano↔server remoto↔America.
 3. **Stateless check:** controllare filesystem, database e log del relay prima/dopo; nessun payload o metadato per utente deve risultare salvato.
 4. **Failover:** spegnere un nodo; provare una rotta alternativa. Se B è offline, verificare che il messaggio resti solo nella coda locale di A e venga ritentato dopo la riconnessione.
-5. **Prestazioni:** misurare latenza live, uso di RAM e banda, dimensione dei buffer volatili e tempo di cancellazione.
+5. **Prestazioni e privacy:** misurare p50/p95 di consegna con connessioni riutilizzate, numero di hop, perdita, RAM e banda, separando tratte vicine e intercontinentali e confrontando percorso breve e onion; verificare che i puntini della mappa non siano geolocalizzati e che le statistiche non persistano.
 6. **Client:** solo dopo i test precedenti, attivare **Rete automatica** e la guida **Contribuisci come relay** nelle Impostazioni.
 
 **Condizione di rilascio:** non mostrare un comando funzionante per avviare nodi finché l'inoltro live tra server indipendenti e la verifica zero-persistenza non sono stati provati. La mesh locale resta un progetto separato e non viene rimossa in questa fase.
