@@ -18,7 +18,7 @@ export async function verifiedContact(user, peer) {
   return signedContactKeys(user, peer, pinned);
 }
 
-async function mutualChatContact(user, peer) {
+export async function mutualChatContact(user, peer) {
   const [state, pinned] = await Promise.all([api.contactState(peer), getVerified(peer)]);
   if (state?.mutual !== true || state.blocked) throw new Error("Per scrivervi dovete aggiungervi entrambi in Rubrica.");
   return signedContactKeys(user, peer, pinned);
