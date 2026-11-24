@@ -379,6 +379,10 @@ export default function ConversationsScreen({ navigation }) {
         <View style={styles.signalLead} /><View style={styles.signalTail} />
       </View>
 
+      <TouchableOpacity style={{ flexDirection: "row", alignItems: "center", alignSelf: "flex-start", paddingHorizontal: 18, minHeight: 46, gap: 8 }} accessibilityRole="button" onPress={openNew} testID="conv-new-chat">
+        <Ionicons name="add-circle-outline" size={24} color={tint} />
+        <Text style={{ color: tint }}>{lang === "en" ? "New conversation" : "Nuova conversazione"}</Text>
+      </TouchableOpacity>
       <TrialBanner />
 
       <FlatList

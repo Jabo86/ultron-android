@@ -12,6 +12,7 @@ import Avatar from "../components/Avatar";
 import { useUnread } from "../context/UnreadContext";
 import { getVerified } from "../lib/verify";
 
+import { contactAddress } from "../lib/contactAddress";
 import { RATCHET_PILOT } from "../config";
 
 const contactName = (contact) => contact.display_name?.trim() || contact.lns.split("@")[0];
@@ -42,7 +43,9 @@ export default function AddressBookScreen({ navigation, route }) {
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const contactInput = useRef(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [address, setAddress] = useState("");
+  const submittingContact = useRef(false);
   const [q, setQ] = useState("");
   const [adding, setAdding] = useState(false);
   const [menuFor, setMenuFor] = useState(null);
@@ -182,6 +185,21 @@ export default function AddressBookScreen({ navigation, route }) {
       ],
     );
   }, [focusLns, loading, contacts]);
+
+  const saveNewContact = async () => {
+    if (submittingContact.current) return;
+    const id = contactAddress(address);
+    if (!id) return Alert.alert("ID UNVOR", lang === "en" ? "Enter the full ID, e.g. name@ultron.uns" : "Inserisci l’ID completo, ad esempio nome@ultron.uns");
+    submittingContact.current = true;
+    setAdding(true);
+    try {
+      await api.addContact(id);
+      setQ("");
+      setCreateOpen(false);
+      await load();
+    } catch (e) { Alert.alert("UNVOR", api.apiErr(e)); }
+    finally { submittingContact.current = false; setAdding(false); }
+  };
 
   const addExternal = async () => {
     if (!candidate) return;
@@ -352,7 +370,6 @@ export default function AddressBookScreen({ navigation, route }) {
       <View style={styles.searchBox}>
         <Ionicons name="search-outline" size={18} color={theme.textFaint} />
         <TextInput
-          ref={contactInput}
           style={styles.searchInput}
           value={q}
           onChangeText={setQ}
@@ -368,12 +385,22 @@ export default function AddressBookScreen({ navigation, route }) {
         {q ? <TouchableOpacity onPress={() => setQ("")}><Ionicons name="close-outline" size={18} color={theme.textFaint} /></TouchableOpacity> : null}
       </View>
 
-      {!q.trim() && (
-        <TouchableOpacity style={styles.addExt} accessibilityRole="button" onPress={() => contactInput.current?.focus()} testID="rubrica-new-contact">
-          <Ionicons name="person-add-outline" size={18} color={theme.accent} />
-          <Text style={styles.addExtTxt}>{lang === "en" ? "Add contact" : "Aggiungi contatto"}</Text>
-        </TouchableOpacity>
-      )}
+      <TouchableOpacity style={styles.addExt} accessibilityRole="button" onPress={() => { setAddress(""); setCreateOpen(true); }} testID="rubrica-new-contact">
+        <Ionicons name="person-add-outline" size={18} color={theme.accent} />
+        <Text style={styles.addExtTxt}>{lang === "en" ? "Create new contact" : "Crea nuovo contatto"}</Text>
+      </TouchableOpacity>
+      <Modal visible={createOpen} transparent animationType="slide" onRequestClose={() => { if (!submittingContact.current) setCreateOpen(false); }}>
+        <View style={styles.sheetWrap}><View style={styles.sheet}>
+          <Text style={styles.sheetTitle}>{lang === "en" ? "New contact" : "Nuovo contatto"}</Text>
+          <TextInput style={styles.searchInputForContact} placeholder="nome@ultron.uns" placeholderTextColor={theme.textFaint} accessibilityLabel="ID UNVOR" autoCapitalize="none" autoCorrect={false} value={address} onChangeText={setAddress} editable={!adding} />
+          <TouchableOpacity style={styles.sheetClose} disabled={adding} onPress={saveNewContact}>
+            <Text style={styles.sheetCloseTxt}>{lang === "en" ? "Save contact" : "Salva contatto"}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.sheetClose} disabled={adding} onPress={() => setCreateOpen(false)}>
+            <Text style={styles.sheetCloseTxt}>{t("cancel")}</Text>
+          </TouchableOpacity>
+        </View></View>
+      </Modal>
       {canAdd && (
         <TouchableOpacity style={styles.addExt} onPress={addExternal} disabled={adding} testID="rubrica-add-external">
           {adding ? <ActivityIndicator color={theme.accent} /> : <Ionicons name="add-outline" size={18} color={theme.accent} />}
@@ -474,6 +501,7 @@ const makeStyles = (tint) => StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 18, marginTop: 12,
     backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.border, borderRadius: 12, paddingHorizontal: 12,
   },
+  searchInputForContact: { color: theme.text, paddingVertical: 12, fontSize: 16 },
   searchInput: { flex: 1, color: theme.text, fontSize: 15, paddingVertical: 10, includeFontPadding: false },
   addExt: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
