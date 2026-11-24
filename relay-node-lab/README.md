@@ -2,7 +2,7 @@
 
 This is an isolated two-server proof of concept for the UNVOR Android repository. It is **not production-ready and is not wired into the app**.
 
-Before connecting real app traffic, implement and review the client-delivery and cover-traffic contract. The current health/probe endpoints are not a chat transport, and ordinary conversations still use the existing gateway.
+Before connecting real app traffic, implement and review the client-delivery and cover-traffic contract in [CLIENT_INTEGRATION.md](./CLIENT_INTEGRATION.md). The current health/probe endpoints are not a chat transport, and ordinary conversations still use the existing gateway.
 
 ## What the lab checks
 

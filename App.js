@@ -76,6 +76,7 @@ import { flushBlobs } from "./src/lib/lock";
 import * as cover from "./src/lib/cover";
 import { initNotificationHandler } from "./src/lib/notifications";
 import SettingsScreen from "./src/screens/SettingsScreen";
+import GlobalNodesScreen from "./src/screens/GlobalNodesScreen";
 import { UpdateBanner } from "./src/components/UpdateBanner";
 
 import NotificationsScreen from "./src/screens/NotificationsScreen";
@@ -472,6 +473,7 @@ function Root() {
           <Stack.Screen name="Licenses" component={LicensesScreen} options={{ headerShown: false }} />
           <Stack.Screen name="Members" component={MembersScreen} options={{ headerShown: false }} />
           <Stack.Screen name="Security" component={SecurityScreen} options={{ headerShown: false }} />
+          <Stack.Screen name="GlobalNodes" component={GlobalNodesScreen} options={{ title: "Nodi globali" }} />
           <Stack.Screen name="HandshakeKeys" component={HandshakeKeysScreen} options={{ headerShown: false }} />
           <Stack.Screen name="AfterBorder" component={AfterBorderScreen} options={{ headerShown: false }} />
           <Stack.Screen name="VerifyContact" component={VerifyContactScreen} options={{ headerShown: false }} />
