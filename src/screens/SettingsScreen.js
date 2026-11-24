@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 16436)
-Total output lines: 1079
-
 import { callAccessCopy } from "../lib/locales/callAccess";
 import { LEGAL_DOCS, PRIVACY_SUMMARY, CONTACTS_SUMMARY, DATA_PROTECTION } from "../lib/legalDocuments";
 import { isOwner as canaryIsOwner } from "../lib/canary";
@@ -469,7 +466,288 @@ export default function SettingsScreen({ navigation }) {
         {showServer && <View style={{ padding: 14 }}>
           <Text style={styles.infoText}>{en
             ? "Enter the HTTPS address of your UNVOR server. Use a key file issued by that server or create an account if it supports registration."
-            : "Inserisci l’indirizzo HTTPS del tuo server UNVOR. Usa un file chiave emesso da quel server o crea un account …4436 tokens truncated…ng and scam heuristics in messages (fake logins, prizes, IBAN/crypto fraud, OTP requests).",
+            : "Inserisci l’indirizzo HTTPS del tuo server UNVOR. Usa un file chiave emesso da quel server o crea un account se la registrazione è disponibile."}</Text>
+          <TextInput style={styles.serverInput} value={server === DEFAULT_SERVER ? "" : server} onChangeText={setServer} editable={!serverBusy}
+            autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://messaggi.example.org"
+            placeholderTextColor={theme.textFaint} testID="settings-server-url" />
+          <TouchableOpacity style={styles.updBtn} onPress={saveNextServer} disabled={serverBusy}
+            testID="settings-server-save">
+            <Text style={styles.updBtnTxt}>{serverBusy
+              ? (en ? "Checking…" : "Verifica…")
+              : (en ? "Verify and save" : "Verifica e salva")}</Text>
+          </TouchableOpacity>
+          {!!serverMessage && <Text accessibilityLiveRegion="polite" style={styles.infoText}>{serverMessage}</Text>}
+        </View>}
+        <View style={styles.divider} />
+        <Row icon="key-outline" label={en ? "Export encrypted keyfile" : "Esporta file chiave cifrato"}
+          onPress={keyBusy ? null : exportKey} testID="settings-export-key" />
+      </View>
+
+      {/* CONSOLE ADMIN (solo owner) */}
+      {isOwner && (
+        <>
+          <Text style={styles.section}>Console Admin</Text>
+          <View style={styles.card}>
+            <Row icon="mail-unread-outline" label="Richieste ricevute" hint="Lead e richieste dal sito e dai contatti"
+              onPress={() => navigation.navigate("Leads")}
+              right={<Ionicons name="chevron-forward-outline" size={18} color={theme.textFaint} />} testID="settings-leads" />
+            <Row icon="ribbon-outline" label="Licenze / Scadenze" hint="Aziende attive e licenze in scadenza"
+              onPress={() => navigation.navigate("Licenses")}
+              right={<Ionicons name="chevron-forward-outline" size={18} color={theme.textFaint} />} testID="settings-licenses" />
+          </View>
+        </>
+      )}
+
+      {/* GESTIONE MEMBRI (admin/owner del tenant) */}
+      {memberPerm?.can_manage && (
+        <>
+          <Text style={styles.section}>{t("sm.113")}</Text>
+          <View style={styles.card}>
+            <Row icon="people-outline" label={t("sm.114")}
+              hint={t("sm.115")}
+              onPress={() => navigation.navigate("Members")}
+              right={<Ionicons name="chevron-forward-outline" size={18} color={theme.textFaint} />} testID="settings-members" />
+          </View>
+        </>
+      )}
+
+      {/* FLUIDITA - v2.5.0. Non c'e' un interruttore da offrire: la frequenza dello
+          schermo la decide il telefono. Qui si LEGGE quella concessa e si scrive senza
+          abbellirla: 60 Hz dice 60, e se il sistema sta limitando i 120 Hz lo dice. */}
+      <View style={styles.card}>
+        <Row icon="speedometer-outline" label={t("sm.116")}
+          hint={fpsLine(fps, lang !== "en")}
+          right={<Text style={styles.langTxt} testID="settings-fps">{fps.hz ? Math.round(fps.hz) + " fps" : "\u2014"}</Text>}
+          testID="settings-smoothness" />
+      </View>
+
+      {/* LANGUAGE */}
+      <View style={styles.card}>
+        <Row icon="language-outline" label={t("profile.language")} hint={t("settings.language.hint")} right={
+          <Text style={styles.langTxt} testID="settings-lang-current">
+            {(UI_LANGS.find((x) => x.code === lang) || UI_LANGS[0]).flag + "  " + (UI_LANGS.find((x) => x.code === lang) || UI_LANGS[0]).native}
+          </Text>
+        } />
+        <View style={styles.langWrap}>
+          {UI_LANGS.map((l) => (
+            <TouchableOpacity key={l.code} style={[styles.langBtn, lang === l.code && styles.langBtnActive]} onPress={() => setLang(l.code)} testID={`settings-lang-${l.code}`}>
+              <Text style={[styles.langTxt, lang === l.code && { color: "#fff" }]}>{l.flag + "  " + l.code.toUpperCase()}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <View style={styles.divider} />
+        <Row icon="swap-horizontal-outline" label={t("sm.119")}
+          hint={trTarget ? langName(trTarget) : (t("sm.120"))}
+          onPress={() => { setTrSearch(""); setShowTrLang(true); }}
+          right={<Ionicons name="chevron-forward-outline" size={18} color={theme.textFaint} />} testID="settings-translate-lang" />
+      </View>
+
+      {/* SECURITY */}
+      <Text style={styles.section}>{t("settings.section.security")}</Text>
+      <Row icon="git-network-outline" label={en ? "Global relay nodes · pilot" : "Nodi relay globali · pilota"}
+        hint={en ? "Import a node profile and verify its certificate." : "Importa un profilo nodo e verifica il certificato."}
+        onPress={() => navigation.navigate("GlobalNodes")} testID="settings-global-nodes" />
+      <View style={styles.divider} />
+      <View style={styles.privStatus} testID="settings-privacy-status">
+        {[
+          { on: chaff, label: chaff ? (en ? "Cover traffic enabled" : "Rumore abilitato") : (en ? "Cover traffic off" : "Rumore disattivato"), tid: "privstat-noise" },
+          {
+            on: hostedCalls ? relayStatus === "ready" : HAS_STATIC_TURN,
+            label: hostedCalls
+              ? relayStatus === "ready"
+                ? (en ? "TURN credentials available" : "Credenziali TURN disponibili")
+                : relayStatus === "checking"
+                  ? (en ? "Checking TURN…" : "Verifica TURN…")
+                  : (en ? "TURN could not be verified" : "Verifica TURN non riuscita")
+              : HAS_STATIC_TURN ? t("sm.032") : (en ? "TURN unavailable" : "TURN non configurato"),
+            tid: "privstat-relay",
+          },
+        ].map((it) => (
+          <View key={it.tid} style={styles.privPill} testID={it.tid}>
+            <View style={[styles.privDot, { backgroundColor: it.on ? "#50C878" : theme.textFaint }]} />
+            <Text style={[styles.privPillTxt, { color: it.on ? theme.text : theme.textFaint }]}>{it.label}</Text>
+          </View>
+        ))}
+      </View>
+      <View style={styles.card}>
+        <Row icon="lock-closed-outline" label={t("settings.appLock")} hint={secure ? t("settings.appLock.hint") : t("settings.appLock.noHw")}
+          right={<Switch value={appLock} onValueChange={toggleLock} trackColor={{ true: tint, false: theme.border }} thumbColor="#fff" testID="settings-applock" />} />
+        <View style={styles.divider} />
+        <Row icon="radio-outline"
+          label={t("sm.034")}
+          hint={wakeOn
+            ? (t("sm.035"))
+            : (t("sm.036"))}
+          right={wakeBusy
+            ? <ActivityIndicator color={tint} />
+            : <Switch value={wakeOn} onValueChange={toggleWake} trackColor={{ true: tint, false: theme.border }} thumbColor="#fff" testID="settings-wake" />} />
+        <View style={styles.divider} />
+        {hostedCalls ? (
+          <Row icon="git-network-outline"
+            label={en ? "Calls via UNVOR relay" : "Chiamate via relay UNVOR"}
+            hint={en ? "The other person does not receive your IP address. The relay sees the connection IP."
+              : "L’interlocutore non riceve il tuo IP. Il relay vede l’IP della connessione."} />
+        ) : (
+          <Row icon="git-network-outline"
+            label={t("sm.037")}
+            hint={callDirect ? t("sm.038") : HAS_STATIC_TURN ? t("sm.039")
+              : (en ? "Relay-only calls need a TURN server." : "Le chiamate solo relay richiedono un server TURN.")}
+            right={<Switch value={callDirect} onValueChange={async (v) => { setCallDirect(v); await saveAllowDirect(v); }} trackColor={{ true: "#50C878", false: theme.border }} thumbColor="#fff" testID="settings-call-direct" />} />
+        )}
+        <View style={styles.divider} />
+        {hostedCalls && fullScreenCalls !== null && (
+          <Row icon="call-outline" label={callAccess[0]} hint={callAccess[fullScreenCalls ? 1 : 2]}
+            onPress={() => NativeModules.WakeControl.openFullScreenCallSettings().catch(() => Linking.openSettings().catch(() => {}))}
+            right={<Ionicons name="chevron-forward-outline" size={18} color={theme.textFaint} />}
+            testID="settings-fullscreen-calls" />
+        )}
+        <Row icon="pulse-outline"
+          label={t("sm.040")}
+          hint={en ? "Runs while Android keeps the service active. 24/7 operation is unverified."
+            : "Funziona quando Android mantiene il servizio attivo. La continuità H24 è da verificare."}
+          right={<Switch value={chaff} onValueChange={async (v) => { setChaff(v); await cover.setEnabled(v); }} trackColor={{ true: tint, false: theme.border }} thumbColor="#fff" testID="settings-chaff" />} />
+        <View style={styles.divider} />
+        <Row
+          icon={pushOk ? "checkmark-circle-outline" : "alert-circle-outline"}
+          label={t("sm.095")}
+          hint={pushOk === null || pushBusy
+            ? (t("sm.096"))
+            : pushOk
+              ? (t("sm.097"))
+              : (t("sm.098"))}
+          onPress={() => checkPush(true)}
+          right={pushBusy ? <ActivityIndicator size="small" color={tint} /> : <Text style={{ color: pushOk ? theme.accent : theme.danger, fontSize: 12, fontWeight: "800" }}>{pushOk ? (t("sm.099")) : (t("sm.100"))}</Text>}
+          testID="settings-push-status"
+        />
+        <View style={styles.divider} />
+        <Row icon="shield-checkmark-outline" label={t("sm.121")}
+          hint={t("sm.122")}
+          onPress={() => navigation.navigate("Security")}
+          right={<Ionicons name="chevron-forward-outline" size={18} color={theme.textFaint} />} testID="settings-security-audit" />
+        <View style={styles.divider} />
+        <Row icon="sync-circle-outline" label={t("sm.123")}
+          hint={t("sm.124")}
+          onPress={() => navigation.navigate("HandshakeKeys")}
+          right={<Ionicons name="chevron-forward-outline" size={18} color={theme.textFaint} />} testID="settings-handshake-keys" />
+
+        <View style={styles.divider} />
+        <Row icon="shield-half-outline" label={t("sm.125")}
+          hint={t("sm.126")}
+          onPress={() => navigation.navigate("AfterBorder")} danger
+          right={<Ionicons name="chevron-forward-outline" size={18} color={theme.danger} />} testID="settings-after-border" />
+        <View style={styles.divider} />
+        <Row icon="ban-outline" label={t("blk.title")}
+          hint={t("blk.hint")}
+          onPress={() => navigation.navigate("Blocked")}
+          right={<Ionicons name="chevron-forward-outline" size={18} color={theme.textFaint} />} testID="settings-blocked" />
+        <View style={styles.divider} />
+        <Row icon="keypad-outline" label={t("sm.127")}
+          hint={t("sm.128")}
+          onPress={() => navigation.navigate("PrivacyLock")}
+          right={<Ionicons name="chevron-forward-outline" size={18} color={theme.textFaint} />} testID="settings-privacy-lock" />
+        <View style={styles.divider} />
+        <Row icon="save-outline" label={t("sm.129")}
+          hint={t("sm.130")}
+          onPress={() => navigation.navigate("Backup")}
+          right={<Ionicons name="chevron-forward-outline" size={18} color={theme.textFaint} />} testID="settings-backup" />
+        <View style={styles.divider} />
+        <Row icon="document-lock-outline" label={t("sm.131")}
+          hint={t("sm.132")}
+          onPress={() => Linking.openURL(`${DEFAULT_SERVER.replace(/\/$/, "")}/trasparenza.html`)}
+          right={<Ionicons name="open-outline" size={18} color={theme.textFaint} />} testID="settings-transparency" />
+        <View style={styles.divider} />
+        <Row icon="alert-circle-outline" label={t("sm.133")}
+          hint={t("sm.134")}
+          onPress={() => Linking.openURL(`${DEFAULT_SERVER.replace(/\/$/, "")}/regole.html`)}
+          right={<Ionicons name="open-outline" size={18} color={theme.textFaint} />} testID="settings-rules" />
+        {isOss && (<>
+        <View style={styles.divider} />
+        <View style={{ paddingHorizontal: 18, paddingVertical: 12 }}>
+          <Text style={{ color: theme.text, fontSize: 15, fontWeight: "600", marginBottom: 2 }}>🎯 {t("sm.135")}</Text>
+          <Text style={{ color: theme.textDim, fontSize: 12, marginBottom: 10 }}>{t("sm.136")}</Text>
+
+          <View style={{ flexDirection: "row", flexWrap: "wrap", marginBottom: 4 }}>
+            {reminderTimes.map((tm) => (
+              <TouchableOpacity key={`${tm.hour}:${tm.minute}`} onPress={() => removeTime(tm)} testID={`reminder-time-${tm.hour}-${tm.minute}`}
+                style={{ flexDirection: "row", alignItems: "center", backgroundColor: tint, borderRadius: 14, paddingVertical: 6, paddingHorizontal: 12, marginRight: 8, marginBottom: 8 }}>
+                <Text style={{ color: "#fff", fontSize: 13, fontWeight: "800" }}>{String(tm.hour).padStart(2, "0")}:{String(tm.minute).padStart(2, "0")}</Text>
+                <Ionicons name="close-outline" size={14} color="#fff" style={{ marginLeft: 6 }} />
+              </TouchableOpacity>
+            ))}
+            {reminderTimes.length === 0 && <Text style={{ color: theme.textFaint, fontSize: 12, marginBottom: 8 }}>{t("sm.137")}</Text>}
+          </View>
+
+          <Text style={{ color: theme.textFaint, fontSize: 11, fontWeight: "700", marginTop: 6, marginBottom: 4 }}>{t("sm.138")}</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 8 }}>
+            {Array.from({ length: 24 }, (_, h) => h).map((h) => (
+              <TouchableOpacity key={h} onPress={() => setPickHour(h)} testID={`reminder-pick-hour-${h}`}
+                style={{ borderWidth: 1, borderColor: theme.border, backgroundColor: pickHour === h ? tint : "transparent", borderRadius: 10, paddingVertical: 5, paddingHorizontal: 10, marginRight: 6 }}>
+                <Text style={{ color: pickHour === h ? "#fff" : "#cfe0ff", fontSize: 12, fontWeight: "700" }}>{String(h).padStart(2, "0")}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <Text style={{ color: theme.textFaint, fontSize: 11, fontWeight: "700", marginTop: 10, marginBottom: 4 }}>{t("sm.139")}</Text>
+          <View style={{ flexDirection: "row" }}>
+            {[0, 15, 30, 45].map((m) => (
+              <TouchableOpacity key={m} onPress={() => setPickMinute(m)} testID={`reminder-pick-min-${m}`}
+                style={{ borderWidth: 1, borderColor: theme.border, backgroundColor: pickMinute === m ? tint : "transparent", borderRadius: 10, paddingVertical: 5, paddingHorizontal: 12, marginRight: 8 }}>
+                <Text style={{ color: pickMinute === m ? "#fff" : "#cfe0ff", fontSize: 12, fontWeight: "700" }}>:{String(m).padStart(2, "0")}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <TouchableOpacity onPress={addTime} testID="reminder-add"
+            style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 14, backgroundColor: "rgba(80,200,120,0.16)", borderWidth: 1, borderColor: tint, borderRadius: 12, paddingVertical: 10 }}>
+            <Ionicons name="add-circle-outline" size={18} color={tint} />
+            <Text style={{ color: "#cfe0ff", fontSize: 13, fontWeight: "800" }}>
+              {t("sm.140")} {String(pickHour).padStart(2, "0")}:{String(pickMinute).padStart(2, "0")}
+            </Text>
+          </TouchableOpacity>
+        </View>
+        </>)}
+      </View>
+
+      {/* THREAT SHIELD */}
+      <View style={styles.shieldBox} testID="settings-shield">
+        <View style={styles.shieldHead}>
+          <Ionicons name="shield-checkmark-outline" size={18} color={tint} />
+          <Text style={styles.shieldTitle}>{lang !== "en" ? "Scudo Anti-Minacce" : "Threat Shield"}</Text>
+          <View style={styles.shieldBadge}><Text style={styles.shieldBadgeTxt}>{lang !== "en" ? "CONTROLLI LOCALI" : "LOCAL CHECKS"}</Text></View>
+        </View>
+        <View style={styles.counterBox} testID="settings-threat-counter">
+          <Text style={styles.counterNum}>{threatCount}</Text>
+          <Text style={styles.counterLbl}>{lang !== "en" ? "rilevamenti registrati" : "logged detections"}</Text>
+        </View>
+        <View style={styles.weekChart} testID="settings-threat-week">
+          <Text style={styles.weekTitle}>{lang !== "en" ? "Ultimi 7 giorni" : "Last 7 days"}</Text>
+          <View style={styles.weekBars}>
+            {weekBars.map((d, i) => (
+              <View key={i} style={styles.weekCol}>
+                <Text style={styles.weekVal}>{d.n > 0 ? d.n : ""}</Text>
+                <View style={styles.weekTrack}>
+                  <View style={[styles.weekFill, { height: `${Math.round((d.n / weekMax) * 100)}%`, backgroundColor: d.n > 0 ? tint : "transparent" }]} />
+                </View>
+                <Text style={styles.weekLbl}>{d.label}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+        <Text style={styles.shieldDesc}>
+          {lang !== "en"
+            ? "Protezione dei messaggi sul dispositivo."
+            : "On-device message protection."}
+        </Text>
+        {(lang !== "en"
+          ? [
+              "Euristiche per phishing e truffe nei messaggi (finti login, premi, frodi IBAN/cripto, richieste OTP).",
+              "Link malevoli: imitazione marchi, cloni punycode, host solo-IP, accorciatori, domini a rischio, senza HTTPS.",
+              "Allegati: eseguibili, doppie estensioni mascherate, macro Office, false immagini, firma magic-bytes.",
+              `Domini caricati in memoria: ${threatListSize()}. La lista remota dipende dalla disponibilità del server.`,
+              "Rilevamento firma di test antivirus EICAR.",
+            ]
+          : [
+              "Phishing and scam heuristics in messages (fake logins, prizes, IBAN/crypto fraud, OTP requests).",
               "Malicious links: brand impersonation, punycode clones, IP-only hosts, shorteners, risky domains, non-HTTPS.",
               "Attachments: executables, disguised double extensions, Office macros, fake images, magic-byte signature.",
               `Domains loaded in memory: ${threatListSize()}. The remote list depends on server availability.`,
