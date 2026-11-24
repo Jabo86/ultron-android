@@ -1,0 +1,7 @@
+{
+  "port": 8443,
+  "identityPrivateKeyFile": "/etc/unvor-relay/identity-private.pem",
+  "tlsPrivateKeyFile": "/etc/unvor-relay/tls-key.pem",
+  "tlsCertificateFile": "/etc/unvor-relay/tls-cert.pem",
+  "peers": []
+}

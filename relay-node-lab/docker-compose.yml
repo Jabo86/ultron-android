@@ -1,0 +1,20 @@
+services:
+  unvor-relay:
+    build: .
+    container_name: unvor-relay-lab
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=8m,noexec,nosuid,nodev
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "8443:8443"
+    environment:
+      UNVOR_RELAY_CONFIG: /etc/unvor-relay/node.json
+      UNVOR_RELAY_HOST: 0.0.0.0
+      UNVOR_RELAY_PORT: 8443
+    volumes:
+      - ./config:/etc/unvor-relay:ro

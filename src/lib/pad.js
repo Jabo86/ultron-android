@@ -1,9 +1,6 @@
-// Riempitivo di lunghezza casuale (padding) aggiunto a OGNI richiesta.
-// Chi osserva la rete non vede il contenuto (già cifrato) ma vede la DIMENSIONE di ogni
-// pacchetto: un "ok" corto e un messaggio lungo hanno stazze diverse, e da lì si intuisce
-// cosa stai facendo. Aggiungendo a ogni richiesta un'intestazione `X-Pad` di lunghezza
-// casuale, tutte le richieste — quelle vere e quelle di rumore — diventano di stazza
-// variabile e indistinguibile. Il server ignora e non memorizza questa intestazione.
+// Padding casuale legacy nell'header X-Pad. Varia la lunghezza dell'header ma non fissa la
+// dimensione totale dei pacchetti: non va considerato una protezione contro l'analisi del
+// traffico. La copertura completa richiede frame di dimensione fissa sullo stesso percorso.
 const CS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 export function randPad(rand = Math.random) {

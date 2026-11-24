@@ -32,8 +32,8 @@ export function personalServerUrl(value) {
 
 let _base = DEFAULT_SERVER;
 const attachChaff = (c) => {
-  // Ogni richiesta (vera o di rumore) porta un riempitivo di lunghezza casuale: le stazze
-  // dei pacchetti diventano indistinguibili. Il server ignora questa intestazione.
+  // Padding casuale legacy: varia la dimensione dell'header, ma non uniforma i frame e non
+  // rende le richieste indistinguibili. Il server ignora questa intestazione.
   c.interceptors.request.use((cfg) => {
     try { cfg.headers = cfg.headers || {}; cfg.headers["X-Pad"] = randPad(); } catch { /* niente */ }
     return cfg;
@@ -49,7 +49,7 @@ export async function verifyServer(value) {
   return target;
 }
 
-// Richiesta finta per il Traffico di Rumore: innocua e con lo stesso padding delle vere.
+// Ping di salute usato come copertura limitata. È identificabile come GET /health lato server.
 export async function coverPing() {
   try { await client.get("/health", { timeout: 8000 }); } catch { /* il rumore non deve mai disturbare */ }
 }

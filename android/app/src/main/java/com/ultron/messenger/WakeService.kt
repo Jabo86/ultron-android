@@ -303,8 +303,9 @@ class WakeService : Service() {
     return sb.toString()
   }
 
-  // Intervallo casuale esponenziale (processo di Poisson), limitato tra 6 e 60 s: una
-  // cadenza fissa sarebbe a sua volta un'impronta riconoscibile.
+  // Intervallo casuale per il ping /api/health legacy. Non nasconde i tempi dei messaggi:
+  // il ping usa un endpoint diverso. La protezione completa richiede frame uniformi sul
+  // percorso di consegna reale.
   private fun nextDelayMs(): Long {
     val u = Math.min(0.999999, Math.max(1e-6, Math.random()))
     val d = (-17000.0 * Math.log(1.0 - u)).toLong()

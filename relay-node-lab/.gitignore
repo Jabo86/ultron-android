@@ -1,0 +1,5 @@
+config/node.json
+config/identity-private.pem
+config/identity-public.pem
+config/tls-key.pem
+config/tls-cert.pem
