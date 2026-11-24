@@ -15,8 +15,18 @@ export function hostedRatchetPilot(user) {
 export async function verifiedContact(user, peer) {
   const pinned = await getVerified(peer);
   if (!pinned) throw new Error("Verifica il QR del contatto per usare il ratchet pilota.");
+  return signedContactKeys(user, peer, pinned);
+}
+
+async function mutualChatContact(user, peer) {
+  const [state, pinned] = await Promise.all([api.contactState(peer), getVerified(peer)]);
+  if (state?.mutual !== true || state.blocked) throw new Error("Per scrivervi dovete aggiungervi entrambi in Rubrica.");
+  return signedContactKeys(user, peer, pinned);
+}
+
+async function signedContactKeys(user, peer, pinned) {
   const signed = await hostedSignedChatKeys(user.lns, peer, (kem, dh) => {
-    if (keyFingerprint(peer, kem, dh) !== pinned.fp) throw new Error("Le chiavi verificate del contatto sono cambiate.");
+    if (pinned && keyFingerprint(peer, kem, dh) !== pinned.fp) throw new Error("Le chiavi verificate del contatto sono cambiate.");
   });
   if (!signed) throw new Error("Le chiavi firmate del contatto non sono disponibili.");
   return signed;
@@ -31,7 +41,7 @@ export async function sendPilotMessage(payload, user, peer, options) {
   if (!archivablePayload(payload)) throw new Error("La prova ratchet supporta i messaggi senza scadenza.");
   const check = api.authenticatedScope(user);
   const device = await deviceId();
-  const [active, keys] = await Promise.all([publishHostedPrekeys(user, device), verifiedContact(user, peer)]);
+  const [active, keys] = await Promise.all([publishHostedPrekeys(user, device), mutualChatContact(user, peer)]);
   check();
   const mine = parsePools(await api.hostedPrekeyPools(user.lns));
   if (mine.length !== 1 || mine[0].device !== active) {
@@ -60,7 +70,7 @@ export async function readPilotMessage(message, user, { offline = false, contact
   const peer = message.from_lns;
   let validation = contactChecks?.get(peer);
   if (!validation) {
-    validation = verifiedContact(user, peer);
+    validation = mutualChatContact(user, peer);
     contactChecks?.set(peer, validation);
   }
   const keys = await validation;

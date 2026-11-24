@@ -10,7 +10,7 @@ import { useTint } from "../lib/appearance";
 import { theme } from "../theme";
 import Avatar from "../components/Avatar";
 import { useUnread } from "../context/UnreadContext";
-import { getVerified } from "../lib/verify";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
 import { contactAddress } from "../lib/contactAddress";
 import { RATCHET_PILOT } from "../config";
@@ -137,15 +137,6 @@ export default function AddressBookScreen({ navigation, route }) {
     try {
       await api.acceptContact(c.lns, { name: c.display_name || undefined, avatar: c.avatar || undefined });
       await load(); refreshBadges?.();
-      // Appena c'è reciprocità conviene confrontare il numero di sicurezza.
-      const already = await getVerified(c.lns);
-      if (!already) {
-        const name = c.display_name || c.lns.split("@")[0];
-        Alert.alert(t("vfy.title"), t("vfy.askBody", { name }), [
-          { text: t("vfy.later"), style: "cancel" },
-          { text: t("vfy.now"), onPress: () => navigation.navigate("VerifyContact", { peer: c.lns, peer_name: name }) },
-        ]);
-      }
     }
     catch (e) { Alert.alert("Errore", api.apiErr(e)); }
     finally { setReqBusy(null); }
@@ -390,7 +381,7 @@ export default function AddressBookScreen({ navigation, route }) {
         <Text style={styles.addExtTxt}>{lang === "en" ? "Create new contact" : "Crea nuovo contatto"}</Text>
       </TouchableOpacity>
       <Modal visible={createOpen} transparent animationType="slide" onRequestClose={() => { if (!submittingContact.current) setCreateOpen(false); }}>
-        <View style={styles.sheetWrap}><View style={styles.sheet}>
+        <KeyboardAvoidingView style={styles.sheetWrap} behavior="padding"><View style={styles.sheet}>
           <Text style={styles.sheetTitle}>{lang === "en" ? "New contact" : "Nuovo contatto"}</Text>
           <TextInput style={styles.searchInputForContact} placeholder="nome@ultron.uns" placeholderTextColor={theme.textFaint} accessibilityLabel="ID UNVOR" autoCapitalize="none" autoCorrect={false} value={address} onChangeText={setAddress} editable={!adding} />
           <TouchableOpacity style={styles.sheetClose} disabled={adding} onPress={saveNewContact}>
@@ -399,7 +390,7 @@ export default function AddressBookScreen({ navigation, route }) {
           <TouchableOpacity style={styles.sheetClose} disabled={adding} onPress={() => setCreateOpen(false)}>
             <Text style={styles.sheetCloseTxt}>{t("cancel")}</Text>
           </TouchableOpacity>
-        </View></View>
+        </View></KeyboardAvoidingView>
       </Modal>
       {canAdd && (
         <TouchableOpacity style={styles.addExt} onPress={addExternal} disabled={adding} testID="rubrica-add-external">
