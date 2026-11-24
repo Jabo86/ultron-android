@@ -5,7 +5,7 @@ import { setNativeBinaryUploader } from "./src/lib/binaryTransport";
 import { uploadEncryptedBytes } from "./src/lib/nativeBinaryUpload";
 import HudBackdrop from "./src/components/hud/HudBackdrop";
 import PilotGroupsScreen from "./src/screens/PilotGroupsScreen";
-import { hostedRatchetPilot, verifiedContact } from "./src/lib/hostedRatchetChat";
+import { hostedRatchetPilot, mutualChatContact } from "./src/lib/hostedRatchetChat";
 import { setNativeExportKdf } from "./src/lib/exportKdf";
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { View, ActivityIndicator, AppState as RNAppState, Linking, NativeModules, Platform } from "react-native";
@@ -304,7 +304,7 @@ function Root() {
             !verifyMessage(call.offer.sdp, call.offer_sig, call.from_pk)) return;
         let dh;
         if (hostedRatchetPilot(user)) {
-          const keys = await verifiedContact(user, call.from);
+          const keys = await mutualChatContact(user, call.from);
           if (call.from_pk !== keys.identityKey || call.from_kem !== keys.kem) return;
           dh = keys.dh;
         } else {

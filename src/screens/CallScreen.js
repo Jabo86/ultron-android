@@ -1,5 +1,5 @@
 import EncryptionNotice from "../components/EncryptionNotice";
-import { hostedRatchetPilot, verifiedContact } from "../lib/hostedRatchetChat";
+import { hostedRatchetPilot, mutualChatContact } from "../lib/hostedRatchetChat";
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { View, Image, ScrollView, StyleSheet, TouchableOpacity, Vibration, Alert, AppState } from "react-native";
 import { Text } from "../components/HudText";
@@ -310,7 +310,7 @@ export default function CallScreen({ route, navigation }) {
           // CHIAMANTE: chiavi del ricevente (KEM per cifrare, DH per il rid), offer firmata, invito cifrato.
           let calleeKem, calleeDh;
           if (pilot) {
-            const keys = await verifiedContact(user, to);
+            const keys = await mutualChatContact(user, to);
             ({ kem: calleeKem, dh: calleeDh } = keys);
             peerIdentity.current = keys.identityKey;
           } else {
@@ -369,6 +369,12 @@ export default function CallScreen({ route, navigation }) {
             remoteSet.current = true;
             const _sig = route.params?.offer_sig || pushInv?.offer_sig; const _fpk = route.params?.from_pk || pushInv?.from_pk;
             const ok = _sig && _fpk ? verifyMessage(off.sdp, _sig, _fpk) : false;
+            if (pilot) {
+              const keys = await mutualChatContact(user, peerLns);
+              if (!ok || _fpk !== keys.identityKey || peerKem.current !== keys.kem) {
+                throw new Error("Identità o firma del chiamante non valida.");
+              }
+            }
             setVerified(ok);
             if (!ok && hosted) throw new Error("Firma dell’invito non valida.");
             await pc.current.setRemoteDescription(new RTCSessionDescription(off));
