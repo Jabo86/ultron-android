@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
-import * as DocumentPicker from "expo-document-picker";
+import * as DocumentPicker from "../lib/documentPicker";
 import * as FileSystem from "expo-file-system/legacy";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
@@ -8,7 +8,6 @@ import { Text } from "../components/HudText";
 import { theme } from "../theme";
 import { useTint } from "../lib/appearance";
 import { addGlobalNode, checkGlobalNode, listGlobalNodes, removeGlobalNode, validateGlobalNodeProfile } from "../lib/globalNodes";
-import { withSystemActivity } from "../lib/lockGuard";
 
 export default function GlobalNodesScreen() {
   const tint = useTint();
@@ -31,9 +30,9 @@ export default function GlobalNodesScreen() {
     setBusy(true); setError("");
     let uri;
     try {
-      const result = await withSystemActivity(() => DocumentPicker.getDocumentAsync({
+      const result = await DocumentPicker.getDocumentAsync({
         type: ["application/json", "text/json"], copyToCacheDirectory: true,
-      }));
+      });
       if (result.canceled) return;
       uri = result.assets?.[0]?.uri;
       const info = await FileSystem.getInfoAsync(uri);
