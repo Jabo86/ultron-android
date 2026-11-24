@@ -379,10 +379,6 @@ export default function ConversationsScreen({ navigation }) {
         <View style={styles.signalLead} /><View style={styles.signalTail} />
       </View>
 
-      <TouchableOpacity style={{ flexDirection: "row", alignItems: "center", alignSelf: "flex-start", paddingHorizontal: 18, minHeight: 46, gap: 8 }} accessibilityRole="button" onPress={openNew} testID="conv-new-chat">
-        <Ionicons name="add-circle-outline" size={24} color={tint} />
-        <Text style={{ color: tint }}>{lang === "en" ? "New conversation" : "Nuova conversazione"}</Text>
-      </TouchableOpacity>
       <TrialBanner />
 
       <FlatList
@@ -404,9 +400,12 @@ export default function ConversationsScreen({ navigation }) {
             </View>
           )
         }
-        contentContainerStyle={convs.length === 0 && booted ? { flex: 1 } : { paddingBottom: 24 }}
+        contentContainerStyle={convs.length === 0 && booted ? { flex: 1 } : { paddingBottom: 90 }}
       />
 
+      <TouchableOpacity onPress={openNew} accessibilityRole="button" accessibilityLabel={lang === "en" ? "New conversation" : "Nuova conversazione"} testID="conv-new-chat" style={[styles.newChatButton, { backgroundColor: tint }]}>
+        <Ionicons name="add" size={30} color={theme.bg} />
+      </TouchableOpacity>
       <Modal visible={showNew} transparent animationType="slide" onRequestClose={() => setShowNew(false)}>
         <KeyboardAvoidingView style={styles.modalWrap} behavior="padding">
           <View style={[styles.modal, { paddingBottom: Math.max(insets.bottom, 14) + 14 }]}>
@@ -511,6 +510,7 @@ export default function ConversationsScreen({ navigation }) {
 
 const makeStyles = (tint) => StyleSheet.create({
   root: { flex: 1, backgroundColor: "transparent" },
+  newChatButton: { position: "absolute", right: 18, bottom: 16, width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", elevation: 5 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16,
     paddingVertical: 14, backgroundColor: theme.surface, borderBottomWidth: 1, borderBottomColor: theme.border },
   signalTrack: { height: 5, marginHorizontal: 16, flexDirection: "row", gap: 6, alignItems: "flex-start" },
