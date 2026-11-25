@@ -164,7 +164,7 @@ class WakeService : Service() {
         .setSmallIcon(R.drawable.unvor_notification)
         .setLargeIcon(brandIcon)
         .setContentTitle("UNVOR")
-        .setContentText("Nuovi messaggi nei gruppi")
+        .setContentText("Nuova attività nei gruppi UNVOR")
         .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
         .setPriority(NotificationCompat.PRIORITY_HIGH)
         .setAutoCancel(true)
