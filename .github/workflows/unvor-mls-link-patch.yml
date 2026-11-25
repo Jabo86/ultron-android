@@ -1,0 +1,30 @@
+name: Patch UNVOR gateway direct-link enrollment
+on:
+  push:
+    branches: [fix/unvor-pilot-366-groups]
+    paths:
+      - tools/patch-unvor-mls-link-gateway.py
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Apply narrow gateway patch and commit packaged Rust source
+        run: |
+          set -euo pipefail
+          python3 tools/patch-unvor-mls-link-gateway.py
+          git add tools/gateway-attachments/source.tar.gz
+          if git diff --cached --quiet; then
+            echo "Source bundle already patched."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(gateway): automatic direct link pending without moderation [skip ci]"
+          git push origin HEAD:fix/unvor-pilot-366-groups
