@@ -1094,8 +1094,9 @@ export default function ChatScreen({ route, navigation }) {
   const reloadGroupInvites = useCallback(async () => {
     const rows = await pilotInvitationInbox(user);
     const entries = await Promise.all(rows.map(async row => {
-      const verified = row.status === "accepted" ? await getVerified(row.inviter) : null;
-      return [row.id, { ...row, needsQr: row.status === "accepted" && !verified?.fp }];
+      // The MLS group validates signed member identities independently of 1:1 QR.
+      // Link access is bound to the founder fingerprint in the invite URL.
+      return [row.id, { ...row, needsQr: false }];
     }));
     if (mounted.current) setGroupInvites(Object.fromEntries(entries));
     if (rows.some(row => row.status === "accepted") && Date.now() - invitePreparedAt.current > 15000) {
