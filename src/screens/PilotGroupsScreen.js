@@ -24,7 +24,7 @@ import { apiErr, blockContact, contacts, mlsAction, mlsDeleteGroup, mlsRedeem, m
   mlsUpload } from "../lib/api";
 import { contactAddress, matchesContact } from "../lib/contactAddress";
 import { displayGroupContacts, parseGroupInviteDetails, formatGroupInviteLink } from "../lib/groupInviteHelpers";
-import { groupLinkTrust, myGroupLinkFingerprint, trustRedeemedGroupLink } from "../lib/groupLinkTrust";
+import { founderGroupLinkFingerprint, trustRedeemedGroupLink } from "../lib/groupLinkTrust";
 import { pickAvatarDataUrl } from "../lib/avatar";
 import { shrinkPhoto } from "../lib/imageOpt";
 import { base64ToBytes, encryptFileBytesAsync, randomHex } from "../lib/crypto";
@@ -536,7 +536,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const renewLink = () => run(async () => {
     const result = await mlsAction(group.id, { action: "link" });
     if (!/^[a-f0-9]{64}\.[a-f0-9]{64}$/.test(result?.code || "")) throw new Error(say("Link non confermato.", "Link not confirmed."));
-    setInviteCode(formatGroupInviteLink(result.code, myGroupLinkFingerprint(user)));
+    setInviteCode(formatGroupInviteLink(result.code, await founderGroupLinkFingerprint(user, group.admin)));
   });
   const exitGroup = async (deleting, block = false) => {
     if (deleting) await mlsDeleteGroup(group.id);
