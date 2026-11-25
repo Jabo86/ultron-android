@@ -1,7 +1,7 @@
 import { MAX_ATTACHMENT_BYTES, ATTACHMENT_CHUNK_BYTES } from "./attachmentLimits";
 import * as api from "./api";
 import { bytesToHex, decryptEnvelope, decryptFileBytes, encryptFileBytes, encryptForRecipients, hexToBytes, packMessage, randomHex, sha256Hex, signMessage, utf8Decode, utf8Encode, verifyMessage } from "./crypto";
-import { registerHostedRatchet, sendPilotMessage, verifiedContact } from "./hostedRatchetChat";
+import { registerHostedRatchet, sendPilotMessage, mutualChatContact } from "./hostedRatchetChat";
 import { hostedGroupCredentials } from "./hostedGroupCredentials";
 import { getBlob, setBlobDurably, setBlobsDurably } from "./lock";
 import { createMlsGroupEngine } from "./mlsGroupEngine";
@@ -175,9 +175,9 @@ function serial(user, job) {
   return task.finally(() => { if (queues.get(key) === task) queues.delete(key); });
 }
 
-async function context(user) {
+async function context(user, groupId = null) {
   const check = api.authenticatedScope(user);
-  const credentials = await hostedGroupCredentials(user);
+  const credentials = await hostedGroupCredentials(user, groupId);
   const [mls, { defaultClientConfig }] = await loadMls();
   const engine = await createMlsGroupEngine(mls, defaultClientConfig, credentials);
   check();
@@ -247,12 +247,12 @@ export async function pilotGroupInvitations(user, group) {
 
 export async function requestPilotGroupInvitation(user, group, target) {
   const check = api.authenticatedScope(user);
-  const credentials = await hostedGroupCredentials(user);
-  if (!await credentials.identityFor(target)) throw new Error("Verifica il QR UNVOR del contatto.");
+  const credentials = await hostedGroupCredentials(user, group.id);
+  if (!await credentials.identityFor(target)) throw new Error("Chiavi firmate del contatto non disponibili.");
   check();
   const id = randomHex(16);
   const title = group.admin === user.lns ? await cachedPilotGroupTitle(user, group) : null;
-  const key = await verifiedContact(user, target);
+  const key = await mutualChatContact(user, target);
   const signature = title ? signMessage(inviteTitleScope(user.server, id, group.id, user.lns, target, title), user.sk) : null;
   const note = title ? JSON.stringify(encryptForRecipients(JSON.stringify({ title, signature }), { [target]: key.kem })[0]) : undefined;
   check();
@@ -586,7 +586,7 @@ export function announcePilotGroupProfile(user, row) {
   return serial(user, async () => {
     const cached = await getBlob(blob(user, row.id));
     if (!cached?.title || cached.epoch === 0 || cached.profileAnnouncedEpoch === cached.epoch) return;
-    const ctx = await context(user);
+    const ctx = await context(user, row.id);
     const record = await sync(user, row, ctx);
     if (!record.title || record.profileAnnouncedEpoch === record.epoch) return;
     return writePilotGroup(user, row, record.profile ? "profile" : "title", record.profile || record.title, null, null, ctx, record);
@@ -595,7 +595,7 @@ export function announcePilotGroupProfile(user, row) {
 
 export function openPilotGroup(user, row, { read = false } = {}) {
   return serial(user, async () => {
-    const ctx = await context(user);
+    const ctx = await context(user, row.id);
     const record = await sync(user, row, ctx);
     const details = detailsFor(ctx.engine, row.id, record);
     if ((read && record.readThrough !== record.cursor) || !record.members) {
@@ -609,7 +609,7 @@ export function openPilotGroup(user, row, { read = false } = {}) {
 
 export function updatePilotGroup(user, row, kind, value, invitation, draftId) {
   return serial(user, async () => {
-    const ctx = await context(user);
+    const ctx = await context(user, row.id);
     for (let attempt = 0; ; attempt++) {
       try { return await writePilotGroup(user, row, kind, value, invitation, draftId, ctx); }
       catch (error) {
