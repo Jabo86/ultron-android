@@ -38,6 +38,8 @@ export const setActive = () => call("setActive");
 export const end = () => call("end");
 export const startRingback = () => call("startRingback");
 export const stopRingback = () => call("stopRingback");
+export const routeAudio = (speaker = false) => call("setAudioRoute", !!speaker);
+export const clearAudioRoute = () => call("clearAudioRoute");
 export const state = async () => {
   if (!N) return "none";
   try { return await N.state(); } catch { return "none"; }
