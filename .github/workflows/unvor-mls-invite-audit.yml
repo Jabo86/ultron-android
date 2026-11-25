@@ -28,8 +28,8 @@ jobs:
               for i,line in enumerate(lines):
                   if re.search(r'(?i)\\b(fn|struct|enum) (redeem|review|request|link|decide|control|redeem_link)|action\\s*==\\s*"link"|link_code|invitation',line):
                       print(f'  {i+1}: {line[:180]}')
-              if p.name=='group_control.rs':
-                  print('GROUP_CONTROL_SOURCE_BEGIN')
-                  for i,line in enumerate(lines[:470]): print(f'{i+1}: {line[:240]}')
-                  print('GROUP_CONTROL_SOURCE_END')
+              if p.name=='group_invites.rs':
+                  print('GROUP_INVITES_SOURCE_BEGIN')
+                  for i,line in enumerate(lines[:200]): print(f'{i+1}: {line[:240]}')
+                  print('GROUP_INVITES_SOURCE_END')
           PY
