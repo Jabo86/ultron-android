@@ -1,16 +1,23 @@
-// Codici di invito UNVOR, compatibili con il protocollo usato dalle build precedenti.
+// L'impronta ML-DSA del fondatore è trasmessa con il link. Consente a chi non
+// lo ha in rubrica di autenticare il Welcome MLS senza usare un QR esterno.
 const CODE = /^[a-f0-9]{64}\.[a-f0-9]{64}$/i;
-const URI = /^(?:unvor|ultron):\/\/group-invite\/([a-f0-9]{64}\.[a-f0-9]{64})\/?$/i;
-export function parseGroupInviteLink(value) {
+const INVITE = /^(?:unvor|ultron):\/\/group-invite\/([a-f0-9]{64}\.[a-f0-9]{64})(?:~([a-f0-9]{64}))?\/?$/i;
+export function parseGroupInviteDetails(value) {
   const input = String(value || "").trim();
-  const uri = URI.exec(input);
-  const code = uri ? uri[1] : input;
-  return CODE.test(code) ? code.toLowerCase() : null;
+  const match = INVITE.exec(input);
+  const code = match ? match[1] : input;
+  return CODE.test(code) ? { code: code.toLowerCase(), founderFingerprint: match?.[2]?.toLowerCase() || null } : null;
 }
-export function formatGroupInviteLink(value) {
-  const code = parseGroupInviteLink(value);
-  if (!code) throw new Error("Codice d'invito UNVOR non valido.");
-  return "unvor://group-invite/" + code;
+export function parseGroupInviteLink(value) {
+  return parseGroupInviteDetails(value)?.code || null;
+}
+export function formatGroupInviteLink(value, founderFingerprint) {
+  const invite = parseGroupInviteDetails(value);
+  if (!invite) throw new Error("Codice d'invito UNVOR non valido.");
+  if (!/^[a-f0-9]{64}$/i.test(founderFingerprint || "")) {
+    throw new Error("Impronta del fondatore mancante.");
+  }
+  return "unvor://group-invite/" + invite.code + "~" + founderFingerprint.toLowerCase();
 }
 
 // Mostra anche i contatti locali, indipendentemente dalla verifica QR.
