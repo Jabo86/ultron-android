@@ -1,8 +1,5 @@
 name: UNVOR MLS invite compatibility audit
 on:
-  push:
-    branches:
-      - fix/unvor-pilot-366-groups
   workflow_dispatch:
 permissions:
   contents: read
