@@ -27,6 +27,7 @@ import { loadAllowDirect } from "../lib/store";
 import { useTint } from "../lib/appearance";
 import { theme } from "../theme";
 import { MEDIA_CONSTRAINTS, tuneSdp } from "../lib/audioTune";
+import { turnIceConfig } from "../lib/turnIceConfig";
 import * as telecom from "../lib/telecom";
 
 // Chiamata WebRTC 1:1 con SIGNALING ANONIMO (blind rendezvous): il server non sa chi chiama chi.
@@ -348,13 +349,14 @@ export default function CallScreen({ route, navigation }) {
         if (!mounted || ended.current) return;
         setDirectAllowed(direct);
         let config = iceConfig(direct);
-        if (hosted) {
+        // Relay-only is mandatory unless the user explicitly allowed direct
+        // connectivity. STUN-only + iceTransportPolicy="relay" yields zero
+        // usable candidates and leaves both devices on "Connecting…".
+        if (!direct) {
           let relay;
           try { relay = await api.callTurn(); }
-          catch { throw new Error(lang === "en" ? "TURN relay unavailable." : "Relay TURN non disponibile."); }
-          if (!relay?.urls?.length || !relay.username || !relay.credential) throw new Error("Relay TURN non disponibile.");
-          config = { iceTransportPolicy: "relay", bundlePolicy: "max-bundle",
-            iceServers: [{ urls: relay.urls, username: relay.username, credential: relay.credential }] };
+          catch { throw new Error(lang === "en" ? "TURN relay unavailable." : "Relay TURN non disponibile sul server selezionato."); }
+          config = turnIceConfig(relay);
         }
         if (!mounted || ended.current) return;
         suppressLock();
