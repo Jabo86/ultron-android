@@ -518,6 +518,9 @@ export default function PilotGroupsScreen({ navigation, route }) {
     } else if (invitation?.status !== "accepted") {
       throw new Error(say("Invito non disponibile o scaduto.", "Invitation unavailable or expired."));
     }
+    // Public groups require an account-identity proof, not a second person's
+    // approval. Sign it with this user's identity automatically after consent.
+    await verifyPilotGroupAccount(user);
     await preparePilotGroupInvites(user);
     setJoiningLink(""); setRedeemOpen(false);
     await refresh(null);
