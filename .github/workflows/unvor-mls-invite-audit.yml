@@ -21,12 +21,15 @@ jobs:
           python3 - "$RUNNER_TEMP/gateway" <<'PY'
           import pathlib,re,sys
           root=pathlib.Path(sys.argv[1])
-          rx=re.compile(r'(?i)mls.*redeem|redeem.*mls|invitation.*review|review.*invitation|action.*link|link.*action|group.*invitations|redeem_link|create_invitation|review_invitation')
           for p in root.rglob('*.rs'):
+              if p.name not in ('group_control.rs','group_invites.rs','group_routes.rs','group_mls.rs'): continue
               lines=p.read_text(errors='replace').splitlines()
-              matches=[i for i,line in enumerate(lines) if rx.search(line)]
-              if not matches: continue
-              print('SOURCE',p.relative_to(root),'matches',len(matches))
-              for i in matches[:35]:
-                  print(f'  {i+1}: {lines[i][:200]}')
+              print('SOURCE', p.relative_to(root), 'lines', len(lines))
+              for i,line in enumerate(lines):
+                  if re.search(r'(?i)\\b(fn|struct|enum) (redeem|review|request|link|decide|control|redeem_link)|action\\s*==\\s*"link"|link_code|invitation',line):
+                      print(f'  {i+1}: {line[:180]}')
+              if p.name=='group_control.rs':
+                  print('GROUP_CONTROL_SOURCE_BEGIN')
+                  for i,line in enumerate(lines[:470]): print(f'{i+1}: {line[:240]}')
+                  print('GROUP_CONTROL_SOURCE_END')
           PY
