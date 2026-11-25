@@ -61,6 +61,7 @@ export default function CallScreen({ route, navigation }) {
   const [pushInv, setPushInv] = useState(null);
   const [muted, setMuted] = useState(false);
   const [speaker, setSpeaker] = useState(false);
+  const speakerRef = useRef(false);
   const [sas, setSas] = useState(null);
   const [sasVerified, setSasVerified] = useState(false);
   const peerLns = (to || route.params?.from || "").toLowerCase();
@@ -292,7 +293,7 @@ export default function CallScreen({ route, navigation }) {
       if (state === "connected" || state === "completed") {
         clearTimeout(connectTimer.current);
         setStatus("connected");
-        telecom.routeAudio(speaker);
+        telecom.routeAudio(speakerRef.current);
       } else if (state === "failed") {
         clearTimeout(connectTimer.current);
         if (!ended.current) {
@@ -307,11 +308,22 @@ export default function CallScreen({ route, navigation }) {
       if (st) { setRemoteStream(st); setRemoteRev((n) => n + 1); }
     });
     return p;
-  }, [flushLocalIce, speaker]);
+  }, [flushLocalIce]);
 
   const applyRemoteIce = useCallback(async (list) => {
-    if (!Array.isArray(list) || !pc.current) return;
-    for (const cand of list) { try { await pc.current.addIceCandidate(new RTCIceCandidate(cand)); } catch {} }
+    if (!Array.isArray(list) || !pc.current?.remoteDescription) return 0;
+    let processed = 0;
+    for (const cand of list) {
+      if (!cand?.candidate) { processed++; continue; }
+      try {
+        await pc.current.addIceCandidate(new RTCIceCandidate(cand));
+        processed++;
+      } catch {
+        // Non avanzare il cursore sul candidato che WebRTC non ha accettato.
+        break;
+      }
+    }
+    return processed;
   }, []);
 
   // Calcola il SAS (emoji di verifica) dai fingerprint DTLS di entrambi i peer, appena disponibili.
@@ -452,7 +464,7 @@ export default function CallScreen({ route, navigation }) {
             if (ended.current) return;
             await api.anonPut(chan.current, "answer", sealed);
             addCallLog({ call_id: chan.current, peer: route.params?.from || "", direction: "in", video: !!video, created_at: new Date().toISOString(), answered_at: new Date().toISOString(), ended_at: "" });
-            if (!hosted) setStatus("connected");
+            // Stato connesso solo dopo ICE effettivamente attivo.
             try { if (chan.current && api.getServerUrl() !== DEFAULT_SERVER) api.callAnswered(chan.current).catch(() => {}); } catch {}
             trySas();
           }
@@ -508,22 +520,17 @@ export default function CallScreen({ route, navigation }) {
             armConnectTimer();
             if (!alive || ended.current) return;
             remoteSet.current = true;
-            if (!hosted) {
-              setStatus("connected");
-              api.callAnswered(channel).catch(() => {});
-            }
+            if (!hosted) api.callAnswered(channel).catch(() => {});
             trySas();
           }
         }
         if (!connection.remoteDescription || ended.current) return;
         if (incoming) {
           const candidates = signal.ice_c || [];
-          await applyRemoteIce(candidates);
-          iceCFrom.current += candidates.length;
+          iceCFrom.current += await applyRemoteIce(candidates);
         } else {
           const candidates = signal.ice_e || [];
-          await applyRemoteIce(candidates);
-          iceEFrom.current += candidates.length;
+          iceEFrom.current += await applyRemoteIce(candidates);
         }
       } catch { /* A transient failure is retried on the next tick. */ }
       finally { reading = false; }
@@ -539,7 +546,7 @@ export default function CallScreen({ route, navigation }) {
   const toggleMute = () => { const a = localStream?.getAudioTracks?.()[0]; if (a) { a.enabled = muted; setMuted(!muted); } };
   const toggleSpeaker = async () => {
     const next = !speaker;
-    if (await telecom.routeAudio(next)) setSpeaker(next);
+    if (await telecom.routeAudio(next)) { speakerRef.current = next; setSpeaker(next); }
     else setWarn(lang === "en" ? "Audio output selection unavailable." : "Selezione uscita audio non disponibile.");
   };
 
