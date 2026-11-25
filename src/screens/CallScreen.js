@@ -251,6 +251,31 @@ export default function CallScreen({ route, navigation }) {
   const peerIdentity = useRef(null);
   const [directAllowed, setDirectAllowed] = useState(false);
 
+  // Candidati ICE in coda: ritenta dopo errori di rete o rate limit.
+  // Non eliminare un candidato finche' il server non ne conferma la scrittura.
+  const flushLocalIce = useCallback(async () => {
+    if (sendingIce.current || !chan.current || ended.current) return;
+    sendingIce.current = true;
+    try {
+      while (!ended.current && chan.current && pendingIce.current.length) {
+        await api.anonPut(chan.current, localIce.current, pendingIce.current[0], { timeout: 4000 });
+        pendingIce.current.shift();
+      }
+    } catch { /* riprova al prossimo poll */ }
+    finally { sendingIce.current = false; }
+  }, []);
+
+  const armConnectTimer = useCallback(() => {
+    clearTimeout(connectTimer.current);
+    connectTimer.current = setTimeout(() => {
+      const iceState = pc.current?.iceConnectionState;
+      if (!ended.current && iceState !== "connected" && iceState !== "completed") {
+        setErrMsg("Il collegamento audio ICE/TURN non si e' stabilito entro 30 secondi.");
+        setStatus("error");
+      }
+    }, CONNECT_TIMEOUT_MS);
+  }, []);
+
   const makePc = useCallback((config) => {
     // relay-only: media SOLO via TURN self-hosted → nessun peer conosce l'IP dell'altro.
     // "relay": TUTTO il media passa dal TURN coturn. È la sola configurazione che dà un
@@ -258,27 +283,31 @@ export default function CallScreen({ route, navigation }) {
     // verso su reti dietro NAT) e non espone l'IP. Non toccare senza test su rete reale.
     const p = new RTCPeerConnection(config);
     p.addEventListener("icecandidate", (e) => {
-      if (e.candidate && chan.current) {
-        const c = e.candidate.toJSON ? e.candidate.toJSON() : e.candidate;
-        api.anonPut(chan.current, localIce.current, c).catch(() => {});
-      }
+      if (!e.candidate) return;
+      pendingIce.current.push(e.candidate.toJSON ? e.candidate.toJSON() : e.candidate);
+      flushLocalIce();
     });
-    if (config.iceTransportPolicy === "relay" && api.getServerUrl() === DEFAULT_SERVER) {
-      p.addEventListener("iceconnectionstatechange", () => {
-        if (p.iceConnectionState === "connected" || p.iceConnectionState === "completed") setStatus("connected");
-        if (p.iceConnectionState === "failed") {
-          setErrMsg("Connessione audio tramite TURN non riuscita.");
+    p.addEventListener("iceconnectionstatechange", () => {
+      const state = p.iceConnectionState;
+      if (state === "connected" || state === "completed") {
+        clearTimeout(connectTimer.current);
+        setStatus("connected");
+        telecom.routeAudio(speaker);
+      } else if (state === "failed") {
+        clearTimeout(connectTimer.current);
+        if (!ended.current) {
+          setErrMsg("ICE/TURN fallito. Controllare il relay e la rete di entrambi i telefoni.");
           setStatus("error");
         }
-      });
-    }
+      }
+    });
     p.addEventListener("track", (e) => {
       const st = (e.streams && e.streams[0]) || null;
       try { if (e.track) e.track.enabled = true; } catch {}
       if (st) { setRemoteStream(st); setRemoteRev((n) => n + 1); }
     });
     return p;
-  }, []);
+  }, [flushLocalIce, speaker]);
 
   const applyRemoteIce = useCallback(async (list) => {
     if (!Array.isArray(list) || !pc.current) return;
@@ -335,6 +364,7 @@ export default function CallScreen({ route, navigation }) {
         if (!mounted || ended.current) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
         setLocalStream(stream);
+        await telecom.routeAudio(false);
         pc.current = makePc(config);
         stream.getTracks().forEach((t) => pc.current.addTrack(t, stream));
 
@@ -415,6 +445,7 @@ export default function CallScreen({ route, navigation }) {
             // Stesso ritocco dell'offer: Opus per primo, FEC acceso, portata costante.
             const answer = { type: answer0.type, sdp: tuneSdp(answer0.sdp) };
             await pc.current.setLocalDescription(answer);
+            armConnectTimer();
             const sig = user?.sk ? signMessage(answer.sdp, user.sk) : "";
             const ansObj = { answer: { type: answer.type, sdp: answer.sdp }, answer_sig: sig, to_pk: myPk };
             const sealed = peerKem.current ? encryptForRecipients(JSON.stringify(ansObj), { c: peerKem.current })[0] : ansObj;
@@ -444,6 +475,7 @@ export default function CallScreen({ route, navigation }) {
     const pollSignal = async () => {
       const channel = chan.current;
       if (!alive || reading || ended.current || !channel) return;
+      flushLocalIce();
       reading = true;
       try {
         const signal = await api.anonGet(channel, iceCFrom.current, iceEFrom.current, { timeout: 3500 });
@@ -473,6 +505,7 @@ export default function CallScreen({ route, navigation }) {
             clearTimeout(unansweredTimer.current);
             setStatus("answering");
             await connection.setRemoteDescription(new RTCSessionDescription(answer.answer));
+            armConnectTimer();
             if (!alive || ended.current) return;
             remoteSet.current = true;
             if (!hosted) {
@@ -501,9 +534,14 @@ export default function CallScreen({ route, navigation }) {
     });
     pollSignal();
     return () => { alive = false; clearInterval(interval); subscription.remove(); };
-  }, [incoming, applyRemoteIce, finish, hosted, pilot, trySas, user]);
+  }, [incoming, applyRemoteIce, finish, flushLocalIce, hosted, pilot, trySas, user]);
 
   const toggleMute = () => { const a = localStream?.getAudioTracks?.()[0]; if (a) { a.enabled = muted; setMuted(!muted); } };
+  const toggleSpeaker = async () => {
+    const next = !speaker;
+    if (await telecom.routeAudio(next)) setSpeaker(next);
+    else setWarn(lang === "en" ? "Audio output selection unavailable." : "Selezione uscita audio non disponibile.");
+  };
 
   // IL PEZZO CHE MANCAVA: quando arriva una chiamata esterna il telecom mette la nostra in
   // pausa (`hold`) invece di strapparci l'audio. Chiudiamo il microfono e lo riapriamo a
@@ -618,6 +656,7 @@ export default function CallScreen({ route, navigation }) {
 
       <View style={styles.controls}>
         <TouchableOpacity style={[styles.ctrl, muted && styles.ctrlOn]} onPress={toggleMute} testID="call-mute"><Ionicons name={muted ? "mic-off" : "mic"} size={24} color="#fff" /></TouchableOpacity>
+        <TouchableOpacity style={[styles.ctrl, speaker && styles.ctrlOn]} onPress={toggleSpeaker} accessibilityLabel={speaker ? "Disattiva vivavoce" : "Attiva vivavoce"} testID="call-speaker"><Ionicons name={speaker ? "volume-high" : "volume-medium"} size={24} color="#fff" /></TouchableOpacity>
 
         <TouchableOpacity style={[styles.ctrl, styles.hang]} onPress={() => hangup()} testID="call-hangup"><Ionicons name="call-outline" size={26} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} /></TouchableOpacity>
       </View>
