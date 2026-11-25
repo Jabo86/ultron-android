@@ -9,6 +9,7 @@ import { useI18n } from "../lib/i18n";
 import * as api from "../lib/api";
 import { signMessage, verifyMessage, bytesToHex } from "../lib/crypto";
 import { ensureCallPermissions } from "../lib/callPerms";
+import { turnIceConfig } from "../lib/turnIceConfig";
 import { suppressLock } from "../lib/lockGuard";
 import * as telecom from "../lib/telecom";
 import { theme } from "../theme";
@@ -135,11 +136,7 @@ export default function GroupCallScreen({ route, navigation }) {
         const okPerm = await ensureCallPermissions(video);
         if (!okPerm) { if (mounted) { setTimeout(() => leave(), 800); } return; }
         const relay = await api.callTurn();
-        if (!relay?.urls?.length || !relay.username || !relay.credential) {
-          throw new Error("Relay TURN non disponibile per la chiamata di gruppo.");
-        }
-        turnConfig.current = { iceTransportPolicy: "relay", bundlePolicy: "max-bundle",
-          iceServers: [{ urls: relay.urls, username: relay.username, credential: relay.credential }] };
+        turnConfig.current = turnIceConfig(relay);
         const stream = await mediaDevices.getUserMedia({ audio: true, video: video ? { facingMode: "user" } : false });
         await telecom.routeAudio(false);
         if (!mounted) { stream.getTracks().forEach((t) => t.stop()); return; }
