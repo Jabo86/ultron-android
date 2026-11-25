@@ -1,6 +1,8 @@
 import * as api from "./api";
 import { deviceId } from "./devices";
 import { hostedRatchetPilot, verifiedContact } from "./hostedRatchetChat";
+import { hostedSignedChatKeys } from "./signedChatKeys";
+import { groupLinkTrust } from "./groupLinkTrust";
 import { hostedPrekeyDevice, parsePools } from "./hostedPrekeys";
 import { groupAuthenticationService, groupIdentityFingerprint, signGroupCredential } from "./groupMemberProof";
 import { getVerified } from "./verify";
@@ -8,7 +10,7 @@ import { getVerified } from "./verify";
 const recentIdentities = new Map();
 const IDENTITY_TTL = 8000;
 
-export async function hostedGroupCredentials(user) {
+export async function hostedGroupCredentials(user, groupId = null) {
   if (!hostedRatchetPilot(user)) throw new Error("I gruppi MLS richiedono il gateway pilota UNVOR.");
   const check = api.authenticatedScope(user);
   const installation = hostedPrekeyDevice(user, await deviceId());
@@ -21,7 +23,22 @@ export async function hostedGroupCredentials(user) {
     if (account === user.lns) return user.pk;
     const pinned = await getVerified(account);
     check();
-    if (!pinned?.fp && !pinned?.identityFp) return null;
+    if (!pinned?.fp && !pinned?.identityFp) {
+      // In an MLS group, an invited participant need not be in the 1:1
+      // address book. Verify signed account keys and pin their first identity.
+      // If a bearer link anchored the founder, that fingerprint is mandatory.
+      if (!groupId) return null;
+      const signed = await hostedSignedChatKeys(user.lns, account, () => {});
+      check();
+      const fp = groupIdentityFingerprint(account, signed?.identityKey);
+      if (!fp) return null;
+      const link = await groupLinkTrust(user, groupId);
+      check();
+      if (link?.founder === account && link.founderFingerprint !== fp) {
+        throw new Error("L'identita del fondatore non coincide con il link.");
+      }
+      return signed.identityKey;
+    }
     const cacheKey = JSON.stringify([user.server, user.lns, user.pk, account]);
     const fingerprint = JSON.stringify([pinned.fp, pinned.identityFp, pinned.at]);
     const now = Date.now();
