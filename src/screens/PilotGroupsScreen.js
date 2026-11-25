@@ -209,8 +209,10 @@ export default function PilotGroupsScreen({ navigation, route }) {
     setLoadingBook(true);
     setBookError("");
     (async () => {
+      // The phone address book must remain visible even if the relay-backed
+      // contacts endpoint is offline or temporarily unavailable.
       const [remote, local] = await Promise.all([
-        contacts(),
+        contacts().catch(() => []),
         require("../lib/book").list().catch(() => []),
       ]);
       const eligible = displayGroupContacts(remote, local, user.lns);
@@ -265,9 +267,11 @@ export default function PilotGroupsScreen({ navigation, route }) {
 
   async function invite(row, addresses) {
     const failures = [];
+    const inboxOnly = [];
     for (const address of addresses) {
       try {
-        await requestPilotGroupInvitation(user, row, address);
+        const invitation = await requestPilotGroupInvitation(user, row, address);
+        if (invitation.chatNotification !== "sent") inboxOnly.push(address);
         setSelected(previous => previous.filter(item => item !== address));
       } catch (error) {
         const hint = error?.response?.status === 404
@@ -278,6 +282,10 @@ export default function PilotGroupsScreen({ navigation, route }) {
     }
     await refresh(row);
     if (failures.length) setErr(failures.join("\n"));
+    if (inboxOnly.length) Alert.alert(say("Invito al gruppo salvato", "Group invitation saved"),
+      say("Invito registrato per: ", "Invitation saved for: ") + inboxOnly.join(", ") + "\n" +
+      say("Non è stato possibile inviare l’avviso nella chat privata. Il destinatario può trovare l’invito nella sezione Gruppi di UNVOR.",
+        "A private-chat alert was not sent. The recipient can open the invitation in the UNVOR Groups inbox."));
   }
 
   const openDirectory = () => run(async () => {
@@ -674,7 +682,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
               <Ionicons name={checked ? "checkbox" : "square-outline"} size={22} color={theme.primary} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.text}>{label}</Text><Text style={styles.dim}>{row.lns}</Text>
-                {row.mutual !== true && <Text style={styles.dim}>{say("Invito diretto solo se siete nella rubrica reciproca; puoi condividere un link.", "Direct invite requires mutual contacts; otherwise share a link.")}</Text>}
+                {row.mutual !== true && <Text style={styles.dim}>{say("Puoi invitarlo al gruppo senza avervi reciprocamente in rubrica. L’avviso nella chat privata potrebbe non arrivare.", "You can invite this contact to the group without mutual address books. The direct-chat alert may not arrive.")}</Text>}
               </View>
             </TouchableOpacity>
           );
@@ -686,7 +694,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
     <ScrollView style={[styles.root, topStyle]} contentContainerStyle={pageStyle}>
       {iconButton("arrow-back", backLabel, () => setDiscover(false))}
       <Text style={styles.title}>{say("Gruppi pubblici", "Public groups")}</Text>
-      <Text style={styles.dim}>{say("Per entrare serve un invito e il QR UNVOR verificato.", "Entry requires an invitation and a verified UNVOR QR.")}</Text>
+      <Text style={styles.dim}>{say("Per entrare usa un link valido o un invito al gruppo. La chat privata e la rubrica sono indipendenti.", "Join with a valid link or group invitation. Direct chats and address books are independent.")}</Text>
       {publicGroups.map(item => (
         <TouchableOpacity key={item.id} style={styles.row} onPress={() => openProfile(item.admin)} accessibilityRole="button">
           <View style={{ flex: 1 }}><Text style={styles.text}>{item.name}</Text><Text style={styles.dim}>{item.admin}</Text></View>
