@@ -1,0 +1,21 @@
+name: UNVOR MLS invite compatibility audit
+on:
+  push:
+    branches:
+      - fix/unvor-pilot-366-groups
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect actual bundled gateway invitation routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gateway"
+          tar -xzf tools/gateway-attachments/source.tar.gz -C "$RUNNER_TEMP/gateway"
+          rg -n -i 'mls.*redeem|redeem.*mls|invitation.*review|review.*invitation|action.*link|link.*action|group.*invitations' "$RUNNER_TEMP/gateway" --glob '*.rs' | head -n 115 || true
