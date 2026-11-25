@@ -126,7 +126,8 @@ const app=runInNewContext(source+"\n({cachedPilotGroupSummary,listPilotGroups,pr
     notices.push({payload,peer});
     appData.set(receiptName,{done:true});
   },verifiedContact:async(_user,peer)=>({kem:cryptoLib.bytesToHex(users.get(peer).kem.publicKey)}),
-  mutualChatContact:async(_user,peer)=>({kem:cryptoLib.bytesToHex(users.get(peer).kem.publicKey),identityKey:users.get(peer).pk}),
+  hostedSignedChatKeys:async(_owner,peer)=>({kem:cryptoLib.bytesToHex(users.get(peer).kem.publicKey),identityKey:users.get(peer).pk}),
+  mutualChatContact:async(_user,peer)=>{if(peer===c.lns) throw new Error("Non reciproco");return {kem:cryptoLib.bytesToHex(users.get(peer).kem.publicKey),identityKey:users.get(peer).pk};},
   createMlsGroupEngine,hostedGroupCredentials,mls,defaultClientConfig,
   getBlob:async key=>structuredClone(appData.get(key)),
   setBlobDurably:async (key,data)=>appData.set(key,structuredClone(data)),
@@ -236,6 +237,16 @@ assert.deepEqual(cryptoLib.unpackMessage(notice.payload).groupInvite,{id:request
 const noticeCount = notices.length;
 await app.deliverPilotGroupInvitation(a,publicGroup,request);
 assert.equal(notices.length,noticeCount);
+// Group invitations to a one-way address-book contact must reach the MLS
+// invitation inbox without requiring a private-chat relationship.
+const oneWay=await app.requestPilotGroupInvitation(a,publicGroup,c.lns);
+assert.equal(oneWay.status,"pending");
+assert.equal(oneWay.chatNotification,"inbox");
+assert.equal(notices.length,noticeCount);
+actor=c;
+const [oneWayReceived]=await app.pilotInvitationInbox(c);
+assert.equal(oneWayReceived.id,oneWay.id);
+assert.equal(await app.pilotInvitationTitle(c,oneWayReceived),"Piazza ULTRON");
 actor=b;
 assert.deepEqual(Array.from(await app.listPublicPilotGroups(b),item=>item.name),["Piazza ULTRON"]);
 assert.equal((await app.listPilotGroups()).length,0);
