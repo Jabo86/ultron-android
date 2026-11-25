@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioManager
+import android.media.AudioDeviceInfo
 import android.media.ToneGenerator
 import android.net.Uri
 import android.os.Build
@@ -79,6 +80,56 @@ class CallControlModule(private val ctx: ReactApplicationContext) : ReactContext
     super.invalidate()
   }
 
+
+  private var originalAudioMode: Int? = null
+
+  // L'audio WebRTC e' indipendente dal suono della suoneria. Applichiamo
+  // la modalita' voce e rendiamo selezionabile l'uscita anche su Android 12+.
+  @Suppress("DEPRECATION")
+  @ReactMethod
+  fun setAudioRoute(speaker: Boolean, promise: Promise) {
+    audioHandler.post {
+      try {
+        val audio = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        if (originalAudioMode == null) originalAudioMode = audio.mode
+        audio.mode = AudioManager.MODE_IN_COMMUNICATION
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+          val current = audio.communicationDevice
+          val external = current != null && (
+            current.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+            current.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+            current.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+            current.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+            current.type == AudioDeviceInfo.TYPE_USB_HEADSET
+          )
+          if (speaker || !external) {
+            val kind = if (speaker) AudioDeviceInfo.TYPE_BUILTIN_SPEAKER else AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+            val target = audio.availableCommunicationDevices.firstOrNull { it.type == kind }
+            if (target != null) audio.setCommunicationDevice(target)
+            else audio.isSpeakerphoneOn = speaker
+          }
+        } else {
+          audio.isSpeakerphoneOn = speaker
+        }
+        promise.resolve(true)
+      } catch (e: Throwable) { promise.resolve(false) }
+    }
+  }
+
+  @Suppress("DEPRECATION")
+  @ReactMethod
+  fun clearAudioRoute(promise: Promise) {
+    audioHandler.post {
+      try {
+        val audio = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) audio.clearCommunicationDevice()
+        else audio.isSpeakerphoneOn = false
+        originalAudioMode?.let { if (audio.mode == AudioManager.MODE_IN_COMMUNICATION) audio.mode = it }
+        originalAudioMode = null
+        promise.resolve(true)
+      } catch (e: Throwable) { promise.resolve(false) }
+    }
+  }
 
   @ReactMethod
   fun available(promise: Promise) {
