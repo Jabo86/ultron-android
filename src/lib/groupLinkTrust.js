@@ -20,6 +20,22 @@ export function myGroupLinkFingerprint(user) {
   return fp;
 }
 
+// A moderator can generate the link, but the Welcome is signed by the
+// founder. Bind the invitation to the actual founder, not its generator.
+export async function founderGroupLinkFingerprint(user, founder) {
+  if (founder === user.lns) return myGroupLinkFingerprint(user);
+  const check = api.authenticatedScope(user);
+  const bundle = await hostedSignedChatKeys(user.lns, founder, () => {});
+  check();
+  const fp = groupIdentityFingerprint(founder, bundle?.identityKey);
+  if (!fp) throw new Error("Chiavi firmate del fondatore non disponibili.");
+  const qr = await getVerified(founder);
+  if (qr?.identityFp && qr.identityFp !== fp) {
+    throw new Error("La chiave d'identita del fondatore e cambiata.");
+  }
+  return fp;
+}
+
 // The gateway validates the secret group link. The client validates the founder
 // identity independently, using only the fingerprint carried by that same link.
 export async function trustRedeemedGroupLink(user, invitation, expectedFingerprint) {
