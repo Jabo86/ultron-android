@@ -1,7 +1,7 @@
 name: UNVOR Chat Pilot APK
 on:
   push:
-    branches: [ratchet-integration, fix/chat-hud-attachments, build/pilot-contact-actions, fix/unvor-pilot-366-calls]
+    branches: [ratchet-integration, fix/chat-hud-attachments, build/pilot-contact-actions, fix/unvor-pilot-366-calls, fix/unvor-pilot-366-groups]
   workflow_dispatch:
 permissions:
   contents: write
@@ -36,6 +36,7 @@ jobs:
       - name: Prepare gateway fixture
         run: |
           mkdir -p "$RUNNER_TEMP/unvor-gateway"
+          python3 tools/patch-unvor-mls-link-gateway.py
           tar -xzf tools/gateway-attachments/source.tar.gz -C "$RUNNER_TEMP/unvor-gateway"
           npm ci --legacy-peer-deps --no-fund
           rustup toolchain install stable --profile minimal
@@ -103,6 +104,7 @@ jobs:
           if (( status > 1 )); then exit "$status"; fi
           node tools/verify-ultron-pilot-dependencies.mjs audit "$audit_report"
           node tools/verify-unvor-brand.cjs
+          node tools/verify-unvor-invite-link.mjs
           node tools/verify-unvor-composer.cjs
           node tools/verify-unvor-direct-polls.mjs
           curl -fsSL https://repo.maven.apache.org/maven2/org/bouncycastle/bcprov-jdk15to18/1.87/bcprov-jdk15to18-1.87.jar -o "$RUNNER_TEMP/unvor-bcprov.jar"
