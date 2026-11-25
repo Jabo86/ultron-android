@@ -107,7 +107,7 @@ class IncomingCallActivity : Activity() {
             background = panel(surface, 28, border)
         }
         val logo = ImageView(this).apply {
-            setImageResource(R.drawable.unvor_logo)
+            setImageResource(R.drawable.unvor_emblem)
             scaleType = ImageView.ScaleType.FIT_CENTER
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
