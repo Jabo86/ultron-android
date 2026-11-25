@@ -197,6 +197,31 @@ function Root() {
     });
     return () => { try { sub.remove(); } catch (_) {} };
   }, [user?.lns, locked]);
+  // Link invitations are authorized immediately by their bearer token. MLS
+  // membership still needs the founder's private group state: process accepted
+  // invites automatically whenever the founder has UNVOR open, even on Home.
+  // The gateway never receives a copy of the MLS group secret.
+  useEffect(() => {
+    if (!user?.lns || locked || !hostedRatchetPilot(user)) return;
+    let live = true, working = false, position = 0;
+    const admit = async () => {
+      if (!live || working || RNAppState.currentState !== "active") return;
+      working = true;
+      try {
+        const { listPilotGroups, finishAcceptedPilotGroupInvites } = require("./src/lib/pilotGroups");
+        const rows = await listPilotGroups();
+        if (!live) return;
+        const owned = rows.filter(row => row.admin === user.lns);
+        if (owned.length) await finishAcceptedPilotGroupInvites(user, owned[position++ % owned.length]);
+      } catch { /* retry on next foreground check; never block the home screen */ }
+      finally { working = false; }
+    };
+    admit();
+    const interval = setInterval(admit, 20000);
+    const resumed = RNAppState.addEventListener("change", state => { if (state === "active") admit(); });
+    return () => { live = false; clearInterval(interval); resumed.remove(); };
+  }, [user, locked]);
+
   const pendingNotif = useRef(null);
   const routeFromData = (data) => {
     if (!data) return null;
