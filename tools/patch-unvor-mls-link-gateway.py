@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One narrowly scoped gateway patch: a valid bearer invite link needs no moderator review.
+"""Narrow gateway fix: a valid bearer invite link needs no moderator review.
 
 The incoming user still must sign MLS consent.  The owner must create an MLS
 Welcome to deliver group keys.  All existing group limits and revocation remain.
