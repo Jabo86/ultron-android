@@ -1,7 +1,7 @@
 name: UNVOR Chat Pilot APK
 on:
   push:
-    branches: [ratchet-integration, fix/chat-hud-attachments, build/pilot-contact-actions]
+    branches: [ratchet-integration, fix/chat-hud-attachments, build/pilot-contact-actions, fix/unvor-pilot-366-calls]
   workflow_dispatch:
 permissions:
   contents: write
