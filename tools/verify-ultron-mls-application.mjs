@@ -125,7 +125,9 @@ const app=runInNewContext(source+"\n({cachedPilotGroupSummary,listPilotGroups,pr
     assert.equal(actor,user);
     notices.push({payload,peer});
     appData.set(receiptName,{done:true});
-  },verifiedContact:async(_user,peer)=>({kem:cryptoLib.bytesToHex(users.get(peer).kem.publicKey)}),createMlsGroupEngine,hostedGroupCredentials,mls,defaultClientConfig,
+  },verifiedContact:async(_user,peer)=>({kem:cryptoLib.bytesToHex(users.get(peer).kem.publicKey)}),
+  mutualChatContact:async(_user,peer)=>({kem:cryptoLib.bytesToHex(users.get(peer).kem.publicKey),identityKey:users.get(peer).pk}),
+  createMlsGroupEngine,hostedGroupCredentials,mls,defaultClientConfig,
   getBlob:async key=>structuredClone(appData.get(key)),
   setBlobDurably:async (key,data)=>appData.set(key,structuredClone(data)),
   setBlobsDurably:async entries=>{ for (const [key,data] of entries) appData.set(key,structuredClone(data)); },
