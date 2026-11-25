@@ -241,7 +241,7 @@ function Root() {
   useEffect(() => {
     let mounted = true;
     const receive = (url) => {
-      const match = /^(?:unvor|ultron):\/\/group-invite\/([a-f0-9]{64}\.[a-f0-9]{64})$/.exec(url || "");
+      const match = /^(?:unvor|ultron):\/\/group-invite\/([a-f0-9]{64}\.[a-f0-9]{64}(?:~[a-f0-9]{64})?)\/?$/i.exec(url || "");
       if (mounted && match) handleNotif({ type: "group_invite", code: match[1] });
     };
     Linking.getInitialURL().then(receive).catch(() => {});
