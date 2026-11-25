@@ -6,7 +6,7 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: ultron-ratchet-pilot
+  group: ultron-ratchet-pilot-${{ github.ref_name }}
   cancel-in-progress: true
 jobs:
   gateway_attachments:
