@@ -185,9 +185,9 @@ export default function PilotGroupsScreen({ navigation, route }) {
         throw error;
       });
       const result = await Promise.all(rows.map(async item => ({ ...item, title: await cachedPilotGroupTitle(user, item) })));
-      const incoming = await Promise.all(invitations.map(async item => ({ ...item, title: await pilotInvitationTitle(user, item),
-        needsQr: item.status === "accepted" && !item.link && !(await getVerified(item.inviter))?.fp &&
-          !(await groupLinkTrust(user, item.group)) })));
+      const incoming = await Promise.all(invitations.map(async item => ({
+        ...item, title: await pilotInvitationTitle(user, item), needsQr: false,
+      })));
       if (incoming.some(item => item.status === "accepted")) preparePilotGroupInvites(user).catch(() => {});
       if (current()) { setGroups(result); setInbox(incoming); }
     }
