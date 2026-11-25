@@ -10,7 +10,7 @@ import * as api from "../lib/api";
 import { signMessage, verifyMessage, bytesToHex } from "../lib/crypto";
 import { ensureCallPermissions } from "../lib/callPerms";
 import { suppressLock } from "../lib/lockGuard";
-import { iceConfig } from "../config";
+import * as telecom from "../lib/telecom";
 import { theme } from "../theme";
 
 // Chiamata di gruppo mesh (max 4). Ogni coppia negozia un PeerConnection P2P; l'SDP è
@@ -30,6 +30,7 @@ export default function GroupCallScreen({ route, navigation }) {
   const [muted, setMuted] = useState(false);
   const [camOff, setCamOff] = useState(false);
   const [count, setCount] = useState(1);
+  const [callError, setCallError] = useState("");
 
   const pcs = useRef({}); // lns -> RTCPeerConnection
   const remoteSet = useRef({}); // lns -> bool
@@ -39,9 +40,12 @@ export default function GroupCallScreen({ route, navigation }) {
   const pollRoom = useRef(null);
   const pollSig = useRef(null);
   const ended = useRef(false);
+  const turnConfig = useRef(null);
 
   const makePc = useCallback((peer) => {
-    const p = new RTCPeerConnection(iceConfig(false)); // gruppi: sempre dal relay
+    // Relay-only richiede un vero server TURN: STUN da solo non crea candidati relay.
+    if (!turnConfig.current) throw new Error("TURN non disponibile");
+    const p = new RTCPeerConnection(turnConfig.current);
     p.addEventListener("icecandidate", (e) => {
       if (e.candidate && roomRef.current) {
         const c = e.candidate.toJSON ? e.candidate.toJSON() : e.candidate;
@@ -49,15 +53,26 @@ export default function GroupCallScreen({ route, navigation }) {
       }
     });
     p.addEventListener("track", (e) => { if (e.streams && e.streams[0]) setRemoteStreams((m) => ({ ...m, [peer]: e.streams[0] })); });
+    p.addEventListener("iceconnectionstatechange", () => {
+      if (p.iceConnectionState === "failed") setCallError("La connessione ICE/TURN del partecipante " + peer + " e fallita.");
+    });
     if (localRef.current) localRef.current.getTracks().forEach((t) => p.addTrack(t, localRef.current));
     return p;
   }, []);
 
-  const applyIce = useCallback((peer, list) => {
-    if (!Array.isArray(list) || !pcs.current[peer]) return;
-    const start = iceApplied.current[peer] || 0;
-    for (let i = start; i < list.length; i++) { try { pcs.current[peer].addIceCandidate(new RTCIceCandidate(list[i])); } catch {} }
-    iceApplied.current[peer] = list.length;
+  const applyIce = useCallback(async (peer, list) => {
+    const p = pcs.current[peer];
+    if (!Array.isArray(list) || !p?.remoteDescription) return;
+    let next = iceApplied.current[peer] || 0;
+    for (let i = next; i < list.length; i++) {
+      try {
+        await p.addIceCandidate(new RTCIceCandidate(list[i]));
+        next++;
+      } catch {
+        break; // non scartare i candidati che non sono stati accettati
+      }
+    }
+    iceApplied.current[peer] = next;
   }, []);
 
   const ensureOffer = useCallback(async (peer) => {
@@ -98,7 +113,7 @@ export default function GroupCallScreen({ route, navigation }) {
         } catch {}
       }
     }
-    applyIce(peer, sig.remote_ice);
+    await applyIce(peer, sig.remote_ice);
   }, [applyIce, makePc, me, myPk, user]);
 
   const leave = useCallback(async () => {
@@ -108,6 +123,7 @@ export default function GroupCallScreen({ route, navigation }) {
     if (roomRef.current) { try { await api.gcallLeave(roomRef.current); } catch {} }
     Object.values(pcs.current).forEach((p) => { try { p.close(); } catch {} });
     try { localRef.current && localRef.current.getTracks().forEach((t) => t.stop()); } catch {}
+    telecom.clearAudioRoute();
     navigation.goBack();
   }, [navigation]);
 
@@ -118,7 +134,14 @@ export default function GroupCallScreen({ route, navigation }) {
         suppressLock();
         const okPerm = await ensureCallPermissions(video);
         if (!okPerm) { if (mounted) { setTimeout(() => leave(), 800); } return; }
+        const relay = await api.callTurn();
+        if (!relay?.urls?.length || !relay.username || !relay.credential) {
+          throw new Error("Relay TURN non disponibile per la chiamata di gruppo.");
+        }
+        turnConfig.current = { iceTransportPolicy: "relay", bundlePolicy: "max-bundle",
+          iceServers: [{ urls: relay.urls, username: relay.username, credential: relay.credential }] };
         const stream = await mediaDevices.getUserMedia({ audio: true, video: video ? { facingMode: "user" } : false });
+        await telecom.routeAudio(false);
         if (!mounted) { stream.getTracks().forEach((t) => t.stop()); return; }
         localRef.current = stream; setLocalStream(stream);
         // assicura iscrizione alla stanza
@@ -139,9 +162,11 @@ export default function GroupCallScreen({ route, navigation }) {
           if (ended.current || !roomRef.current) return;
           try { const sigs = await api.gcallSignals(roomRef.current); (Array.isArray(sigs) ? sigs : []).forEach((sg) => handleSignal(sg)); } catch {}
         }, 1800);
-      } catch { leave(); }
+      } catch (e) {
+        if (mounted) setCallError(String(e?.message || e || "Errore connessione gruppo"));
+      }
     })();
-    return () => { mounted = false; ended.current = true; if (pollRoom.current) clearInterval(pollRoom.current); if (pollSig.current) clearInterval(pollSig.current); Object.values(pcs.current).forEach((p) => { try { p.close(); } catch {} }); try { localRef.current && localRef.current.getTracks().forEach((t) => t.stop()); } catch {} };
+    return () => { mounted = false; ended.current = true; if (pollRoom.current) clearInterval(pollRoom.current); if (pollSig.current) clearInterval(pollSig.current); Object.values(pcs.current).forEach((p) => { try { p.close(); } catch {} }); try { localRef.current && localRef.current.getTracks().forEach((t) => t.stop()); } catch {} telecom.clearAudioRoute(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -176,6 +201,7 @@ export default function GroupCallScreen({ route, navigation }) {
       <View style={styles.topBar}>
         <Text style={styles.peer}>{chanName}</Text>
         <EncryptionNotice kind="group-call" />
+        {callError ? <Text style={[styles.status, { color: "#ff6b6b", paddingHorizontal: 20, textAlign: "center" }]} testID="gcall-error">{callError}</Text> : null}
         <Text style={styles.status} testID="gcall-count">{count} {lang === "en" ? "in call" : "in chiamata"}{remotes.length ? (allVerified ? " · " + (lang === "en" ? "all verified ML-DSA-65" : "tutti verificati ML-DSA-65") : "") : " · " + (lang === "en" ? "waiting…" : "in attesa…")}</Text>
       </View>
 
