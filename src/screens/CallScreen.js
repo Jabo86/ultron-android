@@ -18,6 +18,7 @@ import { ensureCallPermissions } from "../lib/callPerms";
 import { saveVerifiedSas, loadVerifiedSas } from "../lib/store";
 import { loadRingtone, loadRingVolume, loadVibMode } from "../lib/store";
 const RING_TIMEOUT_MS = 60_000;
+const CONNECT_TIMEOUT_MS = 30_000;
 const VIB_PATTERNS = { standard: [0, 700, 900, 700], short: [0, 400, 300, 400], long: [0, 1200, 600, 1200] };
 const RINGTONES = { classic: require("../../assets/ringtone.wav"), chime: require("../../assets/ring_chime.wav"), beep: require("../../assets/ring_beep.wav"), digital: require("../../assets/ring_digital.wav"), marimba: require("../../assets/ring_marimba.wav"), pulse: require("../../assets/ring_pulse.wav") };
 import { DEFAULT_SERVER, iceConfig } from "../config";
@@ -59,6 +60,7 @@ export default function CallScreen({ route, navigation }) {
   const [remoteRev, setRemoteRev] = useState(0);
   const [pushInv, setPushInv] = useState(null);
   const [muted, setMuted] = useState(false);
+  const [speaker, setSpeaker] = useState(false);
   const [sas, setSas] = useState(null);
   const [sasVerified, setSasVerified] = useState(false);
   const peerLns = (to || route.params?.from || "").toLowerCase();
@@ -79,6 +81,9 @@ export default function CallScreen({ route, navigation }) {
   const iceEFrom = useRef(0);
   const peerKem = useRef(route.params?.from_kem || null); // KEM pk dell'altro (per cifrare l'answer)
 
+  const pendingIce = useRef([]);
+  const sendingIce = useRef(false);
+  const connectTimer = useRef(null);
   const myLns = user?.lns || "";
   const myPk = user?.pk || (user?.kem ? bytesToHex(user.kem.publicKey) : "");
   const myKem = user?.kem ? bytesToHex(user.kem.publicKey) : "";
@@ -135,12 +140,15 @@ export default function CallScreen({ route, navigation }) {
     if (ended.current) return;
     ended.current = true;
     clearTimeout(unansweredTimer.current);
+    clearTimeout(connectTimer.current);
+    pendingIce.current = [];
     try { pc.current?.close(); } catch {}
     pc.current = null;
     for (const track of streamRef.current?.getTracks() || []) {
       try { track.stop(); } catch {}
     }
     streamRef.current = null;
+    telecom.clearAudioRoute();
     telecom.end();
   }, []);
 
@@ -170,33 +178,57 @@ export default function CallScreen({ route, navigation }) {
 
   const accept = useCallback(() => {
     if (ended.current) return;
+    if (incoming && fromPush && !route.params?.offer && !pushInv?.offer) {
+      setWarn(lang === "en" ? "Retrieving encrypted invitation…" : "Recupero invito cifrato in corso…");
+      return;
+    }
     suppressLock(); stopRing(); setAccepted(true);
-  }, [stopRing]);
+  }, [stopRing, incoming, fromPush, pushInv, route.params?.offer, lang]);
   const dismiss = finish;
   const reject = useCallback(() => finish(true, "declined"), [finish]);
   const hangup = finish;
 
-  // Aperta dal PUSH: recupera l'offerta E2EE reale dal rendezvous anonimo (il push non la trasporta).
+  // La push segnala soltanto un RID. Ritenta se il messaggio arriva prima
+  // dell'offerta sul server o durante un cambio di epoch.
   useEffect(() => {
     if (!incoming || !fromPush || route.params?.offer || pushResolved.current) return;
     pushResolved.current = true;
+    let cancelled = false;
     (async () => {
       try {
         const from = (route.params?.from || "").toLowerCase();
-        if (!from || !user?.dh || !user?.kem) return;
+        if (!from || !user?.dh || !user?.kem) throw new Error("Chiavi per invito non disponibili.");
         const dhMap = await api.pulseDhKeys([from]);
-        const dh = dhMap && dhMap[from];
-        if (!dh) return;
+        const dh = dhMap?.[from];
+        if (!dh) throw new Error("Chiave DH del chiamante non disponibile.");
         const shared = anonSharedSecret(user.dh.secretKey, dh);
-        let inv = null;
-        for (const ep of anonEpochs()) {
-          const rid = discRid(shared, from, myLns, ep);
-          let g; try { g = await api.anonGet(rid, 0, 0); } catch { g = null; }
-          if (g && g.found && g.ping) { try { inv = openInvite(g.ping, user.kem.secretKey); } catch {} if (inv && inv.offer) break; }
+        const deadline = Date.now() + 20000;
+        while (!cancelled && !ended.current && Date.now() < deadline) {
+          for (const ep of anonEpochs()) {
+            const rid = discRid(shared, from, myLns, ep);
+            let response;
+            try { response = await api.anonGet(rid, 0, 0, { timeout: 3500 }); } catch { response = null; }
+            if (cancelled || ended.current) return;
+            if (!response?.found || !response.ping) continue;
+            const inv = openInvite(response.ping, user.kem.secretKey);
+            if (inv?.chan && inv?.offer?.sdp && Number(inv.expires_at) > Date.now() && inv.from === from) {
+              chan.current = inv.chan;
+              peerKem.current = inv.from_kem;
+              setPushInv(inv);
+              return;
+            }
+          }
+          await new Promise((resolve) => setTimeout(resolve, 1200));
         }
-        if (inv && inv.chan && inv.offer) { chan.current = inv.chan; peerKem.current = inv.from_kem; setPushInv(inv); }
-      } catch {}
+        if (!cancelled && !ended.current) throw new Error("Invito scaduto o non disponibile. Richiedi una nuova chiamata.");
+      } catch (e) {
+        if (!cancelled && !ended.current) {
+          setErrMsg(String(e?.message || e));
+          setStatus("error");
+        }
+      }
     })();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [incoming, fromPush]);
 
@@ -365,6 +397,7 @@ export default function CallScreen({ route, navigation }) {
         } else {
           // RICEVENTE: applica l'offer ricevuto (verifica firma), crea l'answer cifrato verso il chiamante.
           const off = route.params?.offer || pushInv?.offer;
+          if (!off?.sdp || !chan.current) throw new Error("Invito chiamata incompleto. Riprova.");
           if (off && off.sdp) {
             remoteSet.current = true;
             const _sig = route.params?.offer_sig || pushInv?.offer_sig; const _fpk = route.params?.from_pk || pushInv?.from_pk;
