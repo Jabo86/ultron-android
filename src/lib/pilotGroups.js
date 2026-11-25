@@ -718,7 +718,8 @@ async function writePilotGroup(user, row, kind, value, invitation, draftId, ctx,
 
   const nextMembers = body.kind === "message" ? undefined : engine.members(update.snapshot, id, record.epoch + 1);
   const pending = { body: { ...body, wire: update.wire }, snapshot: update.snapshot, text, type, poll, profile, attachment, managedTitle, replyTo, draftId, nextMembers,
-    silent: !["message", "reply", "attachment", "poll", "quiz"].includes(kind) };
+    // A new member must receive the group wake notification for their Welcome.
+    silent: !["message", "reply", "attachment", "poll", "quiz", "add"].includes(kind) };
   const staged = { ...record, pending };
   check();
   await setBlobDurably(blob(user, id), staged);
