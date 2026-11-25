@@ -2,6 +2,7 @@ import { MAX_ATTACHMENT_BYTES, ATTACHMENT_CHUNK_BYTES } from "./attachmentLimits
 import * as api from "./api";
 import { bytesToHex, decryptEnvelope, decryptFileBytes, encryptFileBytes, encryptForRecipients, hexToBytes, packMessage, randomHex, sha256Hex, signMessage, utf8Decode, utf8Encode, verifyMessage } from "./crypto";
 import { registerHostedRatchet, sendPilotMessage, mutualChatContact } from "./hostedRatchetChat";
+import { hostedSignedChatKeys } from "./signedChatKeys";
 import { hostedGroupCredentials } from "./hostedGroupCredentials";
 import { getBlob, setBlobDurably, setBlobsDurably } from "./lock";
 import { createMlsGroupEngine } from "./mlsGroupEngine";
@@ -230,7 +231,7 @@ export async function pilotInvitationTitle(user, invitation) {
     const plain = decryptEnvelope(JSON.parse(invitation.note), user.kem.secretKey);
     const { title, signature } = JSON.parse(plain);
     if (typeof title !== "string" || !title || title.length > 60) return null;
-    const credentials = await hostedGroupCredentials(user);
+    const credentials = await hostedGroupCredentials(user, invitation.group);
     const key = await credentials.identityFor(invitation.inviter);
     const scope = inviteTitleScope(user.server, invitation.id, invitation.group, invitation.inviter, invitation.target, title);
     return verifyMessage(scope, signature, key) ? title : null;
@@ -252,7 +253,10 @@ export async function requestPilotGroupInvitation(user, group, target) {
   check();
   const id = randomHex(16);
   const title = group.admin === user.lns ? await cachedPilotGroupTitle(user, group) : null;
-  const key = await mutualChatContact(user, target);
+  // Group invitations must not depend on the recipient having added us in their
+  // 1:1 address book. Signed keys are still authenticated and TOFU-pinned.
+  const key = await hostedSignedChatKeys(user.lns, target, () => {});
+  if (!key?.kem) throw new Error("Chiavi cifrate firmate del contatto non disponibili.");
   const signature = title ? signMessage(inviteTitleScope(user.server, id, group.id, user.lns, target, title), user.sk) : null;
   const note = title ? JSON.stringify(encryptForRecipients(JSON.stringify({ title, signature }), { [target]: key.kem })[0]) : undefined;
   check();
@@ -261,8 +265,15 @@ export async function requestPilotGroupInvitation(user, group, target) {
   if (answer.group !== group.id || answer.target !== target || answer.inviter !== group.admin) {
     throw new Error("Il gateway non ha confermato l’invito.");
   }
-  await deliverPilotGroupInvitation(user, group, answer);
-  return answer;
+  // The invitation is persisted on the server before the optional 1:1 alert.
+  // A missing mutual contact / temporary ratchet outage must not turn a valid
+  // group invitation into an apparent failure or cause duplicate invitations.
+  try {
+    await deliverPilotGroupInvitation(user, group, answer);
+    return { ...answer, chatNotification: "sent" };
+  } catch {
+    return { ...answer, chatNotification: "inbox" };
+  }
 }
 
 export async function deliverPilotGroupInvitation(user, group, invitation) {
@@ -283,6 +294,9 @@ export async function deliverPilotGroupInvitation(user, group, invitation) {
     const payload = saved?.payload || packMessage(text, [], null, 0, { id: invitation.id, group: group.id });
     if (!saved) await setBlobDurably(key, { payload });
     check();
+    // Only the optional direct-chat notification requires mutual contacts;
+    // membership and the group invite inbox are completely independent.
+    await mutualChatContact(user, invitation.target);
     await sendPilotMessage(payload, user, invitation.target, { receiptName: key });
   })();
   invitationDeliveries.set(key, delivery);
