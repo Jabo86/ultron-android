@@ -23,7 +23,7 @@ import java.net.URL
  * che "c'è posta". Il contenuto lo legge l'app, dopo lo sblocco.
  */
 class WakeService : Service() {
-  private val brandIcon by lazy { BitmapFactory.decodeResource(resources, R.drawable.unvor_logo, BitmapFactory.Options().apply { inSampleSize = 4 }) }
+  private val brandIcon by lazy { BitmapFactory.decodeResource(resources, R.drawable.unvor_emblem, BitmapFactory.Options().apply { inSampleSize = 4 }) }
   @Volatile private var running = false
   private var worker: Thread? = null
   private var chaffWorker: Thread? = null
