@@ -23,6 +23,8 @@ import { useFocusEffect } from "@react-navigation/native";
 import { apiErr, blockContact, contacts, mlsAction, mlsDeleteGroup, mlsRedeem, mlsQuiz, mlsReport, mlsReports, mlsReview,
   mlsUpload } from "../lib/api";
 import { contactAddress, matchesContact } from "../lib/contactAddress";
+import { displayGroupContacts, parseGroupInviteDetails, formatGroupInviteLink } from "../lib/groupInviteHelpers";
+import { groupLinkTrust, myGroupLinkFingerprint, trustRedeemedGroupLink } from "../lib/groupLinkTrust";
 import { pickAvatarDataUrl } from "../lib/avatar";
 import { shrinkPhoto } from "../lib/imageOpt";
 import { base64ToBytes, encryptFileBytesAsync, randomHex } from "../lib/crypto";
@@ -51,6 +53,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
   const [inbox, setInbox] = useState([]);
   const [outgoing, setOutgoing] = useState([]);
   const triedInvites = useRef(new Map());
+  const consumedLink = useRef(null);
   const routedGroup = route?.params?.group || null;
   const [group, setGroup] = useState(routedGroup);
   const [details, storeDetails] = useState(null);
@@ -183,7 +186,8 @@ export default function PilotGroupsScreen({ navigation, route }) {
       });
       const result = await Promise.all(rows.map(async item => ({ ...item, title: await cachedPilotGroupTitle(user, item) })));
       const incoming = await Promise.all(invitations.map(async item => ({ ...item, title: await pilotInvitationTitle(user, item),
-        needsQr: item.status === "accepted" && !(await getVerified(item.inviter))?.fp })));
+        needsQr: item.status === "accepted" && !item.link && !(await getVerified(item.inviter))?.fp &&
+          !(await groupLinkTrust(user, item.group)) })));
       if (incoming.some(item => item.status === "accepted")) preparePilotGroupInvites(user).catch(() => {});
       if (current()) { setGroups(result); setInbox(incoming); }
     }
@@ -205,11 +209,11 @@ export default function PilotGroupsScreen({ navigation, route }) {
     setLoadingBook(true);
     setBookError("");
     (async () => {
-      const entries = await contacts();
-      const eligible = entries.filter(entry => {
-        const address = contactAddress(entry.lns);
-        return address.endsWith("@ultron.uns") && address !== user.lns && entry.mutual === true && !entry.blocked;
-      });
+      const [remote, local] = await Promise.all([
+        contacts(),
+        require("../lib/book").list().catch(() => []),
+      ]);
+      const eligible = displayGroupContacts(remote, local, user.lns);
       const rows = await Promise.all(eligible.map(async entry => {
         const lns = contactAddress(entry.lns);
         const record = await getVerified(lns);
@@ -217,7 +221,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
       }));
       if (active) {
         setBook(rows);
-        const ready = new Set(rows.filter(row => row.verified).map(row => row.lns));
+        const ready = new Set(rows.map(row => row.lns));
         setSelected(previous => previous.filter(address => ready.has(address)));
       }
     })().catch(error => { if (active) { setBook([]); setBookError(apiErr(error)); } })
@@ -500,23 +504,39 @@ export default function PilotGroupsScreen({ navigation, route }) {
     await verifyPilotGroupAccount(user);
     await refresh(null);
   });
-  const redeem = () => run(async () => {
-    const code = joiningLink.trim().replace(/^ultron:\/\/group-invite\//i, "");
-    if (!/^[a-f0-9]{64}\.[a-f0-9]{64}$/.test(code)) throw new Error(say("Link UNVOR non valido.", "Invalid UNVOR link."));
-    await mlsRedeem(code);
+  const redeemCode = async (input) => {
+    const parsed = parseGroupInviteDetails(input);
+    if (!parsed) throw new Error(say("Link UNVOR non valido.", "Invalid UNVOR link."));
+    const invitation = await mlsRedeem(parsed.code);
+    if (invitation?.status === "review") {
+      throw new Error(say("Il gateway non supporta ancora l'ingresso automatico con link privato. Deve essere aggiornato.", "This gateway still requires manual link approval; it needs an update."));
+    }
+    await trustRedeemedGroupLink(user, invitation, parsed.founderFingerprint);
+    if (invitation?.status === "pending") {
+      // Opening the link is the recipient's consent. No second acceptance tap.
+      await decidePilotGroupInvitation(user, invitation, "accepted");
+    } else if (invitation?.status !== "accepted") {
+      throw new Error(say("Invito non disponibile o scaduto.", "Invitation unavailable or expired."));
+    }
+    await preparePilotGroupInvites(user);
     setJoiningLink(""); setRedeemOpen(false);
     await refresh(null);
-  });
+  };
+  const redeem = () => run(() => redeemCode(joiningLink));
   useEffect(() => {
-    if (route?.params?.inviteCode && !routedGroup) {
-      setJoiningLink(route.params.inviteCode); setRedeemOpen(true);
-      navigation.setParams({ inviteCode: undefined });
-    }
-  }, [route?.params?.inviteCode, routedGroup, navigation]);
+    const incomingCode = route?.params?.inviteCode;
+    if (!incomingCode || routedGroup || consumedLink.current === incomingCode) return;
+    consumedLink.current = incomingCode;
+    setJoiningLink(incomingCode); setRedeemOpen(true);
+    navigation.setParams({ inviteCode: undefined });
+    // Deep linking already expresses intent to join; accept the invitation once.
+    run(() => redeemCode(incomingCode));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route?.params?.inviteCode, routedGroup, navigation, user]);
   const renewLink = () => run(async () => {
     const result = await mlsAction(group.id, { action: "link" });
     if (!/^[a-f0-9]{64}\.[a-f0-9]{64}$/.test(result?.code || "")) throw new Error(say("Link non confermato.", "Link not confirmed."));
-    setInviteCode(`unvor://group-invite/${result.code}`);
+    setInviteCode(formatGroupInviteLink(result.code, myGroupLinkFingerprint(user)));
   });
   const exitGroup = async (deleting, block = false) => {
     if (deleting) await mlsDeleteGroup(group.id);
@@ -644,18 +664,16 @@ export default function PilotGroupsScreen({ navigation, route }) {
         {!loadingBook && !bookError && !available.length && <Text style={styles.dim}>{say("Nessun contatto disponibile.", "No contacts available.")}</Text>}
         {available.map(row => {
           const checked = selected.includes(row.lns);
-          const label = row.display_name || row.lns.split("@")[0];
-          return row.verified ? (
+          const label = row.display_name || row.name || row.lns.split("@")[0];
+          return (
             <TouchableOpacity key={row.lns} style={[styles.row, checked && styles.selected]} onPress={() => selectContact(row.lns)}
               disabled={busy} accessibilityRole="checkbox" accessibilityState={{ checked }} accessibilityLabel={label}>
               <Ionicons name={checked ? "checkbox" : "square-outline"} size={22} color={theme.primary} />
-              <View style={{ flex: 1 }}><Text style={styles.text}>{label}</Text><Text style={styles.dim}>{row.lns}</Text></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.text}>{label}</Text><Text style={styles.dim}>{row.lns}</Text>
+                {row.mutual !== true && <Text style={styles.dim}>{say("Invito diretto solo se siete nella rubrica reciproca; puoi condividere un link.", "Direct invite requires mutual contacts; otherwise share a link.")}</Text>}
+              </View>
             </TouchableOpacity>
-          ) : (
-            <View key={row.lns} style={styles.row}>
-              <View style={{ flex: 1 }}><Text style={styles.text}>{label}</Text><Text style={styles.dim}>{row.lns}</Text></View>
-              {button(say("Verifica QR", "Verify QR"), () => navigation.navigate("VerifyContact", { peer: row.lns, peer_name: label }))}
-            </View>
           );
         })}
       </View>
@@ -683,7 +701,7 @@ export default function PilotGroupsScreen({ navigation, route }) {
         {button(say("Usa link d’invito", "Use invitation link"), () => setRedeemOpen(value => !value))}
         {redeemOpen && <View style={styles.card}>
           <TextInput {...inputProps} style={styles.input} value={joiningLink} onChangeText={setJoiningLink}
-            autoCapitalize="none" autoCorrect={false} maxLength={200}
+            autoCapitalize="none" autoCorrect={false} maxLength={280}
             placeholder={say("Incolla il link UNVOR", "Paste the UNVOR link")} />
           {button(say("Apri invito", "Open invitation"), redeem, { primary: true, disabled: busy || !joiningLink.trim() })}
         </View>}
