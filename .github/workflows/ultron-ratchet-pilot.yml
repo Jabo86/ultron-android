@@ -105,6 +105,7 @@ jobs:
           node tools/verify-ultron-pilot-dependencies.mjs audit "$audit_report"
           node tools/verify-unvor-brand.cjs
           node tools/verify-unvor-invite-link.mjs
+          node tools/verify-unvor-turn-routing.mjs
           node tools/verify-unvor-composer.cjs
           node tools/verify-unvor-direct-polls.mjs
           curl -fsSL https://repo.maven.apache.org/maven2/org/bouncycastle/bcprov-jdk15to18/1.87/bcprov-jdk15to18-1.87.jar -o "$RUNNER_TEMP/unvor-bcprov.jar"
