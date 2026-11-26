@@ -6,8 +6,8 @@ android {
   applicationId = "com.ultron.launcher"
   minSdk = 29
   targetSdk = 35
-  versionCode = 131
-  versionName = "0.9.1-news-chat"
+  versionCode = 132
+  versionName = "0.9.2-news-study"
  }
  compileOptions { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
 }
