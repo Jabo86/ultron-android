@@ -1,7 +1,7 @@
 name: UNVOR Launcher stable UI 134 APK
 on:
   push:
-    branches: [recovery/unvor-launcher-134-stable]
+    branches: [recovery/unvor-launcher-133-stable]
     paths: ["unvor-launcher/UNVORLauncher/**", "unvor-launcher/DEPENDENCIES.json", ".github/workflows/unvor-launcher-build.yml"]
   workflow_dispatch:
 permissions:
@@ -19,6 +19,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
+      - name: Ensure package version 134
+        run: grep -Fq 'versionCode = 134' unvor-launcher/UNVORLauncher/app/build.gradle.kts
       - name: Check Android SDK
         shell: bash
         run: |
