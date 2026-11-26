@@ -17,6 +17,8 @@ public final class LocalCommands {
   if(s.contains("turni")||s.contains("turno di lavoro"))return new LocalCommands("shifts","",-1,-1);
   if(s.equals("agenda di oggi")||s.contains("appuntamenti")||s.contains("impegni"))return new LocalCommands("summary","",-1,-1);
   if(s.contains("ore sono"))return new LocalCommands("time","",-1,-1);
+  if(s.contains("notizie") || s.contains("telegiornale") || s.contains("ultime news"))return new LocalCommands("news","",-1,-1);
+  if(s.contains("universo") && (s.contains("apri") || s.contains("mostra") || s.contains("studiando")))return new LocalCommands("universe","",-1,-1);
   if(s.startsWith("apri ")&&s.length()>5)return new LocalCommands("open",s.substring(5),-1,-1);
   return new LocalCommands("unknown",s,-1,-1);
  }
