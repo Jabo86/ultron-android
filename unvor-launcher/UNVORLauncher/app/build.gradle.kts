@@ -6,8 +6,8 @@ android {
   applicationId = "com.ultron.launcher"
   minSdk = 29
   targetSdk = 35
-  versionCode = 135
-  versionName = "0.9.5-original116-ai-news-study"
+  versionCode = 136
+  versionName = "0.9.6-original116-universo-voice"
  }
  compileOptions { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
 }
