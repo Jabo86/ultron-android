@@ -241,12 +241,16 @@ public final class MainActivity extends Activity {
                 row.put("label",app.loadLabel(getPackageManager()).toString());
                 row.put("pkg",app.activityInfo.packageName);
                 row.put("activity",app.activityInfo.name);
-                Drawable icon=app.loadIcon(getPackageManager());
-                Bitmap bitmap=Bitmap.createBitmap(72,72,Bitmap.Config.ARGB_8888);
-                Canvas canvas=new Canvas(bitmap);icon.setBounds(0,0,72,72);icon.draw(canvas);
-                ByteArrayOutputStream bytes=new ByteArrayOutputStream();
-                bitmap.compress(Bitmap.CompressFormat.PNG,100,bytes);bitmap.recycle();
-                row.put("icon",Base64.encodeToString(bytes.toByteArray(),Base64.NO_WRAP));iconRows.put(row);
+                // A broken icon must not remove an otherwise launchable app.
+                try {
+                    Drawable icon=app.loadIcon(getPackageManager());
+                    Bitmap bitmap=Bitmap.createBitmap(72,72,Bitmap.Config.ARGB_8888);
+                    Canvas canvas=new Canvas(bitmap);icon.setBounds(0,0,72,72);icon.draw(canvas);
+                    ByteArrayOutputStream bytes=new ByteArrayOutputStream();
+                    bitmap.compress(Bitmap.CompressFormat.PNG,100,bytes);bitmap.recycle();
+                    row.put("icon",Base64.encodeToString(bytes.toByteArray(),Base64.NO_WRAP));
+                } catch(Exception ignored){}
+                iconRows.put(row);
             }catch(Exception ignored){}}
             cachedApps=iconRows;
             cachedAppsAt=android.os.SystemClock.elapsedRealtime();
