@@ -1,7 +1,7 @@
-name: UNVOR 137 — Samsung original contacts agenda apps
+name: UNVOR 138 — agenda mobile personalizzabile
 on:
   push:
-    branches: [feature/unvor-137-samsung-essenziale]
+    branches: [feature/unvor-138-agenda-personalizzabile]
     paths: ["unvor-launcher/UNVORLauncher/**", "unvor-launcher/DEPENDENCIES.json", ".github/workflows/unvor-launcher-build.yml"]
   workflow_dispatch:
 permissions:
@@ -19,8 +19,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
-      - name: Ensure package version 137
-        run: grep -Fq 'versionCode = 137' unvor-launcher/UNVORLauncher/app/build.gradle.kts
+      - name: Ensure package version 138
+        run: grep -Fq 'versionCode = 138' unvor-launcher/UNVORLauncher/app/build.gradle.kts
       - name: Check Android SDK
         shell: bash
         run: |
@@ -98,20 +98,20 @@ jobs:
                   if name not in files:raise SystemExit('Missing '+name)
               if not any(n.startswith('assets/voice-it/') for n in files):raise SystemExit('Missing Italian model')
           PY
-          cp "$APK" UNVOR-Launcher-AI-137-UNSIGNED.apk
-          sha256sum UNVOR-Launcher-AI-137-UNSIGNED.apk > UNVOR-Launcher-AI-137-SHA256.txt
+          cp "$APK" UNVOR-Launcher-AI-138-UNSIGNED.apk
+          sha256sum UNVOR-Launcher-AI-138-UNSIGNED.apk > UNVOR-Launcher-AI-138-SHA256.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: UNVOR-Launcher-AI-137-UNSIGNED-for-Mac
+          name: UNVOR-Launcher-AI-138-UNSIGNED-for-Mac
           path: |
-            UNVOR-Launcher-AI-137-UNSIGNED.apk
-            UNVOR-Launcher-AI-137-SHA256.txt
+            UNVOR-Launcher-AI-138-UNSIGNED.apk
+            UNVOR-Launcher-AI-138-SHA256.txt
           retention-days: 14
       - name: Publish unsigned APK for original Mac signing
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          TAG=unvor-launcher-samsung-137
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --prerelease --title "UNVOR 137 - Agenda, contatti e app senza AI" --notes "Versione 137 essenziale: rubrica Android, agenda locale e lettura calendari Android, griglia applicazioni. NON comprende AI, Universo, ANSA, studio o pagine Mac. Applicare le risorse originali Samsung 116 prima della firma. ATTENZIONE: usa l'installer ufficiale che ripristina le risorse originali della 116 prima della firma Android. APK non firmata non pronta all'uso diretto. APK release NON FIRMATA: prima dell'aggiornamento il Mac deve firmarla con il certificato originale. Non disinstallare il launcher esistente."
-          gh release upload "$TAG" UNVOR-Launcher-AI-137-UNSIGNED.apk UNVOR-Launcher-AI-137-SHA256.txt --clobber
+          TAG=unvor-launcher-agenda-138
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --prerelease --title "UNVOR 138 - Agenda, contatti e app senza AI" --notes "Versione 138: interfaccia Samsung 116 preservata e Agenda mobile ciano. Turni modificabili con sigle, colori, orari, ore conteggiate, profili, periodi e cicli. Nessuna AI, ANSA, Universo o studio. APK unsigned da firmare sul Mac. ATTENZIONE: usa l'installer ufficiale che ripristina le risorse originali della 116 prima della firma Android. APK non firmata non pronta all'uso diretto. APK release NON FIRMATA: prima dell'aggiornamento il Mac deve firmarla con il certificato originale. Non disinstallare il launcher esistente."
+          gh release upload "$TAG" UNVOR-Launcher-AI-138-UNSIGNED.apk UNVOR-Launcher-AI-138-SHA256.txt --clobber
