@@ -1,7 +1,7 @@
 name: UNVOR Launcher fast-app regression
 on:
   push:
-    branches: [feature/unvor-135-original-116]
+    branches: [feature/unvor-136-home-universo-voice]
     paths:
       - "unvor-launcher/**"
       - ".github/workflows/unvor-launcher-fast-tests.yml"
