@@ -77,6 +77,7 @@ public final class MainActivity extends Activity {
         prefs = getSharedPreferences("ultron_launcher_layout_v1", MODE_PRIVATE);
         personalAi = new PersonalAi(this);
         latestNews = new LatestNews();
+        StudyEngine.schedule(this);
         getWindow().setStatusBarColor(Color.BLACK);
         getWindow().setNavigationBarColor(Color.BLACK);
         getWindow().getDecorView().setSystemUiVisibility(0);
@@ -197,6 +198,10 @@ public final class MainActivity extends Activity {
             case "appInfo":open(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())));break;
             case "shortcut":String slot=data.optString("slot","");if(slot.matches("quick[123]")&&!selected(slot))emit("pick",slot);break;
             case "motion":prefs.edit().putBoolean("hud_animations",data.optBoolean("enabled",true)).apply();break;
+            case "studyStatus":emit("studyStatus",StudyEngine.status(this));break;
+            case "studyNow":StudyEngine.study(this,result->emit("studyStatus",result));break;
+            case "studyToggle":StudyEngine.setEnabled(this,data.optBoolean("enabled",false));emit("studyStatus",StudyEngine.status(this));break;
+            case "studySearch":openStudySearch(data.optString("query",""));break;
             case "newsToday":readLatestNews();break;
             case "newsArticle":
                 Uri article=Uri.parse(data.optString("url",""));
@@ -210,7 +215,13 @@ public final class MainActivity extends Activity {
             case "aiEdit":editPersonalAi(data.optString("id",""));break;
             case "aiDelete":deletePersonalAi(data.optString("id",""));break;
             case "aiTest":if(personalAi!=null)personalAi.testAll((type,value)->emit(type,value));break;
-            case "aiAsk":if(personalAi!=null)personalAi.ask(data.optString("question",""),(type,value)->emit(type,value));break;
+            case "aiAsk":
+                if(personalAi!=null){
+                    String question=data.optString("question","");
+                    String context=question.length()<500?StudyEngine.publicContext(this,question):"";
+                    personalAi.ask(question+context,(type,value)->emit(type,value));
+                }
+                break;
             case "voice":voice();break;
             case "voiceSetup":voiceSetup();break;
             case "voiceConfigure":configureVoice(data.optString("pkg",""));break;
@@ -309,6 +320,17 @@ public final class MainActivity extends Activity {
         });
     }
 
+
+
+    private void openStudySearch(String query) {
+        String q=query==null?"":query.trim();
+        if(q.isEmpty()||q.length()>150){message("Inserisci un argomento di massimo 150 caratteri.");return;}
+        try{
+            // Google is optional and launches a browser; never scrapes Google pages.
+            String url="https://www.google.com/search?q="+java.net.URLEncoder.encode(q,"UTF-8");
+            open(new Intent(Intent.ACTION_VIEW,Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE));
+        }catch(Exception error){message("Ricerca non disponibile.");}
+    }
 
     private void readLatestNews(){
         if(latestNews==null){message("Lettore notizie non disponibile.");return;}
@@ -547,7 +569,7 @@ public final class MainActivity extends Activity {
         if(command.type.equals("open")){final String name=command.text;io.execute(()->{ResolveInfo best=null;for(ResolveInfo app:launchable()){String label=LocalCommands.normalize(app.loadLabel(getPackageManager()).toString());if(label.equals(name)){best=app;break;}if(best==null&&label.contains(name))best=app;}final ResolveInfo app=best;main.post(()->{if(!visible)return;if(app==null)message("App non trovata");else open(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setClassName(app.activityInfo.packageName,app.activityInfo.name));});});return;}
         try {
             if(personalAi!=null && personalAi.list().optInt("active",0)>0){
-                personalAi.ask(heard,(type,value)->{
+                personalAi.ask(heard+StudyEngine.publicContext(this,heard),(type,value)->{
                     emit(type,value);
                     if("aiAnswer".equals(type)){
                         String answer=value instanceof JSONObject?((JSONObject)value).optString("text",""):String.valueOf(value);
