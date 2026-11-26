@@ -198,9 +198,9 @@ public final class MainActivity extends Activity {
             case "appInfo":open(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())));break;
             case "shortcut":String slot=data.optString("slot","");if(slot.matches("quick[123]")&&!selected(slot))emit("pick",slot);break;
             case "motion":prefs.edit().putBoolean("hud_animations",data.optBoolean("enabled",true)).apply();break;
-            case "studyStatus":emit("studyStatus",StudyEngine.status(this));break;
+            case "studyStatus":io.execute(()->emit("studyStatus",StudyEngine.status(this)));break;
             case "studyNow":StudyEngine.study(this,result->emit("studyStatus",result));break;
-            case "studyToggle":StudyEngine.setEnabled(this,data.optBoolean("enabled",false));emit("studyStatus",StudyEngine.status(this));break;
+            case "studyToggle":io.execute(()->{StudyEngine.setEnabled(this,data.optBoolean("enabled",false));emit("studyStatus",StudyEngine.status(this));});break;
             case "studySearch":openStudySearch(data.optString("query",""));break;
             case "studyArticle":
                 Uri wiki=Uri.parse(data.optString("url",""));
@@ -219,8 +219,6 @@ public final class MainActivity extends Activity {
                     article.getUserInfo()==null && article.getPort()==-1)
                     open(new Intent(Intent.ACTION_VIEW,article).addCategory(Intent.CATEGORY_BROWSABLE));
                 break;
-            case "macConfig":configureMacLink();break;
-            case "macPage":openMacPage(data.optString("page",""));break;
             case "aiList":emitAiList();break;
             case "aiEdit":editPersonalAi(data.optString("id",""));break;
             case "aiDelete":deletePersonalAi(data.optString("id",""));break;
@@ -364,62 +362,6 @@ public final class MainActivity extends Activity {
             say(spoken.toString());
         });
     }
-    private void configureMacLink(){
-        final EditText url=new EditText(this);
-        url.setSingleLine(true);
-        url.setHint("https://nome-mac-o-gateway-sicuro");
-        url.setInputType(android.text.InputType.TYPE_CLASS_TEXT|
-            android.text.InputType.TYPE_TEXT_VARIATION_URI);
-        url.setText(prefs.getString("mac_hub_https",""));
-        int h=(int)(20*getResources().getDisplayMetrics().density);
-        LinearLayout layout=new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(h,h,h,h);
-        TextView warning=new TextView(this);
-        warning.setText("Il Mac deve essere raggiungibile dal telefono tramite HTTPS verificato. "
-            +"127.0.0.1 è il telefono stesso, non il Mac. "
-            +"Questi link aprono pagine nel browser, non sincronizzano dati o addestrano modelli.");
-        layout.addView(warning);
-        layout.addView(url);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Collega le pagine UNVOR sul Mac")
-            .setView(layout).setNegativeButton("Annulla",null)
-            .setPositiveButton("Salva",null).create();
-        dialog.setOnShowListener(ignored->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
-            String input=url.getText().toString().trim();
-            if(input.isEmpty()){
-                prefs.edit().remove("mac_hub_https").apply();
-                message("Collegamento Mac rimosso.");dialog.dismiss();return;
-            }
-            try{
-                java.net.URI parsed=new java.net.URI(input);
-                if(!"https".equalsIgnoreCase(parsed.getScheme())||
-                    parsed.getHost()==null||parsed.getUserInfo()!=null||
-                    parsed.getQuery()!=null||parsed.getFragment()!=null||
-                    (parsed.getPath()!=null && !parsed.getPath().isEmpty() && !"/".equals(parsed.getPath()))||
-                    parsed.getPort()>65535 || input.length()>300)
-                    throw new IllegalArgumentException("Serve un indirizzo HTTPS del Mac/gateway, senza percorsi né parametri.");
-                String clean=parsed.getScheme()+"://"+parsed.getRawAuthority();
-                prefs.edit().putString("mac_hub_https",clean).apply();
-                message("Collegamento salvato: prova Notizie o Universo.");
-                dialog.dismiss();
-            }catch(Exception error){
-                url.setError("Inserisci un URL HTTPS valido e raggiungibile dal telefono.");
-            }
-        }));
-        dialog.show();
-    }
-    private void openMacPage(String page){
-        if(!"notizie".equals(page)&&!"universo".equals(page))return;
-        String base=prefs.getString("mac_hub_https","");
-        if(base.isEmpty()){
-            message("Configura l'indirizzo HTTPS del Mac in Impostazioni UNVOR → Pagine Mac.");
-            configureMacLink();
-            return;
-        }
-        open(new Intent(Intent.ACTION_VIEW,Uri.parse(base+"/ui/#"+page))
-            .addCategory(Intent.CATEGORY_BROWSABLE));
-    }
-
     private void emitAiList(){
         try {emit("aiList",personalAi.list());}
         catch(Exception error){message("Impossibile leggere le configurazioni AI.");}
@@ -529,6 +471,7 @@ public final class MainActivity extends Activity {
     private void voiceSetup(){JSONArray rows=new JSONArray();for(String pkg:voiceEngines()){JSONObject row=new JSONObject();try{row.put("pkg",pkg).put("label",getPackageManager().getApplicationLabel(getPackageManager().getApplicationInfo(pkg,0)).toString());rows.put(row);}catch(Exception ignored){}}emit("voiceEngines",rows);}
     private void configureVoice(String pkg){if(!voiceEngines().contains(pkg)){message("Motore non disponibile");return;}Intent launch=getPackageManager().getLaunchIntentForPackage(pkg);if(launch!=null){open(launch);return;}open(new Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA).setPackage(pkg),new Intent("com.android.settings.TTS_SETTINGS"),new Intent(Settings.ACTION_SETTINGS));}
     private void say(String text){
+        if(Looper.myLooper()!=Looper.getMainLooper()){main.post(()->say(text));return;}
         if(!visible)return;
         if(offline!=null)offline.stop();
         emit("answer",text);queuedSpeech=text;queuedSpeechGeneration=++speechGeneration;
@@ -575,7 +518,7 @@ public final class MainActivity extends Activity {
         if(command.type.equals("summary")){localAgenda();return;}
         if(command.type.equals("time")){say("Sono le "+new SimpleDateFormat("HH:mm",Locale.ITALIAN).format(new Date()));return;}
         if(command.type.equals("news")){readLatestNews();return;}
-        if(command.type.equals("universe")){openMacPage("universo");return;}
+        if(command.type.equals("universe")){emit("openUniverse",true);return;}
         if(command.type.equals("open")){final String name=command.text;io.execute(()->{ResolveInfo best=null;for(ResolveInfo app:launchable()){String label=LocalCommands.normalize(app.loadLabel(getPackageManager()).toString());if(label.equals(name)){best=app;break;}if(best==null&&label.contains(name))best=app;}final ResolveInfo app=best;main.post(()->{if(!visible)return;if(app==null)message("App non trovata");else open(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setClassName(app.activityInfo.packageName,app.activityInfo.name));});});return;}
         try {
             if(personalAi!=null && personalAi.list().optInt("active",0)>0){
