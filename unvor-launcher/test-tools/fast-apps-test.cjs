@@ -19,9 +19,9 @@ assert.ok(fast > 0 && slow > fast, "The cached instant path must be reached befo
 assert.ok(java.slice(fast, slow).includes("launchVerified("), "The cached target must immediately launch");
 assert.ok(!java.slice(fast, slow).includes("launchable()"), "The cached target must not enumerate packages");
 assert.match(java, /appsIo\.shutdownNow\(\);launchIo\.shutdownNow\(\)/);
-assert.match(js, /const previousQuery=before\?\.value\|\|''/);
-assert.match(js, /input\.value=previousQuery/);
-assert.match(js, /if\(hadFocus\)input\.focus\(\)/);
+assert.match(js, /const previousQuery=oldSearch\?\.value\|\|''/);
+assert.match(js, /search\.value=previousQuery/);
+assert.match(js, /if\(focused\)search\.focus\(\)/);
 const index=fs.readFileSync(path.join(root,"assets/hud/index.html"),"utf8");
 const ai=fs.readFileSync(path.join(root,"java/com/ultron/launcher/PersonalAi.java"),"utf8");
 const manifest=fs.readFileSync(path.join(root,"AndroidManifest.xml"),"utf8");
@@ -41,4 +41,21 @@ assert.match(ai,/safeHttps\(String raw\)/);
 assert.doesNotMatch(js,/API_KEY|sk-[A-Za-z0-9]{12}|gsk_[a-zA-Z0-9]{16}/);
 assert.match(manifest,/android\.permission\.INTERNET/);
 console.log("UNVOR AI per-user encryption, native settings, 3-provider fallback and HUD actions OK");
+
+const grid=fs.readFileSync(path.join(root,"assets/hud/app-grid.css"),"utf8");
+const dock=index.match(/<nav class="dock"[\s\S]*?<\/nav>/)?.[0]||"";
+assert.match(dock,/data-action="calls"[\s\S]*?data-action="sms"[\s\S]*?data-action="apps"[\s\S]*?data-action="browser"[\s\S]*?data-action="ultron"/);
+assert.doesNotMatch(dock,/data-action="settings"/);
+assert.match(index,/data-action="settings"[^>]*aria-label="Impostazioni"/);
+assert.match(index,/data-action="aiSettings"[^>]*aria-label="Strumenti AI e cervelli personali"/);
+assert.match(js,/else if\(a==='aiSettings'\)aiSettings\(\)/);
+assert.match(js,/function renderApps\(rows\)/);
+assert.match(js,/grid\.className='unvor-app-grid'/);
+assert.match(js,/tile\.className='unvor-app-tile'/);
+assert.match(js,/dispatch\(slot\?'choose':'launch'/);
+assert.match(grid,/grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+assert.match(grid,/\.unvor-app-icon/);
+assert.match(index,/href="app-grid\.css"/);
+console.log("UNVOR dock 5 apps, AI tools from Home and working grid UI source checks OK");
+
 console.log("UNVOR Launcher: fast launch, independent app icon work, cache and preserved search OK");
