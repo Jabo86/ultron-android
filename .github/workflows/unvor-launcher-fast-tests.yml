@@ -42,6 +42,7 @@ jobs:
             -d "$RUNNER_TEMP/unvor-ai-classes" \
             unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/MainActivity.java \
             unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/PersonalAi.java \
+            unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/LatestNews.java \
             unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/AgendaStore.java \
             unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/AgendaAlarmService.java \
             unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/AgendaReceiver.java \
