@@ -47,4 +47,5 @@ jobs:
             unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/AgendaReceiver.java \
             unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/LocalCommands.java \
             unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/VoiceSelection.java \
-            unvor-launcher/test-tools/stubs/com/ultron/launcher/OfflineVoice.java
+            unvor-launcher/test-tools/stubs/com/ultron/launcher/OfflineVoice.java \
+            unvor-launcher/test-tools/stubs/com/ultron/launcher/R.java
