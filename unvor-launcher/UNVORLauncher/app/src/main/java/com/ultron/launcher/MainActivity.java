@@ -169,6 +169,15 @@ public final class MainActivity extends Activity {
                 break;
             case "contactDial":contactAction(data.optString("phone",""),false);break;
             case "contactSms":contactAction(data.optString("phone",""),true);break;
+            case "shiftData":
+                io.execute(()->{try{emit("shiftState",ShiftStore.snapshot(this));}
+                    catch(Exception e){emit("shiftError","Archivio turni non disponibile. Nessun dato è stato cancellato.");}});
+                break;
+            case "shiftEdit":
+                io.execute(()->{try{JSONObject changed=ShiftStore.apply(this,data);emit("shiftState",changed);}
+                    catch(IllegalArgumentException e){emit("shiftError",e.getMessage());}
+                    catch(Exception e){emit("shiftError","Impossibile salvare il turno. I dati esistenti sono rimasti invariati.");}});
+                break;
             case "calendarRange":
                 String requestedMonth=data.optString("month","");
                 if(requestedMonth.matches("\\d{4}-(?:0[1-9]|1[0-2])")){
