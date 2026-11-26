@@ -12,6 +12,7 @@ public final class LocalCommands {
   if(s.startsWith("chiama ")&&s.length()>7&&s.length()<120)return new LocalCommands("call",s.substring(7),-1,-1);
   Matcher a=Pattern.compile("^(?:(?:metti|imposta|crea) (?:la |una )?)?sveglia (?:alle|per le|all) ([a-z0-9]+)(?:(?::| e | )([a-z0-9]+))?$").matcher(s);
   if(a.matches()){int h=number(a.group(1)),m=a.group(2)==null?0:a.group(2).equals("mezza")?30:a.group(2).equals("un quarto")?15:number(a.group(2));if(h>=0&&h<=23&&m>=0&&m<=59)return new LocalCommands("alarm","",h,m);return new LocalCommands("invalidTime","",-1,-1);}
+  if(s.equals("contatti")||s.equals("rubrica")||s.equals("apri contatti")||s.equals("apri rubrica"))return new LocalCommands("contactsUi","",-1,-1);
   if(s.equals("agenda")||s.equals("apri agenda")||s.equals("apri l agenda")||s.equals("calendario"))return new LocalCommands("planner","",-1,-1);
   if(s.startsWith("aggiungi appuntamento")||s.startsWith("crea appuntamento"))return new LocalCommands("newEvent",raw,-1,-1);
   if(s.contains("turni")||s.contains("turno di lavoro"))return new LocalCommands("shifts","",-1,-1);
