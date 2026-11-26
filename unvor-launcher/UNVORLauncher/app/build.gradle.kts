@@ -6,8 +6,8 @@ android {
   applicationId = "com.ultron.launcher"
   minSdk = 29
   targetSdk = 35
-  versionCode = 105
-  versionName = "0.8.0-ciano"
+  versionCode = 137
+  versionName = "0.9.7-samsung116-agenda"
  }
  compileOptions { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
 }
