@@ -6,8 +6,8 @@ android {
   applicationId = "com.ultron.launcher"
   minSdk = 29
   targetSdk = 35
-  versionCode = 133
-  versionName = "0.9.3-recovery-stable"
+  versionCode = 134
+  versionName = "0.9.4-chat-grid-ai"
  }
  compileOptions { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
 }
