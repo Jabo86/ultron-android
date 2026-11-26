@@ -19,6 +19,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
+      - name: Assert expected launcher version
+        run: grep -Fq 'versionCode = 131' unvor-launcher/UNVORLauncher/app/build.gradle.kts
       - name: Check Android SDK
         shell: bash
         run: |
@@ -96,20 +98,20 @@ jobs:
                   if name not in files:raise SystemExit('Missing '+name)
               if not any(n.startswith('assets/voice-it/') for n in files):raise SystemExit('Missing Italian model')
           PY
-          cp "$APK" UNVOR-Launcher-AI-130-UNSIGNED.apk
-          sha256sum UNVOR-Launcher-AI-130-UNSIGNED.apk > UNVOR-Launcher-AI-130-SHA256.txt
+          cp "$APK" UNVOR-Launcher-AI-131-UNSIGNED.apk
+          sha256sum UNVOR-Launcher-AI-131-UNSIGNED.apk > UNVOR-Launcher-AI-131-SHA256.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: UNVOR-Launcher-AI-130-UNSIGNED-for-Mac
+          name: UNVOR-Launcher-AI-131-UNSIGNED-for-Mac
           path: |
-            UNVOR-Launcher-AI-130-UNSIGNED.apk
-            UNVOR-Launcher-AI-130-SHA256.txt
+            UNVOR-Launcher-AI-131-UNSIGNED.apk
+            UNVOR-Launcher-AI-131-SHA256.txt
           retention-days: 14
       - name: Publish unsigned APK for original Mac signing
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          TAG=unvor-launcher-ai-130
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --prerelease --title "UNVOR Launcher AI 130 (requires Mac original key)" --notes "Versione 130 di com.ultron.launcher, modello Vosk offline e AI per-utente. APK release NON FIRMATA: prima dell'aggiornamento il Mac deve firmarla con il certificato originale. Non disinstallare il launcher esistente."
-          gh release upload "$TAG" UNVOR-Launcher-AI-130-UNSIGNED.apk UNVOR-Launcher-AI-130-SHA256.txt --clobber
+          TAG=unvor-launcher-ai-131
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --prerelease --title "UNVOR Launcher AI 131 (requires Mac original key)" --notes "Versione 131 di com.ultron.launcher, modello Vosk offline e AI per-utente. APK release NON FIRMATA: prima dell'aggiornamento il Mac deve firmarla con il certificato originale. Non disinstallare il launcher esistente."
+          gh release upload "$TAG" UNVOR-Launcher-AI-131-UNSIGNED.apk UNVOR-Launcher-AI-131-SHA256.txt --clobber
