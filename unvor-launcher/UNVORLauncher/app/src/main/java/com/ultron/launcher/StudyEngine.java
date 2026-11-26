@@ -169,7 +169,8 @@ public final class StudyEngine {
             for(int i=0;i<rows.length();i++)seen.add(rows.optJSONObject(i).optString("url"));
             String today=LocalDate.now(ROME).toString();
             int added=0;
-            for(int i=0;i<SUBJECTS.length && added<MAX_DAILY-countToday(rows);i++){
+            int remaining=MAX_DAILY-countToday(rows);
+            for(int i=0;i<6 && added<remaining;i++){
                 int index=(int)((LocalDate.now(ROME).toEpochDay()+i)%SUBJECTS.length);
                 String title=SUBJECTS[index];
                 String host="it.wikipedia.org";
