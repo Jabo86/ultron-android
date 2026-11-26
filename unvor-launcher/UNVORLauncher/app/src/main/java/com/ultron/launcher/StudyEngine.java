@@ -158,39 +158,60 @@ public final class StudyEngine {
             if(callback!=null)callback.result(outcome);
         });
     }
+
     private static JSONObject perform(Context c) throws Exception {
+        // Never hold the storage lock across a network request. Home rendering and
+        // local questions remain responsive during slow Wikimedia responses.
+        Set<String> seen=new HashSet<>();
+        int remaining;
         synchronized(LOCK) {
             JSONArray rows=load(c);
-            if(countToday(rows)>=MAX_DAILY){
+            remaining=MAX_DAILY-countToday(rows);
+            if(remaining<=0){
                 JSONObject result=status(c);
-                result.put("notice","Limite di "+MAX_DAILY+" nuove nozioni giornaliere raggiunto.");return result;
+                result.put("notice","Limite di "+MAX_DAILY+" nuove nozioni giornaliere raggiunto.");
+                return result;
             }
-            Set<String> seen=new HashSet<>();
-            for(int i=0;i<rows.length();i++)seen.add(rows.optJSONObject(i).optString("url"));
-            String today=LocalDate.now(ROME).toString();
-            int added=0;
-            int remaining=MAX_DAILY-countToday(rows);
-            for(int i=0;i<6 && added<remaining;i++){
-                int index=(int)((LocalDate.now(ROME).toEpochDay()+i)%SUBJECTS.length);
-                String title=SUBJECTS[index];
-                String host="it.wikipedia.org";
-                // Wikipedia is the verified encyclopedia; Wikibooks and Wikiversity
-                // remain visible as optional research links in the launcher.
-                JSONObject page=fetch(host,title,today);
-                if(page==null || seen.contains(page.optString("url")))continue;
-                if(rows.length()>=MAX_TOTAL){
-                    JSONArray trimmed=new JSONArray();
-                    for(int j=1;j<rows.length();j++)trimmed.put(rows.get(j));
-                    rows=trimmed;
-                }
-                rows.put(page);seen.add(page.optString("url"));added++;
+            for(int i=0;i<rows.length();i++){
+                JSONObject row=rows.optJSONObject(i);
+                if(row!=null)seen.add(row.optString("url",""));
             }
-            if(added>0)save(c,rows);
-            JSONObject result=status(c);
-            result.put("added",added);
-            if(added==0)result.put("notice","Nessuna nuova nozione verificata. Le fonti potrebbero essere indisponibili.");
-            return result;
         }
+        JSONArray fresh=new JSONArray();
+        String today=LocalDate.now(ROME).toString();
+        for(int i=0;i<6 && fresh.length()<remaining;i++){
+            int index=(int)Math.floorMod(LocalDate.now(ROME).toEpochDay()+i,SUBJECTS.length);
+            String topic=SUBJECTS[index];
+            JSONObject page=fetch("it.wikipedia.org",topic,today);
+            if(page==null||seen.contains(page.optString("url","")))continue;
+            fresh.put(page);
+            seen.add(page.optString("url",""));
+        }
+        int added=0;
+        synchronized(LOCK){
+            JSONArray stored=load(c);
+            int available=MAX_DAILY-countToday(stored);
+            for(int i=0;i<fresh.length() && added<available;i++){
+                JSONObject row=fresh.optJSONObject(i);
+                if(row==null)continue;
+                String url=row.optString("url");
+                boolean duplicate=false;
+                for(int j=0;j<stored.length();j++)
+                    if(url.equals(stored.optJSONObject(j).optString("url")))duplicate=true;
+                if(duplicate)continue;
+                if(stored.length()>=MAX_TOTAL){
+                    JSONArray trimmed=new JSONArray();
+                    for(int j=1;j<stored.length();j++)trimmed.put(stored.get(j));
+                    stored=trimmed;
+                }
+                stored.put(row);added++;
+            }
+            if(added>0)save(c,stored);
+        }
+        JSONObject result=status(c);
+        result.put("added",added);
+        if(added==0)result.put("notice","Nessuna nuova nozione verificata. Le fonti potrebbero essere indisponibili.");
+        return result;
     }
     private static JSONObject fetch(String host,String title,String today) {
         HttpURLConnection conn=null;
