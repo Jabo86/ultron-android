@@ -21,3 +21,18 @@ jobs:
         run: node --check unvor-launcher/UNVORLauncher/app/src/main/assets/hud/home.js
       - name: Guard low-latency app launch paths
         run: node unvor-launcher/test-tools/fast-apps-test.cjs
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - name: Compile encrypted AI engine against Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager --install "platforms;android-35" >/dev/null
+          mkdir -p "$RUNNER_TEMP/unvor-ai-classes"
+          javac -source 8 -target 8 -encoding UTF-8 \
+            -cp "$ANDROID_HOME/platforms/android-35/android.jar" \
+            -d "$RUNNER_TEMP/unvor-ai-classes" \
+            unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/PersonalAi.java
