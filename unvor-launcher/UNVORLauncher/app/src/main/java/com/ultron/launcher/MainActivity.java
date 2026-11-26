@@ -37,6 +37,7 @@ public final class MainActivity extends Activity {
     private static final long APP_CACHE_MS = 60_000L;
     private boolean visible, ready;
     private OfflineVoice offline;
+    private PersonalAi personalAi;
     private String pendingContactName,pendingPhone;
     private final Map<String,String> callChoices=new HashMap<>();
     private long choicesExpire;
@@ -73,6 +74,7 @@ public final class MainActivity extends Activity {
         offline=new OfflineVoice(this,new OfflineVoice.Callback(){public void state(String phase){voiceState(phase);}public void text(String text){if(visible)command(text);}public void error(String text){wakeFault=true;if(visible)message(text);}
         public void wake(String text){if(!visible||homeCovered)return;if(text.isEmpty())voice();else command(text);}});
         prefs = getSharedPreferences("ultron_launcher_layout_v1", MODE_PRIVATE);
+        personalAi = new PersonalAi(this);
         getWindow().setStatusBarColor(Color.BLACK);
         getWindow().setNavigationBarColor(Color.BLACK);
         getWindow().getDecorView().setSystemUiVisibility(0);
@@ -117,7 +119,7 @@ public final class MainActivity extends Activity {
     @Override protected void onPause(){visible=false;main.removeCallbacks(armWake);main.removeCallbacks(refresh);stopVoice();stopSpeaking();if(web!=null){web.onPause();web.pauseTimers();}super.onPause();}
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(visible&&ready&&intent.getBooleanExtra("openAgenda",false))planner();else if(web!=null&&ready)web.evaluateJavascript("window.UltronBack&&window.UltronBack()",null);}
     @Override public void onBackPressed(){if(web!=null&&ready)web.evaluateJavascript("window.UltronBack&&window.UltronBack()",null);}
-    @Override protected void onDestroy(){visible=false;main.removeCallbacksAndMessages(null);stopVoice();if(offline!=null){offline.close();offline=null;}stopSpeaking();ttsInitToken++;if(tts!=null){tts.shutdown();tts=null;}io.shutdownNow();appsIo.shutdownNow();launchIo.shutdownNow();if(web!=null){web.removeJavascriptInterface("UltronNative");root.removeView(web);web.destroy();web=null;}super.onDestroy();}
+    @Override protected void onDestroy(){visible=false;main.removeCallbacksAndMessages(null);stopVoice();if(offline!=null){offline.close();offline=null;}stopSpeaking();ttsInitToken++;if(tts!=null){tts.shutdown();tts=null;}io.shutdownNow();appsIo.shutdownNow();launchIo.shutdownNow();if(personalAi!=null)personalAi.close();if(web!=null){web.removeJavascriptInterface("UltronNative");root.removeView(web);web.destroy();web=null;}super.onDestroy();}
     public final class Bridge {
         @JavascriptInterface public void action(String action,String payload){
             if(action==null||action.length()>30||payload==null||payload.length()>10000)return;
@@ -193,6 +195,11 @@ public final class MainActivity extends Activity {
             case "appInfo":open(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())));break;
             case "shortcut":String slot=data.optString("slot","");if(slot.matches("quick[123]")&&!selected(slot))emit("pick",slot);break;
             case "motion":prefs.edit().putBoolean("hud_animations",data.optBoolean("enabled",true)).apply();break;
+            case "aiList":emitAiList();break;
+            case "aiEdit":editPersonalAi(data.optString("id",""));break;
+            case "aiDelete":deletePersonalAi(data.optString("id",""));break;
+            case "aiTest":if(personalAi!=null)personalAi.testAll((type,value)->emit(type,value));break;
+            case "aiAsk":if(personalAi!=null)personalAi.ask(data.optString("question",""),(type,value)->emit(type,value));break;
             case "voice":voice();break;
             case "voiceSetup":voiceSetup();break;
             case "voiceConfigure":configureVoice(data.optString("pkg",""));break;
@@ -290,6 +297,102 @@ public final class MainActivity extends Activity {
             });
         });
     }
+
+    private void emitAiList(){
+        try {emit("aiList",personalAi.list());}
+        catch(Exception error){message("Impossibile leggere le configurazioni AI.");}
+    }
+    private void deletePersonalAi(String id){
+        if(personalAi==null)return;
+        new AlertDialog.Builder(this)
+            .setTitle("Rimuovere le credenziali AI?")
+            .setMessage("La chiave di questo provider verrà eliminata da questo telefono. Gli altri utenti e dispositivi non cambiano.")
+            .setNegativeButton("Annulla",null)
+            .setPositiveButton("Rimuovi",(dialog,which)->{
+                try{emit("aiList",personalAi.delete(id));}
+                catch(Exception error){message("Impossibile rimuovere questa configurazione.");}
+            }).show();
+    }
+    private void editPersonalAi(String id){
+        if(personalAi==null)return;
+        JSONObject row=null;
+        try{
+            JSONArray rows=personalAi.list().getJSONArray("rows");
+            for(int i=0;i<rows.length();i++){
+                JSONObject current=rows.getJSONObject(i);
+                if(id.equals(current.optString("id"))){row=current;break;}
+            }
+        }catch(Exception ignored){}
+        if(row==null){message("Provider non riconosciuto");return;}
+        if(!row.optBoolean("available")){message("Questo servizio non offre più l'API utilizzata.");return;}
+        final JSONObject current=row;
+        LinearLayout fields=new LinearLayout(this);
+        fields.setOrientation(LinearLayout.VERTICAL);
+        fields.setPadding(44,24,44,16);
+        fields.setBackgroundColor(Color.rgb(3,16,27));
+        final EditText apiKey=new EditText(this);
+        apiKey.setSingleLine(true);
+        apiKey.setTextColor(Color.WHITE);
+        apiKey.setHintTextColor(Color.LTGRAY);
+        apiKey.setHint(current.optBoolean("configured") ? "Chiave salvata · lascia vuoto per conservarla" : "La tua chiave API");
+        apiKey.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        if(!"ollama".equals(id))fields.addView(apiKey,new LinearLayout.LayoutParams(-1,-2));
+        final EditText model=new EditText(this);
+        model.setSingleLine(true);
+        model.setText(current.optString("model",""));
+        model.setTextColor(Color.WHITE);model.setHintTextColor(Color.LTGRAY);model.setHint("Modello AI");
+        fields.addView(model,new LinearLayout.LayoutParams(-1,-2));
+        final EditText endpoint=new EditText(this);
+        endpoint.setSingleLine(true);
+        endpoint.setText(current.optString("endpoint",""));
+        endpoint.setTextColor(Color.WHITE);endpoint.setHintTextColor(Color.LTGRAY);
+        endpoint.setHint("Endpoint HTTPS protetto");
+        endpoint.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        if(current.optBoolean("requiresEndpoint"))fields.addView(endpoint,new LinearLayout.LayoutParams(-1,-2));
+        final EditText account=new EditText(this);
+        account.setSingleLine(true);
+        account.setText(current.optString("accountId",""));
+        account.setTextColor(Color.WHITE);account.setHintTextColor(Color.LTGRAY);account.setHint("Cloudflare Account ID");
+        if(current.optBoolean("requiresAccount"))fields.addView(account,new LinearLayout.LayoutParams(-1,-2));
+        TextView priorityLabel=new TextView(this);
+        priorityLabel.setTextColor(Color.rgb(108,230,255));
+        priorityLabel.setText("Priorità: 1, 2, 3 = attiva. 0 = riserva");
+        fields.addView(priorityLabel,new LinearLayout.LayoutParams(-1,-2));
+        final EditText priority=new EditText(this);
+        priority.setSingleLine(true);
+        priority.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        priority.setText(String.valueOf(current.optInt("priority",0)));
+        priority.setTextColor(Color.WHITE);
+        fields.addView(priority,new LinearLayout.LayoutParams(-1,-2));
+        TextView privacy=new TextView(this);
+        privacy.setTextColor(Color.LTGRAY);
+        privacy.setText("La chiave viene cifrata con Android Keystore e resta su questo dispositivo. Le domande vengono inviate solo al provider scelto. Il test usa una richiesta reale e può consumare quota.");
+        privacy.setTextSize(12f);fields.addView(privacy,new LinearLayout.LayoutParams(-1,-2));
+        ScrollView scroll=new ScrollView(this);
+        scroll.addView(fields);
+        AlertDialog dialog=new AlertDialog.Builder(this)
+            .setTitle("UNVOR AI · "+current.optString("name",id))
+            .setView(scroll)
+            .setNegativeButton("Annulla",null)
+            .setPositiveButton("Salva",null).create();
+        dialog.setOnShowListener(ignored->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button->{
+            try{
+                int order=Integer.parseInt(priority.getText().toString().trim());
+                JSONObject state=personalAi.save(id,apiKey.getText().toString(),
+                    model.getText().toString(),endpoint.getText().toString(),order,order>0,
+                    account.getText().toString());
+                apiKey.getText().clear();
+                emit("aiList",state);
+                dialog.dismiss();
+            }catch(Exception error){
+                String reason=error.getMessage()==null?"Configurazione non valida":error.getMessage();
+                new AlertDialog.Builder(this).setTitle("Controlla i dati").setMessage(reason)
+                    .setPositiveButton("OK",null).show();
+            }
+        }));
+        dialog.show();
+    }
+
     private void profile(){io.execute(()->{JSONObject result=new JSONObject();try(Cursor cursor=getContentResolver().query(Uri.parse("content://com.ultron.messenger.pilot.launcherprofile/current"),null,null,null,null)){
         if(cursor!=null&&cursor.moveToFirst()){int col=cursor.getColumnIndex("lns");if(col>=0)result.put("lns",cursor.getString(col));}
     }catch(Exception ignored){}emit("profile",result);});}
@@ -350,7 +453,19 @@ public final class MainActivity extends Activity {
         if(command.type.equals("summary")){localAgenda();return;}
         if(command.type.equals("time")){say("Sono le "+new SimpleDateFormat("HH:mm",Locale.ITALIAN).format(new Date()));return;}
         if(command.type.equals("open")){final String name=command.text;io.execute(()->{ResolveInfo best=null;for(ResolveInfo app:launchable()){String label=LocalCommands.normalize(app.loadLabel(getPackageManager()).toString());if(label.equals(name)){best=app;break;}if(best==null&&label.contains(name))best=app;}final ResolveInfo app=best;main.post(()->{if(!visible)return;if(app==null)message("App non trovata");else open(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setClassName(app.activityInfo.packageName,app.activityInfo.name));});});return;}
-        say("Puoi chiedere: chiama mamma, metti la sveglia alle sei, agenda di oggi, apri agenda, i miei turni oppure apri seguito dal nome di un’app. I comandi sono locali; non c’è ancora un modello AI conversazionale.");
+        try {
+            if(personalAi!=null && personalAi.list().optInt("active",0)>0){
+                personalAi.ask(heard,(type,value)->{
+                    emit(type,value);
+                    if("aiAnswer".equals(type)){
+                        String answer=value instanceof JSONObject?((JSONObject)value).optString("text",""):String.valueOf(value);
+                        if(visible && !answer.isEmpty())say(answer);
+                    }
+                });
+                return;
+            }
+        }catch(Exception ignored){}
+        say("Puoi chiedere: chiama mamma, metti la sveglia alle sei, agenda di oggi, apri agenda, oppure apri seguito dal nome di un’app. Per le domande generiche, configura AI personali nelle impostazioni.");
     }
     private void callContact(String name){pendingContactName=name;if(checkSelfPermission(Manifest.permission.READ_CONTACTS)!=PackageManager.PERMISSION_GRANTED){pendingPermission="contacts";requestPermissions(new String[]{Manifest.permission.READ_CONTACTS},43);return;}
         io.execute(()->{List<String[]> matches=new ArrayList<>();try(Cursor c=getContentResolver().query(Uri.withAppendedPath(ContactsContract.CommonDataKinds.Phone.CONTENT_FILTER_URI,Uri.encode(name)),new String[]{ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,ContactsContract.CommonDataKinds.Phone.NUMBER},null,null,null)){
