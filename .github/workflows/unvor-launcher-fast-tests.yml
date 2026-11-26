@@ -1,0 +1,23 @@
+name: UNVOR Launcher fast-app regression
+on:
+  push:
+    branches: [fix/unvor-launcher-fast-apps]
+    paths:
+      - "unvor-launcher/**"
+      - ".github/workflows/unvor-launcher-fast-tests.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check packaged HUD JavaScript
+        run: node --check unvor-launcher/UNVORLauncher/app/src/main/assets/hud/home.js
+      - name: Guard low-latency app launch paths
+        run: node unvor-launcher/test-tools/fast-apps-test.cjs
