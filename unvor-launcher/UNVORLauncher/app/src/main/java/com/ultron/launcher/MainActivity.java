@@ -202,6 +202,16 @@ public final class MainActivity extends Activity {
             case "studyNow":StudyEngine.study(this,result->emit("studyStatus",result));break;
             case "studyToggle":StudyEngine.setEnabled(this,data.optBoolean("enabled",false));emit("studyStatus",StudyEngine.status(this));break;
             case "studySearch":openStudySearch(data.optString("query",""));break;
+            case "studyArticle":
+                Uri wiki=Uri.parse(data.optString("url",""));
+                if("https".equals(wiki.getScheme())&&
+                    ("it.wikipedia.org".equals(wiki.getHost())||
+                     "it.wikibooks.org".equals(wiki.getHost())||
+                     "it.wikiversity.org".equals(wiki.getHost())||
+                     "www.wikidata.org".equals(wiki.getHost()))&&
+                     wiki.getUserInfo()==null && wiki.getPort()==-1)
+                    open(new Intent(Intent.ACTION_VIEW,wiki).addCategory(Intent.CATEGORY_BROWSABLE));
+                break;
             case "newsToday":readLatestNews();break;
             case "newsArticle":
                 Uri article=Uri.parse(data.optString("url",""));
