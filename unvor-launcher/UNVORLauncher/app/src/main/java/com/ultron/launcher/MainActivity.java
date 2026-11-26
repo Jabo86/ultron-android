@@ -219,13 +219,23 @@ public final class MainActivity extends Activity {
         JSONArray cached=cachedApps;
         if(cached!=null && android.os.SystemClock.elapsedRealtime()-cachedAppsAt<APP_CACHE_MS){emit("apps",cached);return;}
         appsIo.execute(()->{
-            JSONArray rows=new JSONArray();
+            JSONArray quickRows=new JSONArray();
+            JSONArray iconRows=new JSONArray();
             List<ResolveInfo> installed=launchable();
             Set<String> targets=new HashSet<>();
-            // Publish the validated launcher targets before rasterising icons.
-            // Taps must not wait for icon decoding or PNG compression.
-            for(ResolveInfo app:installed)targets.add(launchTarget(app.activityInfo.packageName,app.activityInfo.name));
+            for(ResolveInfo app:installed){try{
+                targets.add(launchTarget(app.activityInfo.packageName,app.activityInfo.name));
+                JSONObject row=new JSONObject();
+                row.put("label",app.loadLabel(getPackageManager()).toString());
+                row.put("pkg",app.activityInfo.packageName);
+                row.put("activity",app.activityInfo.name);
+                quickRows.put(row);
+            }catch(Exception ignored){}}
+            // Make the entire app menu clickable before encoding a single icon.
             knownLaunchTargets=Collections.unmodifiableSet(targets);
+            cachedApps=quickRows;
+            cachedAppsAt=android.os.SystemClock.elapsedRealtime();
+            emit("apps",quickRows);
             for(ResolveInfo app:installed){try{
                 JSONObject row=new JSONObject();
                 row.put("label",app.loadLabel(getPackageManager()).toString());
@@ -236,11 +246,11 @@ public final class MainActivity extends Activity {
                 Canvas canvas=new Canvas(bitmap);icon.setBounds(0,0,72,72);icon.draw(canvas);
                 ByteArrayOutputStream bytes=new ByteArrayOutputStream();
                 bitmap.compress(Bitmap.CompressFormat.PNG,100,bytes);bitmap.recycle();
-                row.put("icon",Base64.encodeToString(bytes.toByteArray(),Base64.NO_WRAP));rows.put(row);
+                row.put("icon",Base64.encodeToString(bytes.toByteArray(),Base64.NO_WRAP));iconRows.put(row);
             }catch(Exception ignored){}}
-            cachedApps=rows;
+            cachedApps=iconRows;
             cachedAppsAt=android.os.SystemClock.elapsedRealtime();
-            emit("apps",rows);
+            emit("apps",iconRows);
         });
     }
     private void launchVerified(String pkg,String activity,String slot,boolean choose){
