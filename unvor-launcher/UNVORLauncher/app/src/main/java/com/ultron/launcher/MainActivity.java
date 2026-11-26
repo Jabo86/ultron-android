@@ -198,6 +198,12 @@ public final class MainActivity extends Activity {
             case "shortcut":String slot=data.optString("slot","");if(slot.matches("quick[123]")&&!selected(slot))emit("pick",slot);break;
             case "motion":prefs.edit().putBoolean("hud_animations",data.optBoolean("enabled",true)).apply();break;
             case "newsToday":readLatestNews();break;
+            case "newsArticle":
+                Uri article=Uri.parse(data.optString("url",""));
+                if("https".equals(article.getScheme()) && "www.ansa.it".equals(article.getHost()) &&
+                    article.getUserInfo()==null && article.getPort()==-1)
+                    open(new Intent(Intent.ACTION_VIEW,article).addCategory(Intent.CATEGORY_BROWSABLE));
+                break;
             case "macConfig":configureMacLink();break;
             case "macPage":openMacPage(data.optString("page",""));break;
             case "aiList":emitAiList();break;
