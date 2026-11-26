@@ -182,7 +182,14 @@ public final class StudyEngine {
         for(int i=0;i<6 && fresh.length()<remaining;i++){
             int index=(int)Math.floorMod(LocalDate.now(ROME).toEpochDay()+i,SUBJECTS.length);
             String topic=SUBJECTS[index];
-            JSONObject page=fetch("it.wikipedia.org",topic,today);
+            String host=i%3==1?"it.wikibooks.org":i%3==2?"it.wikiversity.org":"it.wikipedia.org";
+            JSONObject page=fetch(host,topic,today);
+            if(page==null&&!"it.wikipedia.org".equals(host)){
+                String found=searchTitle(host,topic);
+                if(found!=null)page=fetch(host,found,today);
+            }
+            if(page==null&&!host.equals("it.wikipedia.org"))
+                page=fetch("it.wikipedia.org",topic,today);
             if(page==null||seen.contains(page.optString("url","")))continue;
             fresh.put(page);
             seen.add(page.optString("url",""));
@@ -213,6 +220,36 @@ public final class StudyEngine {
         if(added==0)result.put("notice","Nessuna nuova nozione verificata. Le fonti potrebbero essere indisponibili.");
         return result;
     }
+
+    private static String searchTitle(String host,String topic){
+        if(!"it.wikibooks.org".equals(host)&&!"it.wikiversity.org".equals(host))return null;
+        HttpURLConnection connection=null;
+        try{
+            String endpoint="https://"+host+"/w/api.php?action=query&format=json"
+                +"&formatversion=2&list=search&srlimit=1&srnamespace=0&srsearch="
+                +URLEncoder.encode(topic,"UTF-8");
+            connection=(HttpURLConnection)new URL(endpoint).openConnection();
+            connection.setInstanceFollowRedirects(false);
+            connection.setConnectTimeout(4500);connection.setReadTimeout(4500);
+            connection.setRequestProperty("User-Agent","UNVORStudy/1.0 (personal educational knowledge notes with attribution)");
+            if(connection.getResponseCode()!=200)return null;
+            ByteArrayOutputStream output=new ByteArrayOutputStream();
+            try(InputStream in=connection.getInputStream()){
+                byte[] part=new byte[4096];int n;
+                while((n=in.read(part))!=-1){
+                    if(output.size()+n>50000)return null;
+                    output.write(part,0,n);
+                }
+            }
+            JSONObject result=new JSONObject(new String(output.toByteArray(),StandardCharsets.UTF_8));
+            JSONArray hits=result.getJSONObject("query").getJSONArray("search");
+            if(hits.length()==0)return null;
+            String title=hits.getJSONObject(0).optString("title","");
+            return title.length()>2&&title.length()<130?title:null;
+        }catch(Exception ignored){return null;}
+        finally{if(connection!=null)connection.disconnect();}
+    }
+
     private static JSONObject fetch(String host,String title,String today) {
         HttpURLConnection conn=null;
         try{
@@ -245,7 +282,7 @@ public final class StudyEngine {
             String actualTitle=page.getString("title");
             String link="https://"+host+"/wiki/"+URLEncoder.encode(actualTitle.replace(' ','_'),"UTF-8");
             return new JSONObject().put("title",actualTitle).put("excerpt",extract)
-                .put("url",link).put("source","Wikipedia in italiano")
+                .put("url",link).put("source",host.equals("it.wikibooks.org")?"Wikibooks":host.equals("it.wikiversity.org")?"Wikiversità":"Wikipedia in italiano")
                 .put("license","CC BY-SA — vedi condizioni dell'articolo")
                 .put("studiedAt",today);
         }catch(Exception ignored){return null;}
