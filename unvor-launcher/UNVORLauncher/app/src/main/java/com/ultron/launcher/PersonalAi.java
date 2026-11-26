@@ -111,7 +111,7 @@ public final class PersonalAi {
         if(entry==null||"github".equals(id))throw new Exception("Provider non disponibile.");
         if(priority<0||priority>3)throw new Exception("Priorità: 0 (riserva) oppure 1, 2, 3.");
         if(model==null||model.trim().isEmpty()||model.length()>120)throw new Exception("Inserisci il modello fornito dal servizio.");
-        if(!model.matches("[a-zA-Z0-9_@./:\\-]+"))throw new Exception("Nome modello non valido.");
+        if(!model.matches("[a-zA-Z0-9_@./:-]+"))throw new Exception("Nome modello non valido.");
         JSONObject existing=config(id);
         String secret=key==null||key.trim().isEmpty()?(existing==null?"":existing.optString("key","")):key.trim();
         if(secret.length()>4096)throw new Exception("Chiave troppo lunga.");
@@ -190,7 +190,7 @@ public final class PersonalAi {
         String endpoint=entry[3];
         if("ollama".equals(id)||"cervello".equals(id))endpoint=safeHttps(cfg.optString("endpoint",""));
         else if("gemini".equals(id))
-            endpoint+="\/v1beta/models/"+model+":generateContent";
+            endpoint+="/v1beta/models/"+model+":generateContent";
         else if("cloudflare".equals(id))
             endpoint+=cfg.optString("accountId","")+"/ai/v1/chat/completions";
         // Public provider destinations are fixed by the application: only the
