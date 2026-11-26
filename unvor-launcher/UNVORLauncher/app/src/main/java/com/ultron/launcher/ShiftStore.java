@@ -43,8 +43,8 @@ public final class ShiftStore {
             .put("color",color).put("minutes",minutes).put("start","").put("end","").put("pause",0).put("manual",true);
     }
     private static JSONObject defaults() throws Exception {
-        JSONArray users=new JSONArray().put(new JSONObject().put("id","fabio").put("name","Fabio"))
-            .put(new JSONObject().put("id","katia").put("name","Katia"));
+        JSONArray users=new JSONArray().put(new JSONObject().put("id","fabio").put("name","Fabio").put("targetMinutes",360))
+            .put(new JSONObject().put("id","katia").put("name","Katia").put("targetMinutes",360));
         JSONArray types=new JSONArray();
         types.put(type("m","Mattina","M","#18D895",435));
         types.put(type("p","Pomeriggio","P","#FFD82B",435));
@@ -152,10 +152,13 @@ public final class ShiftStore {
                 JSONObject user=find(data.getJSONArray("users"),request.optString("id",""));
                 if(user==null)throw new IllegalArgumentException("Profilo non trovato");
                 user.put("name",bounded(request.optString("name"),36,"Nome persona"));
+                int target=request.optInt("targetMinutes",360);
+                if(target<0||target>1440)throw new IllegalArgumentException("Ore di riferimento non valide");
+                user.put("targetMinutes",target);
             }else if("addUser".equals(action)){
                 JSONArray users=data.getJSONArray("users");
                 if(users.length()>=MAX_USERS)throw new IllegalArgumentException("Limite di persone raggiunto");
-                users.put(new JSONObject().put("id","u-"+UUID.randomUUID()).put("name",bounded(request.optString("name"),36,"Nome persona")));
+                users.put(new JSONObject().put("id","u-"+UUID.randomUUID()).put("name",bounded(request.optString("name"),36,"Nome persona")).put("targetMinutes",360));
             }else if("deleteUser".equals(action)){
                 String id=request.optString("id","");
                 JSONArray users=data.getJSONArray("users");
