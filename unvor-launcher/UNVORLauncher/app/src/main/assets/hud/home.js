@@ -52,14 +52,14 @@
  function close() {if(native)dispatch('panel',{open:false});$('overlay').hidden=true;$('home').inert=false;selection=null;mode=null;previousFocus?.focus?.();return true;}
  function paragraph(text) {const p=document.createElement('p');p.textContent=text;$('dialog-content').append(p);}
  function menu(text,fn) {const b=document.createElement('button');b.className='menu-item';b.textContent=text;b.onclick=fn;$('dialog-content').append(b);return b;}
- function openPrivacy() {show('PRIVACY UNVOR');paragraph('Questa Home usa risorse grafiche e caratteri salvati nell’app. Non invia elenco app, contatti, posizione, profili o statistiche a un server. La ricerca si apre nel browser su DuckDuckGo; l’app meteo scelta gestisce i propri dati.');paragraph('Il microfono si attiva al tocco. In Strumenti puoi anche attivare «Ehi UNVOR» mentre la Home è visibile. Il riconoscitore italiano Vosk e il suo modello sono inclusi nell’app; l’audio viene elaborato in memoria sul Pixel. Non usa il riconoscitore Google. L’agenda UNVOR salva appuntamenti e turni in un file privato cifrato AES-GCM con chiave Android Keystore. Non invia l’agenda al server. Gli avvisi e le sveglie agenda sono locali; una sveglia sonora termina dopo due minuti. Il calendario Android esterno si legge soltanto tramite il suo comando dedicato e dopo il permesso. Per chiamare un nome servono Rubrica e Telefono, richiesti al primo utilizzo. Nessuna copia della rubrica viene caricata su server. Il launcher non legge messaggi o chiavi di UNVOR Chat.');paragraph('Gli indicatori riportano spazio, RAM e batteria disponibili tramite Android. Non certificano l’integrità o la sicurezza di GrapheneOS. Le particelle del logo accompagnano ascolto e risposta vocale. Animazione sospesa fuori dalla Home o con riduzione movimento. Il modello AI non è ancora collegato. Le risposte vocali usano solo una voce italiana dichiarata offline da un motore installato diverso da Google; se manca, la risposta appare scritta.');menu('Informazioni e permessi di questa app',()=>{close();dispatch('appInfo');});}
+ function openPrivacy() {show('PRIVACY UNVOR');paragraph('Questa Home usa risorse grafiche e caratteri salvati nell’app. Non invia elenco app, contatti, posizione, profili o statistiche a un server. La ricerca si apre nel browser su DuckDuckGo; l’app meteo scelta gestisce i propri dati.');paragraph('Il microfono si attiva al tocco. In Strumenti puoi anche attivare «Ehi UNVOR» mentre la Home è visibile. Il riconoscitore italiano Vosk e il suo modello sono inclusi nell’app; l’audio viene elaborato in memoria sul Pixel. Non usa il riconoscitore Google. L’agenda UNVOR salva appuntamenti e turni in un file privato cifrato AES-GCM con chiave Android Keystore. Non invia l’agenda al server. Gli avvisi e le sveglie agenda sono locali; una sveglia sonora termina dopo due minuti. Il calendario Android esterno si legge soltanto tramite il suo comando dedicato e dopo il permesso. Per chiamare un nome servono Rubrica e Telefono, richiesti al primo utilizzo. Nessuna copia della rubrica viene caricata su server. Il launcher non legge messaggi o chiavi di UNVOR Chat.');paragraph('Gli indicatori riportano spazio, RAM e batteria disponibili tramite Android. Non certificano l’integrità o la sicurezza di GrapheneOS. Le particelle del logo accompagnano ascolto e risposta vocale. Animazione sospesa fuori dalla Home o con riduzione movimento. Le AI personali si configurano da Strumenti AI nella Home; le domande vengono inviate soltanto ai provider che scegli. Le risposte vocali usano solo una voce italiana dichiarata offline da un motore installato diverso da Google; se manca, la risposta appare scritta.');menu('Informazioni e permessi di questa app',()=>{close();dispatch('appInfo');});}
  function openTools() {show('STRUMENTI');
  const wake=document.createElement('button');wake.className='menu-item';
  wake.textContent=state.wakeEnabled?'Disattiva «Ehi UNVOR»':'Attiva «Ehi UNVOR» sulla Home';
  wake.onclick=()=>{close();dispatch('wakeMode',{enabled:!state.wakeEnabled});};
  $('dialog-content').append(wake);
  menu('Telefono',()=>{close();dispatch('calls');});
- menu('Messaggi SMS',()=>{close();dispatch('sms');});menu('Cervelli AI personali',aiSettings);[['Agenda UNVOR e turni','planner'],['Sveglie','alarms'],['Timer','timer'],['Calendario Android autorizzato','calendar'],['Profilo UNVOR Chat','profile'],['Parla con UNVOR','voice'],['Voce italiana offline','voiceSetup'],['Leggi agenda UNVOR di oggi','agenda'],['Leggi calendario Android','externalAgenda']].forEach(([label,action])=>menu(label,()=>{close();dispatch(action);}));for(let n=1;n<=3;n++){menu('Collegamento personale '+n,()=>{close();dispatch('shortcut',{slot:'quick'+n});});menu('Scegli collegamento '+n,()=>openApps('quick'+n));}menu('Comando scritto a UNVOR',()=>{show('UNVOR · COMANDI');paragraph('Comandi locali: chiama mamma, metti la sveglia alle sei, agenda di oggi, apri agenda, i miei turni, apri seguito dal nome di un’app. Il modello AI conversazionale non è ancora integrato.');const input=document.createElement('input');input.type='text';input.maxLength=500;input.placeholder='Chiedi a UNVOR';input.setAttribute('aria-label','Comando scritto');$('dialog-content').append(input);const send=()=>{const text=input.value.trim();if(text){close();dispatch('command',{text});}};input.addEventListener('keydown',e=>{if(e.key==='Enter')send();});menu('Invia comando',send);input.focus();});menu('Interrompi ascolto e voce',()=>{close();dispatch('stopVoice');});const label=document.createElement('label');label.className='toggle';const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=!document.body.classList.contains('no-motion');checkbox.onchange=()=>{document.body.classList.toggle('no-motion',!checkbox.checked);dispatch('motion',{enabled:checkbox.checked});};label.append(checkbox,document.createTextNode('Effetti di transizione'));$('dialog-content').append(label);}
+ menu('Messaggi SMS',()=>{close();dispatch('sms');});menu('Cervelli AI personali',aiSettings);[['Agenda UNVOR e turni','planner'],['Sveglie','alarms'],['Timer','timer'],['Calendario Android autorizzato','calendar'],['Profilo UNVOR Chat','profile'],['Parla con UNVOR','voice'],['Voce italiana offline','voiceSetup'],['Leggi agenda UNVOR di oggi','agenda'],['Leggi calendario Android','externalAgenda']].forEach(([label,action])=>menu(label,()=>{close();dispatch(action);}));for(let n=1;n<=3;n++){menu('Collegamento personale '+n,()=>{close();dispatch('shortcut',{slot:'quick'+n});});menu('Scegli collegamento '+n,()=>openApps('quick'+n));}menu('Comando scritto a UNVOR',()=>{show('UNVOR · COMANDI');paragraph('Comandi locali: chiama mamma, metti la sveglia alle sei, agenda di oggi, apri agenda, i miei turni, apri seguito dal nome di un’app. Per le domande conversazionali configura i provider in Strumenti AI, dalla Home.');const input=document.createElement('input');input.type='text';input.maxLength=500;input.placeholder='Chiedi a UNVOR';input.setAttribute('aria-label','Comando scritto');$('dialog-content').append(input);const send=()=>{const text=input.value.trim();if(text){close();dispatch('command',{text});}};input.addEventListener('keydown',e=>{if(e.key==='Enter')send();});menu('Invia comando',send);input.focus();});menu('Interrompi ascolto e voce',()=>{close();dispatch('stopVoice');});const label=document.createElement('label');label.className='toggle';const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=!document.body.classList.contains('no-motion');checkbox.onchange=()=>{document.body.classList.toggle('no-motion',!checkbox.checked);dispatch('motion',{enabled:checkbox.checked});};label.append(checkbox,document.createTextNode('Effetti di transizione'));$('dialog-content').append(label);}
 
  function openUnvorSettings(){
   show('IMPOSTAZIONI UNVOR');
@@ -121,8 +121,76 @@
  }
 
  function openApps(slot=null) {selection=slot;show(slot?'SCEGLI APP':'APPLICAZIONI');selection=slot;paragraph('Caricamento delle app installate…');dispatch('apps');}
- function renderApps(rows) {apps=Array.isArray(rows)?rows:[];if(mode!=='SCEGLI APP'&&mode!=='APPLICAZIONI')return;const box=$('dialog-content');const before=box.querySelector('input[type="search"]');const previousQuery=before?.value||'';const hadFocus=document.activeElement===before;box.replaceChildren();const input=document.createElement('input');input.type='search';input.value=previousQuery;input.placeholder='Cerca applicazione';input.setAttribute('aria-label','Cerca applicazione');box.append(input);const list=document.createElement('div');box.append(list);function filter(){list.replaceChildren();const term=input.value.toLocaleLowerCase('it');apps.filter(a=>String(a.label).toLocaleLowerCase('it').includes(term)).forEach(app=>{const b=document.createElement('button');b.className='menu-item';if(app.icon){const image=document.createElement('img');image.src='data:image/png;base64,'+app.icon;image.alt='';b.append(image);}const text=document.createElement('span');text.className='app-row-text';text.textContent=app.label;b.append(text);b.onclick=()=>{const slot=selection;close();dispatch(slot?'choose':'launch',{slot,pkg:app.pkg,activity:app.activity});};list.append(b);});if(!list.childElementCount){const p=document.createElement('p');p.textContent='Nessuna applicazione trovata';list.append(p);}}input.oninput=filter;filter();if(hadFocus)input.focus();}
- function action(button) {const a=button.dataset.action;if(a==='apps')openApps();else if(a==='tools')openTools();else if(a==='privacy')openPrivacy();else if(a==='settings')openUnvorSettings();else if(a==='aiOpen')openAssistant();else dispatch(a,{slot:button.dataset.slot||null});}
+ function renderApps(rows) {
+  apps=Array.isArray(rows)?rows:[];
+  if(mode!=='SCEGLI APP'&&mode!=='APPLICAZIONI')return;
+  const panel=$('dialog-content');
+  const oldSearch=panel.querySelector('input[type="search"]');
+  const previousQuery=oldSearch?.value||'';
+  const focused=document.activeElement===oldSearch;
+  panel.replaceChildren();
+  const help=document.createElement('p');
+  help.className='unvor-app-hint';
+  help.textContent=selection?'Seleziona l’app da assegnare a questo collegamento.':'Tocca un’icona per aprire l’app. Tieni premuta l’icona nel dock per personalizzare il collegamento.';
+  panel.append(help);
+  const search=document.createElement('input');
+  search.type='search';
+  search.className='unvor-app-search';
+  search.value=previousQuery;
+  search.autocomplete='off';
+  search.placeholder='Cerca tra le app installate';
+  search.setAttribute('aria-label','Cerca applicazione');
+  panel.append(search);
+  const grid=document.createElement('div');
+  grid.className='unvor-app-grid';
+  grid.setAttribute('role','list');
+  grid.setAttribute('aria-label','Applicazioni disponibili');
+  panel.append(grid);
+  function filter(){
+   grid.replaceChildren();
+   const term=search.value.toLocaleLowerCase('it').trim();
+   const shown=apps.filter(row=>String(row.label||'').toLocaleLowerCase('it').includes(term));
+   for(const app of shown){
+    const tile=document.createElement('button');
+    tile.type='button';
+    tile.className='unvor-app-tile';
+    tile.setAttribute('role','listitem');
+    const label=String(app.label||'Applicazione');
+    tile.setAttribute('aria-label',selection?'Scegli '+label:'Apri '+label);
+    const orb=document.createElement('span');
+    orb.className='unvor-app-icon';
+    if(typeof app.icon==='string'&&/^[A-Za-z0-9+/=]+$/.test(app.icon)&&app.icon.length<120000){
+     const image=document.createElement('img');
+     image.src='data:image/png;base64,'+app.icon;
+     image.alt='';
+     image.loading='lazy';
+     orb.append(image);
+    }else{
+     orb.innerHTML=icon('apps',true);
+    }
+    const text=document.createElement('span');
+    text.className='unvor-app-name';
+    text.textContent=label;
+    tile.append(orb,text);
+    tile.onclick=()=>{
+     const slot=selection;
+     close();
+     dispatch(slot?'choose':'launch',{slot,pkg:app.pkg,activity:app.activity});
+    };
+    grid.append(tile);
+   }
+   if(!shown.length){
+    const empty=document.createElement('p');
+    empty.className='unvor-app-empty';
+    empty.textContent='Nessuna applicazione trovata';
+    grid.append(empty);
+   }
+  }
+  search.oninput=filter;
+  filter();
+  if(focused)search.focus();
+ }
+ function action(button) {const a=button.dataset.action;if(a==='apps')openApps();else if(a==='tools')openTools();else if(a==='privacy')openPrivacy();else if(a==='settings')openUnvorSettings();else if(a==='aiSettings')aiSettings();else if(a==='aiOpen')openAssistant();else dispatch(a,{slot:button.dataset.slot||null});}
  document.querySelectorAll('[data-action]').forEach(button=>{
   button.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();action(button);}});
   button.addEventListener('click',()=>{if(longTarget===button){longTarget=null;return;}longTarget=null;action(button);});
