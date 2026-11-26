@@ -1,7 +1,7 @@
-name: UNVOR 135 — backend for original Samsung 116 HUD
+name: UNVOR 136 — phone Universe and spoken AI backend
 on:
   push:
-    branches: [feature/unvor-135-original-116]
+    branches: [feature/unvor-136-home-universo-voice]
     paths: ["unvor-launcher/UNVORLauncher/**", "unvor-launcher/DEPENDENCIES.json", ".github/workflows/unvor-launcher-build.yml"]
   workflow_dispatch:
 permissions:
@@ -19,8 +19,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
-      - name: Ensure package version 135
-        run: grep -Fq 'versionCode = 135' unvor-launcher/UNVORLauncher/app/build.gradle.kts
+      - name: Ensure package version 136
+        run: grep -Fq 'versionCode = 136' unvor-launcher/UNVORLauncher/app/build.gradle.kts
       - name: Check Android SDK
         shell: bash
         run: |
@@ -98,20 +98,20 @@ jobs:
                   if name not in files:raise SystemExit('Missing '+name)
               if not any(n.startswith('assets/voice-it/') for n in files):raise SystemExit('Missing Italian model')
           PY
-          cp "$APK" UNVOR-Launcher-AI-135-UNSIGNED.apk
-          sha256sum UNVOR-Launcher-AI-135-UNSIGNED.apk > UNVOR-Launcher-AI-135-SHA256.txt
+          cp "$APK" UNVOR-Launcher-AI-136-UNSIGNED.apk
+          sha256sum UNVOR-Launcher-AI-136-UNSIGNED.apk > UNVOR-Launcher-AI-136-SHA256.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: UNVOR-Launcher-AI-135-UNSIGNED-for-Mac
+          name: UNVOR-Launcher-AI-136-UNSIGNED-for-Mac
           path: |
-            UNVOR-Launcher-AI-135-UNSIGNED.apk
-            UNVOR-Launcher-AI-135-SHA256.txt
+            UNVOR-Launcher-AI-136-UNSIGNED.apk
+            UNVOR-Launcher-AI-136-SHA256.txt
           retention-days: 14
       - name: Publish unsigned APK for original Mac signing
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          TAG=unvor-launcher-backend-135
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --prerelease --title "UNVOR Launcher AI 135 (requires Mac original key)" --notes "Versione 135 backend: ANSA, AI personali, studio opt-in. ATTENZIONE: usa l'installer ufficiale che ripristina le risorse originali della 116 prima della firma Android. APK non firmata non pronta all'uso diretto. APK release NON FIRMATA: prima dell'aggiornamento il Mac deve firmarla con il certificato originale. Non disinstallare il launcher esistente."
-          gh release upload "$TAG" UNVOR-Launcher-AI-135-UNSIGNED.apk UNVOR-Launcher-AI-135-SHA256.txt --clobber
+          TAG=unvor-launcher-backend-136
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --prerelease --title "UNVOR backend 136 (original 116 HUD overlay required)" --notes "Versione 136 backend: Universo locale, ANSA, AI personali, studio opt-in e risposta vocale. La Home originale Samsung 116 va applicata prima della firma. ATTENZIONE: usa l'installer ufficiale che ripristina le risorse originali della 116 prima della firma Android. APK non firmata non pronta all'uso diretto. APK release NON FIRMATA: prima dell'aggiornamento il Mac deve firmarla con il certificato originale. Non disinstallare il launcher esistente."
+          gh release upload "$TAG" UNVOR-Launcher-AI-136-UNSIGNED.apk UNVOR-Launcher-AI-136-SHA256.txt --clobber
