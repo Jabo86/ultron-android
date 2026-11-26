@@ -57,6 +57,7 @@ public final class MainActivity extends Activity {
         emit("state",state());scheduleWake();
     }
     private boolean agendaSpeaking;
+    private String agendaMonth=java.time.YearMonth.now().toString();
     private static final String ORIGIN = "https://ultron.launcher.local/";
     private final Runnable refresh = new Runnable() {
         public void run() { if (visible && ready) { emit("state", state()); main.postDelayed(this, 15000); } }
@@ -160,7 +161,25 @@ public final class MainActivity extends Activity {
     private void handle(String action,JSONObject data){
         switch(action){
             case "ready":emit("state",state());scheduleWake();break;
-            case "contacts":open(new Intent(Intent.ACTION_VIEW,ContactsContract.Contacts.CONTENT_URI),new Intent(Intent.ACTION_DIAL));break;
+            case "contacts":showContacts();break;
+            case "contactsPermission":
+                if(checkSelfPermission(Manifest.permission.READ_CONTACTS)!=PackageManager.PERMISSION_GRANTED){
+                    pendingPermission="contactsUi";requestPermissions(new String[]{Manifest.permission.READ_CONTACTS},46);
+                }else showContacts();
+                break;
+            case "contactDial":contactAction(data.optString("phone",""),false);break;
+            case "contactSms":contactAction(data.optString("phone",""),true);break;
+            case "calendarRange":
+                String requestedMonth=data.optString("month","");
+                if(requestedMonth.matches("\\d{4}-(?:0[1-9]|1[0-2])")){
+                    agendaMonth=requestedMonth;planner();
+                }
+                break;
+            case "calendarConsent":
+                if(checkSelfPermission(Manifest.permission.READ_CALENDAR)!=PackageManager.PERMISSION_GRANTED){
+                    pendingPermission="calendarUi";requestPermissions(new String[]{Manifest.permission.READ_CALENDAR},47);
+                }else planner();
+                break;
             case "wakeMode":configureWake(data.optBoolean("enabled",false));break;
             case "panel":
                 homeCovered=data.optBoolean("open",false);
@@ -291,7 +310,26 @@ public final class MainActivity extends Activity {
         });
     }
     private void call(String number){if(number==null||!number.matches("[+0-9 ()\\.\\-]{3,40}")){message("Il contatto non contiene un numero telefonico valido.");return;}if(checkSelfPermission(Manifest.permission.CALL_PHONE)!=PackageManager.PERMISSION_GRANTED){pendingPhone=number;pendingPermission="call";requestPermissions(new String[]{Manifest.permission.CALL_PHONE},44);return;}pendingPhone=null;open(new Intent(Intent.ACTION_CALL,Uri.fromParts("tel",number,null)));}
-    private void planner(){io.execute(()->{try{JSONObject data=new JSONObject();data.put("rows",AgendaStore.list(this)).put("exact",AgendaStore.exact(this)).put("notifications",AgendaStore.notifications(this));emit("planner",data);}catch(Exception e){message("Agenda non leggibile. I dati esistenti non sono stati sovrascritti.");}});}
+    private void showContacts(){io.execute(()->emit("contactList",PhoneContacts.read(this)));}
+    private void contactAction(String phone,boolean sms){
+        if(phone==null||!phone.matches("[+0-9 ()\\\\.\\\\-]{3,40}")){message("Numero non valido");return;}
+        Uri number=Uri.fromParts(sms?"smsto":"tel",phone,null);
+        if(sms)open(new Intent(Intent.ACTION_SENDTO,number));
+        else open(new Intent(Intent.ACTION_DIAL,number));
+    }
+    private void planner(){
+        final String period=agendaMonth;
+        io.execute(()->{
+            try{
+                JSONObject data=new JSONObject();
+                data.put("rows",AgendaStore.list(this));
+                data.put("exact",AgendaStore.exact(this));
+                data.put("notifications",AgendaStore.notifications(this));
+                data.put("phone",PhoneCalendar.month(this,period));
+                emit("planner",data);
+            }catch(Exception e){message("Agenda non leggibile. I dati esistenti non sono stati sovrascritti.");}
+        });
+    }
     private void saveEvent(JSONObject data){io.execute(()->{try{AgendaStore.save(this,data);emit("eventSaved",true);planner();}catch(Exception e){emit("eventError",e instanceof IllegalArgumentException?e.getMessage():"Salvataggio non riuscito: controlla i dati e lo spazio disponibile.");}});}
     private void deleteEvent(String id){io.execute(()->{try{AgendaStore.delete(this,id);emit("eventSaved",true);planner();}catch(Exception e){emit("eventError","Eliminazione non riuscita.");}});}
     private void reminderPermissions(){if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){pendingPermission="reminders";requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},45);return;}if(Build.VERSION.SDK_INT>=31&&!AgendaStore.exact(this)){open(new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,Uri.parse("package:"+getPackageName())));return;}open(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,getPackageName()));}
@@ -303,5 +341,5 @@ public final class MainActivity extends Activity {
             catch(Exception error){message("Calendario non disponibile");}
         });
     }
-    @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){super.onRequestPermissionsResult(request,permissions,results);String action=pendingPermission;pendingPermission=null;if(results.length==0||results[0]!=PackageManager.PERMISSION_GRANTED){message("Permesso non concesso");return;}if("wake".equals(action))configureWake(true);else if("voice".equals(action))voice();else if("agenda".equals(action))agenda();else if("contacts".equals(action)&&pendingContactName!=null)callContact(pendingContactName);else if("call".equals(action)&&pendingPhone!=null)call(pendingPhone);else if("reminders".equals(action))reminderPermissions();}
+    @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){super.onRequestPermissionsResult(request,permissions,results);String action=pendingPermission;pendingPermission=null;if(results.length==0||results[0]!=PackageManager.PERMISSION_GRANTED){message("Permesso non concesso");return;}if("wake".equals(action))configureWake(true);else if("voice".equals(action))voice();else if("agenda".equals(action))agenda();else if("contacts".equals(action)&&pendingContactName!=null)callContact(pendingContactName);else if("contactsUi".equals(action))showContacts();else if("calendarUi".equals(action))planner();else if("call".equals(action)&&pendingPhone!=null)call(pendingPhone);else if("reminders".equals(action))reminderPermissions();}
 }
