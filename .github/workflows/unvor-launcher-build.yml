@@ -1,0 +1,117 @@
+name: UNVOR 137 — Samsung original contacts agenda apps
+on:
+  push:
+    branches: [feature/unvor-137-samsung-essenziale]
+    paths: ["unvor-launcher/UNVORLauncher/**", "unvor-launcher/DEPENDENCIES.json", ".github/workflows/unvor-launcher-build.yml"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Ensure package version 137
+        run: grep -Fq 'versionCode = 137' unvor-launcher/UNVORLauncher/app/build.gradle.kts
+      - name: Check Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -1)"
+          test -n "$SDKMANAGER"
+          if [ ! -s "$ANDROID_HOME/platforms/android-35/android.jar" ]; then
+            yes | "$SDKMANAGER" --install "platforms;android-35" || true
+          fi
+          test -s "$ANDROID_HOME/platforms/android-35/android.jar"
+          if [ ! -d "$ANDROID_HOME/build-tools/35.0.0" ]; then
+            yes | "$SDKMANAGER" --install "build-tools;35.0.0" || true
+          fi
+          test -d "$ANDROID_HOME/build-tools/35.0.0"
+      - name: Obtain verified native libraries and voice model
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,pathlib,urllib.request,zipfile
+          root=pathlib.Path('unvor-launcher')
+          app=root/'UNVORLauncher/app'
+          libs=app/'libs';jni=app/'src/main/jniLibs/arm64-v8a'
+          voice=app/'src/main/assets/voice-it'
+          dep=json.loads((root/'DEPENDENCIES.json').read_text())
+          cache=pathlib.Path('/tmp/unvor-deps');cache.mkdir(exist_ok=True)
+          for name in ('vosk.aar','jna.aar','model-it.zip'):
+              meta=dep[name];target=cache/name
+              if not target.exists():
+                  with urllib.request.urlopen(meta['url'],timeout=180) as response,target.open('wb') as out:
+                      while True:
+                          block=response.read(1024*1024)
+                          if not block:break
+                          out.write(block)
+              data=target.read_bytes()
+              if len(data)!=meta['bytes'] or hashlib.sha256(data).hexdigest()!=meta['sha256']:
+                  raise SystemExit('Source checksum mismatch '+name)
+              print('VERIFIED',name,len(data))
+          libs.mkdir(parents=True,exist_ok=True);jni.mkdir(parents=True,exist_ok=True)
+          for name,dest in (('vosk.aar','vosk-classes.jar'),('jna.aar','jna-classes.jar')):
+              with zipfile.ZipFile(cache/name) as z:
+                  (libs/dest).write_bytes(z.read('classes.jar'))
+                  native=[n for n in z.namelist() if n.startswith('jni/arm64-v8a/') and n.endswith('.so')]
+                  if not native:raise SystemExit('Missing arm64-v8a native libs in '+name)
+                  for n in native:(jni/pathlib.Path(n).name).write_bytes(z.read(n))
+          with zipfile.ZipFile(cache/'model-it.zip') as z:
+              entries=[n for n in z.namelist() if not n.endswith('/')]
+              roots={n.split('/')[0] for n in entries}
+              if len(roots)!=1:raise SystemExit('Unexpected model structure')
+              prefix=next(iter(roots))+'/'
+              for n in entries:
+                  r=n.removeprefix(prefix);p=pathlib.PurePosixPath(r)
+                  if not r or r.startswith('/') or '..' in p.parts:raise SystemExit('Bad model path')
+                  out=voice/pathlib.Path(*p.parts);out.parent.mkdir(parents=True,exist_ok=True)
+                  out.write_bytes(z.read(n))
+          print('VOICE FILES',len(entries))
+          PY
+      - name: Compile full release APK
+        working-directory: unvor-launcher/UNVORLauncher
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+        run: gradle --no-daemon --stacktrace :app:assembleRelease
+      - name: Validate APK output
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="unvor-launcher/UNVORLauncher/app/build/outputs/apk/release/app-release-unsigned.apk"
+          test -s "$APK"
+          python3 - "$APK" <<'PY'
+          import sys,zipfile
+          with zipfile.ZipFile(sys.argv[1]) as z:
+              files=set(z.namelist())
+              for name in ('classes.dex','lib/arm64-v8a/libvosk.so'):
+                  if name not in files:raise SystemExit('Missing '+name)
+              if not any(n.startswith('assets/voice-it/') for n in files):raise SystemExit('Missing Italian model')
+          PY
+          cp "$APK" UNVOR-Launcher-AI-137-UNSIGNED.apk
+          sha256sum UNVOR-Launcher-AI-137-UNSIGNED.apk > UNVOR-Launcher-AI-137-SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: UNVOR-Launcher-AI-137-UNSIGNED-for-Mac
+          path: |
+            UNVOR-Launcher-AI-137-UNSIGNED.apk
+            UNVOR-Launcher-AI-137-SHA256.txt
+          retention-days: 14
+      - name: Publish unsigned APK for original Mac signing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG=unvor-launcher-samsung-137
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --prerelease --title "UNVOR 137 - Agenda, contatti e app senza AI" --notes "Versione 137 essenziale: rubrica Android, agenda locale e lettura calendari Android, griglia applicazioni. NON comprende AI, Universo, ANSA, studio o pagine Mac. Applicare le risorse originali Samsung 116 prima della firma. ATTENZIONE: usa l'installer ufficiale che ripristina le risorse originali della 116 prima della firma Android. APK non firmata non pronta all'uso diretto. APK release NON FIRMATA: prima dell'aggiornamento il Mac deve firmarla con il certificato originale. Non disinstallare il launcher esistente."
+          gh release upload "$TAG" UNVOR-Launcher-AI-137-UNSIGNED.apk UNVOR-Launcher-AI-137-SHA256.txt --clobber
