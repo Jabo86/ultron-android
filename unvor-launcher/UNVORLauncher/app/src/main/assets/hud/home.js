@@ -42,6 +42,7 @@
  searchToggle.onclick=()=>searchMode($('query').hidden);
  $('query').addEventListener('keydown',event=>{if(event.key==='Escape'){searchMode(false);searchToggle.focus();}});
  let state={},mode=null,selection=null,apps=[],timer=null,longTarget=null,toastTimer,previousFocus;
+ let personalAiState=null,aiResults={},aiPending=false;
  function dispatch(action,payload={}) {
   if (native) { try { native.action(action,JSON.stringify(payload)); } catch { toast('Comando non disponibile'); } }
   else toast('Collegamento Android non disponibile');
@@ -58,10 +59,70 @@
  wake.onclick=()=>{close();dispatch('wakeMode',{enabled:!state.wakeEnabled});};
  $('dialog-content').append(wake);
  menu('Telefono',()=>{close();dispatch('calls');});
- menu('Messaggi SMS',()=>{close();dispatch('sms');});[['Agenda UNVOR e turni','planner'],['Sveglie','alarms'],['Timer','timer'],['Calendario Android autorizzato','calendar'],['Profilo UNVOR Chat','profile'],['Parla con UNVOR','voice'],['Voce italiana offline','voiceSetup'],['Leggi agenda UNVOR di oggi','agenda'],['Leggi calendario Android','externalAgenda']].forEach(([label,action])=>menu(label,()=>{close();dispatch(action);}));for(let n=1;n<=3;n++){menu('Collegamento personale '+n,()=>{close();dispatch('shortcut',{slot:'quick'+n});});menu('Scegli collegamento '+n,()=>openApps('quick'+n));}menu('Comando scritto a UNVOR',()=>{show('UNVOR · COMANDI');paragraph('Comandi locali: chiama mamma, metti la sveglia alle sei, agenda di oggi, apri agenda, i miei turni, apri seguito dal nome di un’app. Il modello AI conversazionale non è ancora integrato.');const input=document.createElement('input');input.type='text';input.maxLength=500;input.placeholder='Chiedi a UNVOR';input.setAttribute('aria-label','Comando scritto');$('dialog-content').append(input);const send=()=>{const text=input.value.trim();if(text){close();dispatch('command',{text});}};input.addEventListener('keydown',e=>{if(e.key==='Enter')send();});menu('Invia comando',send);input.focus();});menu('Interrompi ascolto e voce',()=>{close();dispatch('stopVoice');});const label=document.createElement('label');label.className='toggle';const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=!document.body.classList.contains('no-motion');checkbox.onchange=()=>{document.body.classList.toggle('no-motion',!checkbox.checked);dispatch('motion',{enabled:checkbox.checked});};label.append(checkbox,document.createTextNode('Effetti di transizione'));$('dialog-content').append(label);}
+ menu('Messaggi SMS',()=>{close();dispatch('sms');});menu('Cervelli AI personali',aiSettings);[['Agenda UNVOR e turni','planner'],['Sveglie','alarms'],['Timer','timer'],['Calendario Android autorizzato','calendar'],['Profilo UNVOR Chat','profile'],['Parla con UNVOR','voice'],['Voce italiana offline','voiceSetup'],['Leggi agenda UNVOR di oggi','agenda'],['Leggi calendario Android','externalAgenda']].forEach(([label,action])=>menu(label,()=>{close();dispatch(action);}));for(let n=1;n<=3;n++){menu('Collegamento personale '+n,()=>{close();dispatch('shortcut',{slot:'quick'+n});});menu('Scegli collegamento '+n,()=>openApps('quick'+n));}menu('Comando scritto a UNVOR',()=>{show('UNVOR · COMANDI');paragraph('Comandi locali: chiama mamma, metti la sveglia alle sei, agenda di oggi, apri agenda, i miei turni, apri seguito dal nome di un’app. Il modello AI conversazionale non è ancora integrato.');const input=document.createElement('input');input.type='text';input.maxLength=500;input.placeholder='Chiedi a UNVOR';input.setAttribute('aria-label','Comando scritto');$('dialog-content').append(input);const send=()=>{const text=input.value.trim();if(text){close();dispatch('command',{text});}};input.addEventListener('keydown',e=>{if(e.key==='Enter')send();});menu('Invia comando',send);input.focus();});menu('Interrompi ascolto e voce',()=>{close();dispatch('stopVoice');});const label=document.createElement('label');label.className='toggle';const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=!document.body.classList.contains('no-motion');checkbox.onchange=()=>{document.body.classList.toggle('no-motion',!checkbox.checked);dispatch('motion',{enabled:checkbox.checked});};label.append(checkbox,document.createTextNode('Effetti di transizione'));$('dialog-content').append(label);}
+
+ function openUnvorSettings(){
+  show('IMPOSTAZIONI UNVOR');
+  paragraph('Preferenze del launcher. Le credenziali AI sono personali e non vengono condivise con altri utenti.');
+  menu('Cervelli AI personali',aiSettings);
+  menu('Strumenti e voce offline',openTools);
+  menu('Privacy del launcher',openPrivacy);
+  menu('Impostazioni Android',()=>{close();dispatch('settings');});
+ }
+ function aiSettings(){
+  show('AI PERSONALI');
+  paragraph('Caricamento delle impostazioni…');
+  dispatch('aiList');
+ }
+ function renderAiSettings(){
+  if(mode!=='AI PERSONALI')return;
+  const content=$('dialog-content');content.replaceChildren();
+  if(!personalAiState){paragraph('Caricamento delle impostazioni…');return;}
+  paragraph('Ogni utente inserisce le proprie credenziali. Le chiavi sono cifrate con Android Keystore e rimangono su questo telefono.');
+  paragraph((personalAiState.configured||0)+' configurati · '+(personalAiState.active||0)+' attivi. Usa priorità 1, 2 e 3 per il fallback automatico. Priorità 0 = riserva.');
+  paragraph('I provider possono cambiare limiti, condizioni e prezzi. Seleziona solo modelli inclusi nel tuo piano. Il test invia una richiesta reale a ciascun provider configurato.');
+  menu(aiPending?'TEST IN CORSO…':'⚡ Prova le AI ora',()=>{
+   if(aiPending)return;aiPending=true;aiResults={};renderAiSettings();dispatch('aiTest');
+  });
+  for(const item of personalAiState.rows||[]){
+   const label=String(item.name||item.id||'AI');
+   const line=item.active?'Attivo · priorità '+item.priority:item.configured?'Configurato · riserva':'Non configurato';
+   const status=element('div',null,'ai-provider',content);
+   const button=element('button',label+' · '+line,'menu-item',status);
+   button.type='button';
+   button.onclick=()=>dispatch('aiEdit',{id:item.id});
+   if(!item.available){button.disabled=true;button.textContent=label+' · API non più disponibile';}
+   const details=element('small',null,'ai-provider-status',status);
+   details.id='ai-test-'+item.id;details.textContent=aiResults[item.id]||'Non ancora testato';
+   const info=element('small','Modello: '+String(item.model||'da impostare'),'ai-model',status);
+   if(item.configured&&item.available){
+    const remove=element('button','Rimuovi chiave e configurazione','menu-item',status);
+    remove.onclick=()=>dispatch('aiDelete',{id:item.id});
+   }
+  }
+  menu('Apri assistente UNVOR',openAssistant);
+ }
+ function openAssistant(){
+  show('ASSISTENTE UNVOR');
+  paragraph('Fai una domanda semplice. UNVOR usa il primo provider attivo; se non risponde passa al secondo e poi al terzo. Risposte normalmente brevi.');
+  const box=$('dialog-content');
+  const input=document.createElement('textarea');
+  input.rows=3;input.maxLength=1000;
+  input.placeholder='Scrivi la tua domanda…';
+  input.setAttribute('aria-label','Domanda per UNVOR');
+  input.className='menu-item';
+  box.append(input);
+  const answer=element('p','', 'ai-answer',box);answer.id='ai-result';answer.setAttribute('aria-live','polite');
+  const send=()=>{const question=input.value.trim();if(!question)return;answer.textContent='Interrogo i cervelli AI…';dispatch('aiAsk',{question});};
+  menu('Invia domanda',send);
+  menu('Parla con UNVOR',()=>{close();dispatch('voice');});
+  menu('Impostazioni cervelli AI',aiSettings);
+  input.focus();
+ }
+
  function openApps(slot=null) {selection=slot;show(slot?'SCEGLI APP':'APPLICAZIONI');selection=slot;paragraph('Caricamento delle app installate…');dispatch('apps');}
  function renderApps(rows) {apps=Array.isArray(rows)?rows:[];if(mode!=='SCEGLI APP'&&mode!=='APPLICAZIONI')return;const box=$('dialog-content');const before=box.querySelector('input[type="search"]');const previousQuery=before?.value||'';const hadFocus=document.activeElement===before;box.replaceChildren();const input=document.createElement('input');input.type='search';input.value=previousQuery;input.placeholder='Cerca applicazione';input.setAttribute('aria-label','Cerca applicazione');box.append(input);const list=document.createElement('div');box.append(list);function filter(){list.replaceChildren();const term=input.value.toLocaleLowerCase('it');apps.filter(a=>String(a.label).toLocaleLowerCase('it').includes(term)).forEach(app=>{const b=document.createElement('button');b.className='menu-item';if(app.icon){const image=document.createElement('img');image.src='data:image/png;base64,'+app.icon;image.alt='';b.append(image);}const text=document.createElement('span');text.className='app-row-text';text.textContent=app.label;b.append(text);b.onclick=()=>{const slot=selection;close();dispatch(slot?'choose':'launch',{slot,pkg:app.pkg,activity:app.activity});};list.append(b);});if(!list.childElementCount){const p=document.createElement('p');p.textContent='Nessuna applicazione trovata';list.append(p);}}input.oninput=filter;filter();if(hadFocus)input.focus();}
- function action(button) {const a=button.dataset.action;if(a==='apps')openApps();else if(a==='tools')openTools();else if(a==='privacy')openPrivacy();else dispatch(a,{slot:button.dataset.slot||null});}
+ function action(button) {const a=button.dataset.action;if(a==='apps')openApps();else if(a==='tools')openTools();else if(a==='privacy')openPrivacy();else if(a==='settings')openUnvorSettings();else if(a==='aiOpen')openAssistant();else dispatch(a,{slot:button.dataset.slot||null});}
  document.querySelectorAll('[data-action]').forEach(button=>{
   button.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();action(button);}});
   button.addEventListener('click',()=>{if(longTarget===button){longTarget=null;return;}longTarget=null;action(button);});
@@ -94,7 +155,7 @@
   const error=element('p','','form-error',form);error.id='event-error';const save=element('button','SALVA EVENTO','primary',form);save.type='submit';form.onsubmit=e=>{e.preventDefault();if(eventBusy)return;eventBusy=true;save.disabled=true;save.textContent='SALVATAGGIO…';error.textContent='';dispatch('saveEvent',{id:row.id||'',title:title.value,kind:kind.value,date:date.value,start:start.value,end:end.value,pause:kind.value==='shift'?Number(pause.value):0,overnight:overnight.checked,reminder:Number(reminder.value),ring:ring.checked});};menu('Annulla',()=>openPlanner());
  }
 
- window.UltronReceive=(type,data)=>{if(type==='voiceEngines'){show('VOCE ITALIANA OFFLINE');paragraph('La presenza di un motore non garantisce una voce italiana. Configura un modello italiano nel motore, poi torna qui e prova la lettura. Le release GrapheneOS controllate offrono solo inglese USA; non devi disinstallare il motore di sistema.');if(!data.length)paragraph('Nessun motore vocale senza Google rilevato.');for(const row of data)menu('Configura '+String(row.label),()=>{close();dispatch('voiceConfigure',{pkg:row.pkg});});menu('Preferenze vocali Android',()=>{close();dispatch('voiceSettings');});menu('Rileggi motori e prova italiano',()=>{close();dispatch('voiceTest');});}else if(type==='planner'){openPlanner(data);}else if(type==='newEvent'){eventForm({title:String(data).replace(/^(?:(?:unvor|ultron) )?(?:aggiungi|crea) appuntamento */i,'')});}else if(type==='eventError'){eventBusy=false;const err=$('event-error');if(err){err.textContent=String(data);const save=document.querySelector('.event-form .primary');save.disabled=false;save.textContent='SALVA EVENTO';}else toast(String(data));}else if(type==='eventSaved'){toast('Agenda aggiornata');}else if(type==='callChoices'){show('QUALE CONTATTO?');paragraph('Più numeri corrispondono al nome. Scegli chi chiamare.');for(const row of data)menu(String(row.label),()=>{close();dispatch('callChoice',{token:row.token});});}else if(type==='voiceBeat')window.UnvorGlobe?.beat();else if(type==='voice')window.UnvorGlobe?.setPhase(data);else if(type==='answer'){toast(String(data));$('answer-text').textContent=String(data);$('answer-box').hidden=false;}else if(type==='state'){update(data);window.UnvorGlobe?.setPhase(data.voicePhase||'idle');}else if(type==='apps')renderApps(data);else if(type==='pick')openApps(data);else if(type==='toast')toast(String(data));else if(type==='profile'){show('PROFILO UNVOR');paragraph(data.lns||'Nessun profilo condiviso da UNVOR Chat.');menu('Apri UNVOR Chat',()=>{close();dispatch('ultron');});}else if(type==='agenda'){show('AGENDA DI OGGI');paragraph(String(data));}};
+ window.UltronReceive=(type,data)=>{if(type==='voiceEngines'){show('VOCE ITALIANA OFFLINE');paragraph('La presenza di un motore non garantisce una voce italiana. Configura un modello italiano nel motore, poi torna qui e prova la lettura. Le release GrapheneOS controllate offrono solo inglese USA; non devi disinstallare il motore di sistema.');if(!data.length)paragraph('Nessun motore vocale senza Google rilevato.');for(const row of data)menu('Configura '+String(row.label),()=>{close();dispatch('voiceConfigure',{pkg:row.pkg});});menu('Preferenze vocali Android',()=>{close();dispatch('voiceSettings');});menu('Rileggi motori e prova italiano',()=>{close();dispatch('voiceTest');});}else if(type==='planner'){openPlanner(data);}else if(type==='newEvent'){eventForm({title:String(data).replace(/^(?:(?:unvor|ultron) )?(?:aggiungi|crea) appuntamento */i,'')});}else if(type==='eventError'){eventBusy=false;const err=$('event-error');if(err){err.textContent=String(data);const save=document.querySelector('.event-form .primary');save.disabled=false;save.textContent='SALVA EVENTO';}else toast(String(data));}else if(type==='eventSaved'){toast('Agenda aggiornata');}else if(type==='callChoices'){show('QUALE CONTATTO?');paragraph('Più numeri corrispondono al nome. Scegli chi chiamare.');for(const row of data)menu(String(row.label),()=>{close();dispatch('callChoice',{token:row.token});});}else if(type==='voiceBeat')window.UnvorGlobe?.beat();else if(type==='voice')window.UnvorGlobe?.setPhase(data);else if(type==='answer'){toast(String(data));$('answer-text').textContent=String(data);$('answer-box').hidden=false;}else if(type==='aiList'){personalAiState=data;if(mode==='AI PERSONALI')renderAiSettings();}else if(type==='aiTest'){aiResults[data.id]=data.status;if(mode==='AI PERSONALI'){const status=document.getElementById('ai-test-'+data.id);if(status)status.textContent=' · '+data.status;}}else if(type==='aiTestDone'){aiPending=false;if(mode==='AI PERSONALI')renderAiSettings();}else if(type==='aiAnswer'){const result=document.getElementById('ai-result');const text=typeof data==='string'?data:data?.text||'Risposta non disponibile';if(result)result.textContent=(data?.provider?data.provider+' · ':'')+text;else if(mode==='ASSISTENTE UNVOR')toast(text);}else if(type==='state'){update(data);window.UnvorGlobe?.setPhase(data.voicePhase||'idle');}else if(type==='apps')renderApps(data);else if(type==='pick')openApps(data);else if(type==='toast')toast(String(data));else if(type==='profile'){show('PROFILO UNVOR');paragraph(data.lns||'Nessun profilo condiviso da UNVOR Chat.');menu('Apri UNVOR Chat',()=>{close();dispatch('ultron');});}else if(type==='agenda'){show('AGENDA DI OGGI');paragraph(String(data));}};
  window.UltronBack=()=>{if(!$('overlay').hidden){close();return true;}return false;};
  function clock() {const now=new Date();const time=new Intl.DateTimeFormat('it-IT',{hour:'2-digit',minute:'2-digit'}).format(now);const date=new Intl.DateTimeFormat('it-IT',{weekday:'short',day:'numeric',month:'short',year:'numeric'}).format(now);if($('clock').textContent!==time)$('clock').textContent=time;if($('date').textContent!==date)$('date').textContent=date;}
  clock();setInterval(()=>{if(!document.hidden)clock();},1000);document.addEventListener('visibilitychange',()=>{if(!document.hidden){clock();dispatch('ready');}});
