@@ -28,6 +28,13 @@ public final class MainActivity extends Activity {
     private SharedPreferences prefs;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newSingleThreadExecutor();
+    // App discovery renders icons and may take seconds: never queue a tap behind it.
+    private final ExecutorService appsIo = Executors.newSingleThreadExecutor();
+    private final ExecutorService launchIo = Executors.newSingleThreadExecutor();
+    private volatile Set<String> knownLaunchTargets = Collections.emptySet();
+    private volatile JSONArray cachedApps;
+    private volatile long cachedAppsAt;
+    private static final long APP_CACHE_MS = 60_000L;
     private boolean visible, ready;
     private OfflineVoice offline;
     private String pendingContactName,pendingPhone;
@@ -110,7 +117,7 @@ public final class MainActivity extends Activity {
     @Override protected void onPause(){visible=false;main.removeCallbacks(armWake);main.removeCallbacks(refresh);stopVoice();stopSpeaking();if(web!=null){web.onPause();web.pauseTimers();}super.onPause();}
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(visible&&ready&&intent.getBooleanExtra("openAgenda",false))planner();else if(web!=null&&ready)web.evaluateJavascript("window.UltronBack&&window.UltronBack()",null);}
     @Override public void onBackPressed(){if(web!=null&&ready)web.evaluateJavascript("window.UltronBack&&window.UltronBack()",null);}
-    @Override protected void onDestroy(){visible=false;main.removeCallbacksAndMessages(null);stopVoice();if(offline!=null){offline.close();offline=null;}stopSpeaking();ttsInitToken++;if(tts!=null){tts.shutdown();tts=null;}io.shutdownNow();if(web!=null){web.removeJavascriptInterface("UltronNative");root.removeView(web);web.destroy();web=null;}super.onDestroy();}
+    @Override protected void onDestroy(){visible=false;main.removeCallbacksAndMessages(null);stopVoice();if(offline!=null){offline.close();offline=null;}stopSpeaking();ttsInitToken++;if(tts!=null){tts.shutdown();tts=null;}io.shutdownNow();appsIo.shutdownNow();launchIo.shutdownNow();if(web!=null){web.removeJavascriptInterface("UltronNative");root.removeView(web);web.destroy();web=null;}super.onDestroy();}
     public final class Bridge {
         @JavascriptInterface public void action(String action,String payload){
             if(action==null||action.length()>30||payload==null||payload.length()>10000)return;
@@ -207,16 +214,65 @@ public final class MainActivity extends Activity {
     }
     private void browser(String query){open(new Intent(Intent.ACTION_VIEW,Uri.parse(query.trim().isEmpty()?"https://duckduckgo.com/":"https://duckduckgo.com/?q="+Uri.encode(query.trim()))));}
     private List<ResolveInfo> launchable(){List<ResolveInfo> all=getPackageManager().queryIntentActivities(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER),0);List<ResolveInfo> result=new ArrayList<>();for(ResolveInfo row:all)if(!row.activityInfo.packageName.equals(getPackageName())&&row.activityInfo.exported)result.add(row);Collections.sort(result,(a,b)->Collator.getInstance(Locale.ITALIAN).compare(a.loadLabel(getPackageManager()).toString(),b.loadLabel(getPackageManager()).toString()));return result;}
-    private void listApps(){io.execute(()->{JSONArray rows=new JSONArray();for(ResolveInfo app:launchable()){try{
-        JSONObject row=new JSONObject();row.put("label",app.loadLabel(getPackageManager()).toString());row.put("pkg",app.activityInfo.packageName);row.put("activity",app.activityInfo.name);
-        Drawable icon=app.loadIcon(getPackageManager());Bitmap bitmap=Bitmap.createBitmap(72,72,Bitmap.Config.ARGB_8888);Canvas canvas=new Canvas(bitmap);icon.setBounds(0,0,72,72);icon.draw(canvas);ByteArrayOutputStream bytes=new ByteArrayOutputStream();bitmap.compress(Bitmap.CompressFormat.PNG,100,bytes);bitmap.recycle();row.put("icon",Base64.encodeToString(bytes.toByteArray(),Base64.NO_WRAP));rows.put(row);
-    }catch(Exception ignored){}}emit("apps",rows);});}
-    private void launchChoice(JSONObject data,boolean choose){String pkg=data.optString("pkg",""),activity=data.optString("activity",""),slot=data.optString("slot","");
+    private static String launchTarget(String pkg,String activity){return pkg+"\n"+activity;}
+    private void listApps(){
+        JSONArray cached=cachedApps;
+        if(cached!=null && android.os.SystemClock.elapsedRealtime()-cachedAppsAt<APP_CACHE_MS){emit("apps",cached);return;}
+        appsIo.execute(()->{
+            JSONArray rows=new JSONArray();
+            List<ResolveInfo> installed=launchable();
+            Set<String> targets=new HashSet<>();
+            // Publish the validated launcher targets before rasterising icons.
+            // Taps must not wait for icon decoding or PNG compression.
+            for(ResolveInfo app:installed)targets.add(launchTarget(app.activityInfo.packageName,app.activityInfo.name));
+            knownLaunchTargets=Collections.unmodifiableSet(targets);
+            for(ResolveInfo app:installed){try{
+                JSONObject row=new JSONObject();
+                row.put("label",app.loadLabel(getPackageManager()).toString());
+                row.put("pkg",app.activityInfo.packageName);
+                row.put("activity",app.activityInfo.name);
+                Drawable icon=app.loadIcon(getPackageManager());
+                Bitmap bitmap=Bitmap.createBitmap(72,72,Bitmap.Config.ARGB_8888);
+                Canvas canvas=new Canvas(bitmap);icon.setBounds(0,0,72,72);icon.draw(canvas);
+                ByteArrayOutputStream bytes=new ByteArrayOutputStream();
+                bitmap.compress(Bitmap.CompressFormat.PNG,100,bytes);bitmap.recycle();
+                row.put("icon",Base64.encodeToString(bytes.toByteArray(),Base64.NO_WRAP));rows.put(row);
+            }catch(Exception ignored){}}
+            cachedApps=rows;
+            cachedAppsAt=android.os.SystemClock.elapsedRealtime();
+            emit("apps",rows);
+        });
+    }
+    private void launchVerified(String pkg,String activity,String slot,boolean choose){
+        if(!visible||isDestroyed())return;
+        if(choose){
+            prefs.edit().putString("app_"+slot,pkg).putString("activity_"+slot,activity).apply();
+            emit("state",state());message("Collegamento salvato");
+        }else{
+            open(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setClassName(pkg,activity));
+        }
+    }
+    private void launchChoice(JSONObject data,boolean choose){
+        String pkg=data.optString("pkg",""),activity=data.optString("activity",""),slot=data.optString("slot","");
         if(choose&&!slot.matches("(?:dock[0134]|quick[123]|weather)")){message("Collegamento non valido");return;}
-        io.execute(()->{boolean valid=false;for(ResolveInfo row:launchable())if(row.activityInfo.packageName.equals(pkg)&&row.activityInfo.name.equals(activity)){valid=true;break;}
-            final boolean found=valid;main.post(()->{if(!visible||isDestroyed())return;if(!found){message("Questa app non è più disponibile");return;}
-                if(choose){prefs.edit().putString("app_"+slot,pkg).putString("activity_"+slot,activity).apply();emit("state",state());message("Collegamento salvato");}
-                else open(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setClassName(pkg,activity));
+        // Only explicitly exported, system-discovered launcher activities are allowed.
+        if(pkg.isEmpty()||activity.isEmpty()||pkg.length()>200||activity.length()>240){message("App non valida");return;}
+        if(knownLaunchTargets.contains(launchTarget(pkg,activity))){
+            // Instant path: no package-manager query and no slow icon worker.
+            launchVerified(pkg,activity,slot,choose);
+            return;
+        }
+        // Cold first tap / expired discovery: independently validate without
+        // waiting for the list-apps worker or the agenda / profile worker.
+        launchIo.execute(()->{
+            boolean valid=false;
+            for(ResolveInfo row:launchable())
+                if(row.activityInfo.packageName.equals(pkg)&&row.activityInfo.name.equals(activity)){valid=true;break;}
+            final boolean found=valid;
+            main.post(()->{
+                if(!visible||isDestroyed())return;
+                if(!found){message("Questa app non è più disponibile");return;}
+                launchVerified(pkg,activity,slot,choose);
             });
         });
     }
