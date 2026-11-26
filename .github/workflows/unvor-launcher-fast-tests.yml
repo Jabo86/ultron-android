@@ -1,7 +1,7 @@
 name: UNVOR Launcher fast-app regression
 on:
   push:
-    branches: [fix/unvor-launcher-fast-apps]
+    branches: [recovery/unvor-launcher-133-stable]
     paths:
       - "unvor-launcher/**"
       - ".github/workflows/unvor-launcher-fast-tests.yml"
