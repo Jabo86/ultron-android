@@ -43,6 +43,8 @@ jobs:
             unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/MainActivity.java \
             unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/PersonalAi.java \
             unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/LatestNews.java \
+            unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/StudyEngine.java \
+            unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/StudyJobService.java \
             unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/AgendaStore.java \
             unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/AgendaAlarmService.java \
             unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/AgendaReceiver.java \
