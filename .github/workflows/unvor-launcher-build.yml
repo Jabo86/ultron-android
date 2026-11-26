@@ -6,6 +6,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+concurrency:
+  group: unvor-launcher-ai-release-132
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: ubuntu-latest
