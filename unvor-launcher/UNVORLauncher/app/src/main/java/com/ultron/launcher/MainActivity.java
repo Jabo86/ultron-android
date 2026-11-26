@@ -38,6 +38,7 @@ public final class MainActivity extends Activity {
     private boolean visible, ready;
     private OfflineVoice offline;
     private PersonalAi personalAi;
+    private LatestNews latestNews;
     private String pendingContactName,pendingPhone;
     private final Map<String,String> callChoices=new HashMap<>();
     private long choicesExpire;
@@ -75,6 +76,7 @@ public final class MainActivity extends Activity {
         public void wake(String text){if(!visible||homeCovered)return;if(text.isEmpty())voice();else command(text);}});
         prefs = getSharedPreferences("ultron_launcher_layout_v1", MODE_PRIVATE);
         personalAi = new PersonalAi(this);
+        latestNews = new LatestNews();
         getWindow().setStatusBarColor(Color.BLACK);
         getWindow().setNavigationBarColor(Color.BLACK);
         getWindow().getDecorView().setSystemUiVisibility(0);
@@ -119,7 +121,7 @@ public final class MainActivity extends Activity {
     @Override protected void onPause(){visible=false;main.removeCallbacks(armWake);main.removeCallbacks(refresh);stopVoice();stopSpeaking();if(web!=null){web.onPause();web.pauseTimers();}super.onPause();}
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(visible&&ready&&intent.getBooleanExtra("openAgenda",false))planner();else if(web!=null&&ready)web.evaluateJavascript("window.UltronBack&&window.UltronBack()",null);}
     @Override public void onBackPressed(){if(web!=null&&ready)web.evaluateJavascript("window.UltronBack&&window.UltronBack()",null);}
-    @Override protected void onDestroy(){visible=false;main.removeCallbacksAndMessages(null);stopVoice();if(offline!=null){offline.close();offline=null;}stopSpeaking();ttsInitToken++;if(tts!=null){tts.shutdown();tts=null;}io.shutdownNow();appsIo.shutdownNow();launchIo.shutdownNow();if(personalAi!=null)personalAi.close();if(web!=null){web.removeJavascriptInterface("UltronNative");root.removeView(web);web.destroy();web=null;}super.onDestroy();}
+    @Override protected void onDestroy(){visible=false;main.removeCallbacksAndMessages(null);stopVoice();if(offline!=null){offline.close();offline=null;}stopSpeaking();ttsInitToken++;if(tts!=null){tts.shutdown();tts=null;}io.shutdownNow();appsIo.shutdownNow();launchIo.shutdownNow();if(personalAi!=null)personalAi.close();if(latestNews!=null)latestNews.close();if(web!=null){web.removeJavascriptInterface("UltronNative");root.removeView(web);web.destroy();web=null;}super.onDestroy();}
     public final class Bridge {
         @JavascriptInterface public void action(String action,String payload){
             if(action==null||action.length()>30||payload==null||payload.length()>10000)return;
@@ -195,6 +197,9 @@ public final class MainActivity extends Activity {
             case "appInfo":open(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())));break;
             case "shortcut":String slot=data.optString("slot","");if(slot.matches("quick[123]")&&!selected(slot))emit("pick",slot);break;
             case "motion":prefs.edit().putBoolean("hud_animations",data.optBoolean("enabled",true)).apply();break;
+            case "newsToday":readLatestNews();break;
+            case "macConfig":configureMacLink();break;
+            case "macPage":openMacPage(data.optString("page",""));break;
             case "aiList":emitAiList();break;
             case "aiEdit":editPersonalAi(data.optString("id",""));break;
             case "aiDelete":deletePersonalAi(data.optString("id",""));break;
@@ -296,6 +301,85 @@ public final class MainActivity extends Activity {
                 launchVerified(pkg,activity,slot,choose);
             });
         });
+    }
+
+
+    private void readLatestNews(){
+        if(latestNews==null){message("Lettore notizie non disponibile.");return;}
+        emit("newsBusy","Carico i titoli di oggi dal feed ANSA…");
+        latestNews.readToday(data->{
+            if(!visible)return;
+            emit("newsToday",data);
+            String notice=data.optString("notice","");
+            JSONArray items=data.optJSONArray("items");
+            if(!data.optBoolean("ok",false)||items==null||items.length()==0){
+                if(!notice.isEmpty())say(notice);
+                return;
+            }
+            StringBuilder spoken=new StringBuilder("Notizie verificate di oggi, fonte ANSA. ");
+            int limit=Math.min(3,items.length());
+            for(int i=0;i<limit;i++){
+                JSONObject row=items.optJSONObject(i);
+                if(row!=null)spoken.append("Notizia ").append(i+1).append(". ")
+                    .append(row.optString("title","")).append(". ");
+            }
+            say(spoken.toString());
+        });
+    }
+    private void configureMacLink(){
+        final EditText url=new EditText(this);
+        url.setSingleLine(true);
+        url.setHint("https://nome-mac-o-gateway-sicuro");
+        url.setInputType(android.text.InputType.TYPE_CLASS_TEXT|
+            android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        url.setText(prefs.getString("mac_hub_https",""));
+        int h=(int)(20*getResources().getDisplayMetrics().density);
+        LinearLayout layout=new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(h,h,h,h);
+        TextView warning=new TextView(this);
+        warning.setText("Il Mac deve essere raggiungibile dal telefono tramite HTTPS verificato. "
+            +"127.0.0.1 è il telefono stesso, non il Mac. "
+            +"Questi link aprono pagine nel browser, non sincronizzano dati o addestrano modelli.");
+        layout.addView(warning);
+        layout.addView(url);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Collega le pagine UNVOR sul Mac")
+            .setView(layout).setNegativeButton("Annulla",null)
+            .setPositiveButton("Salva",null).create();
+        dialog.setOnShowListener(ignored->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            String input=url.getText().toString().trim();
+            if(input.isEmpty()){
+                prefs.edit().remove("mac_hub_https").apply();
+                message("Collegamento Mac rimosso.");dialog.dismiss();return;
+            }
+            try{
+                java.net.URI parsed=new java.net.URI(input);
+                if(!"https".equalsIgnoreCase(parsed.getScheme())||
+                    parsed.getHost()==null||parsed.getUserInfo()!=null||
+                    parsed.getQuery()!=null||parsed.getFragment()!=null||
+                    (parsed.getPath()!=null && !parsed.getPath().isEmpty() && !"/".equals(parsed.getPath()))||
+                    parsed.getPort()>65535 || input.length()>300)
+                    throw new IllegalArgumentException("Serve un indirizzo HTTPS del Mac/gateway, senza percorsi né parametri.");
+                String clean=parsed.getScheme()+"://"+parsed.getRawAuthority();
+                prefs.edit().putString("mac_hub_https",clean).apply();
+                message("Collegamento salvato: prova Notizie o Universo.");
+                dialog.dismiss();
+            }catch(Exception error){
+                url.setError("Inserisci un URL HTTPS valido e raggiungibile dal telefono.");
+            }
+        }));
+        dialog.show();
+    }
+    private void openMacPage(String page){
+        if(!"notizie".equals(page)&&!"universo".equals(page))return;
+        String base=prefs.getString("mac_hub_https","");
+        if(base.isEmpty()){
+            message("Configura l'indirizzo HTTPS del Mac in Impostazioni UNVOR → Pagine Mac.");
+            configureMacLink();
+            return;
+        }
+        open(new Intent(Intent.ACTION_VIEW,Uri.parse(base+"/ui/#"+page))
+            .addCategory(Intent.CATEGORY_BROWSABLE));
     }
 
     private void emitAiList(){
@@ -452,6 +536,8 @@ public final class MainActivity extends Activity {
         if(command.type.equals("newEvent")){emit("newEvent",command.text);return;}
         if(command.type.equals("summary")){localAgenda();return;}
         if(command.type.equals("time")){say("Sono le "+new SimpleDateFormat("HH:mm",Locale.ITALIAN).format(new Date()));return;}
+        if(command.type.equals("news")){readLatestNews();return;}
+        if(command.type.equals("universe")){openMacPage("universo");return;}
         if(command.type.equals("open")){final String name=command.text;io.execute(()->{ResolveInfo best=null;for(ResolveInfo app:launchable()){String label=LocalCommands.normalize(app.loadLabel(getPackageManager()).toString());if(label.equals(name)){best=app;break;}if(best==null&&label.contains(name))best=app;}final ResolveInfo app=best;main.post(()->{if(!visible)return;if(app==null)message("App non trovata");else open(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setClassName(app.activityInfo.packageName,app.activityInfo.name));});});return;}
         try {
             if(personalAi!=null && personalAi.list().optInt("active",0)>0){
