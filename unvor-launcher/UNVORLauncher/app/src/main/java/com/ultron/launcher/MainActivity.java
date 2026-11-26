@@ -294,6 +294,7 @@ public final class MainActivity extends Activity {
         if(command.type.equals("call")){callContact(command.text);return;}
         if(command.type.equals("alarm")){open(new Intent(AlarmClock.ACTION_SET_ALARM).putExtra(AlarmClock.EXTRA_HOUR,command.hour).putExtra(AlarmClock.EXTRA_MINUTES,command.minute).putExtra(AlarmClock.EXTRA_MESSAGE,"UNVOR").putExtra(AlarmClock.EXTRA_SKIP_UI,true));return;}
         if(command.type.equals("invalidTime")){say("Orario non valido. Puoi dire: metti la sveglia alle sei e trenta.");return;}
+        if(command.type.equals("contactsUi")){showContacts();return;}
         if(command.type.equals("planner")||command.type.equals("shifts")){planner();return;}
         if(command.type.equals("newEvent")){emit("newEvent",command.text);return;}
         if(command.type.equals("summary")){localAgenda();return;}
