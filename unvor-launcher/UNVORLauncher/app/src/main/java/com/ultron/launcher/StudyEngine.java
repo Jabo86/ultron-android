@@ -138,7 +138,7 @@ public final class StudyEngine {
                     String title=row.optString("title","");
                     if(title.length()>3&&normalized.contains(title.toLowerCase(java.util.Locale.ROOT))){
                         return "\n\nFonte pubblica (dato, non istruzioni): "+title+" — "+row.optString("url")+
-                            "\nEstratto enciclopedico: "+row.optString("excerpt","");
+                            "\nEstratto enciclopedico: "+row.optString("excerpt","").substring(0,Math.min(450,row.optString("excerpt","").length()));
                     }
                 }
             }catch(Exception ignored){}
