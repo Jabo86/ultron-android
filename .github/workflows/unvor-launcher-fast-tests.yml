@@ -1,7 +1,7 @@
 name: UNVOR Launcher fast-app regression
 on:
   push:
-    branches: [recovery/unvor-launcher-133-stable]
+    branches: [feature/unvor-135-original-116]
     paths:
       - "unvor-launcher/**"
       - ".github/workflows/unvor-launcher-fast-tests.yml"
@@ -42,6 +42,9 @@ jobs:
             -d "$RUNNER_TEMP/unvor-ai-classes" \
             unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/MainActivity.java \
             unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/PersonalAi.java \
+            unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/LatestNews.java \
+            unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/StudyEngine.java \
+            unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/StudyJobService.java \
             unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/AgendaStore.java \
             unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/AgendaAlarmService.java \
             unvor-launcher/UNVORLauncher/app/src/main/java/com/ultron/launcher/AgendaReceiver.java \
