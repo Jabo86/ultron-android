@@ -115,10 +115,26 @@ public final class StudyEngine {
                 JSONArray rows=load(c);
                 JSONArray recent=new JSONArray();
                 for(int i=rows.length()-1;i>=0&&recent.length()<12;i--)recent.put(rows.getJSONObject(i));
-                return new JSONObject().put("ok",true).put("total",rows.length())
+                // Only verified encyclopedia rows in this phone's encrypted archive count as knowledge.
+                // The level is an activity indicator, NOT a measure of model intelligence.
+                int total=rows.length(), points=total*10, level=1+(points/100);
+                JSONArray history=new JSONArray();
+                for(int day=6;day>=0;day--){
+                    String date=LocalDate.now(ROME).minusDays(day).toString();
+                    int count=0;
+                    for(int i=0;i<rows.length();i++){
+                        JSONObject row=rows.optJSONObject(i);
+                        if(row!=null && date.equals(row.optString("studiedAt","")))count++;
+                    }
+                    history.put(new JSONObject().put("date",date).put("count",count));
+                }
+                return new JSONObject().put("ok",true).put("total",total)
                     .put("today",countToday(rows)).put("maxDaily",MAX_DAILY)
+                    .put("level",level).put("points",points)
+                    .put("nextLevelPoints",level*100)
+                    .put("history",history)
                     .put("automatic",enabled(c)).put("rows",recent)
-                    .put("note","UNVOR studia fonti Wikimedia: non modifica i pesi del modello AI. Nessun dato del Mac viene importato.");
+                    .put("note","Livello e punti misurano solo le nozioni verificate. Il modello AI NON si riaddestra. Nessun dato del Mac viene importato.");
             }catch(Exception e){
                 try{return new JSONObject().put("ok",false).put("notice",
                     "Archivio cifrato non leggibile. Nessuna conoscenza è stata cancellata.");}
