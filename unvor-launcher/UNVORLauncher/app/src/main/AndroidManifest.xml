@@ -19,6 +19,7 @@
  </queries>
  <application android:label="UNVOR Launcher" android:icon="@drawable/ultron_face" android:theme="@android:style/Theme.Material.NoActionBar" android:allowBackup="false" android:usesCleartextTraffic="false" android:hardwareAccelerated="true" android:extractNativeLibs="true" android:enableOnBackInvokedCallback="false">
   <service android:name=".AgendaAlarmService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
+  <service android:name=".StudyJobService" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="true"/>
   <receiver android:name=".AgendaReceiver" android:exported="false">
    <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/><action android:name="android.intent.action.TIME_SET"/><action android:name="android.intent.action.TIMEZONE_CHANGED"/><action android:name="android.intent.action.MY_PACKAGE_REPLACED"/><action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED"/></intent-filter>
   </receiver>
